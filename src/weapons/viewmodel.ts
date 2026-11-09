@@ -15,6 +15,7 @@ const POSES: Record<string, Pose> = {
   pistol: { hip: new THREE.Vector3(0.17, -0.16, -0.36), ads: new THREE.Vector3(0, -0.1, -0.36), rot: new THREE.Euler(0, 0, 0) },
   magnum: { hip: new THREE.Vector3(0.17, -0.17, -0.36), ads: new THREE.Vector3(0, -0.13, -0.4), rot: new THREE.Euler(0, 0, 0) },
   kunai: { hip: new THREE.Vector3(0.2, -0.17, -0.34), ads: new THREE.Vector3(0.14, -0.16, -0.34), rot: new THREE.Euler(0.1, 0.25, 0.4) },
+  rocket: { hip: new THREE.Vector3(0.26, -0.22, -0.5), ads: new THREE.Vector3(0.13, -0.2, -0.5), rot: new THREE.Euler(0, 0.05, 0) },
   axe: { hip: new THREE.Vector3(0.24, -0.22, -0.25), ads: new THREE.Vector3(0.2, -0.2, -0.25), rot: new THREE.Euler(0.5, 0.15, 0.25) },
   almond_water: { hip: new THREE.Vector3(0.2, -0.24, -0.38), ads: new THREE.Vector3(0.2, -0.24, -0.38), rot: new THREE.Euler(0, 0, 0) },
 };

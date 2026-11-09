@@ -187,6 +187,23 @@ export function buildBombMesh(): THREE.Group {
   return g;
 }
 
+/** A rocket in flight (long axis +Z, nose toward +Z so lookAt points it forward). */
+export function buildRocketMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.42, 10), new THREE.MeshBasicMaterial({ color: 0x5a6448 }));
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.12, 10), new THREE.MeshBasicMaterial({ color: 0x9a3a26 }));
+  nose.rotation.x = Math.PI / 2;
+  nose.position.z = 0.27;
+  g.add(nose);
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.25, 8), new THREE.MeshBasicMaterial({ color: 0xffb040, transparent: true, opacity: 0.9 }));
+  flame.rotation.x = -Math.PI / 2;
+  flame.position.z = -0.33;
+  g.add(flame);
+  return g;
+}
+
 /** Set overall opacity (fade in/out). */
 export function setEntityAlpha(g: THREE.Group, a: number): void {
   g.traverse((o) => {

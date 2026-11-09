@@ -185,6 +185,15 @@ export class AudioSystem {
     this.noise(t + 0.03, big ? 1.2 : 0.7, 'bandpass', 600, 0.6, this.sfxBus, this.env(t + 0.03, big ? 0.18 : 0.1, 0.05, big ? 1.1 : 0.6));
   }
 
+  /** Rocket launch: a thump and a hissing whoosh. */
+  rocketLaunch(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.tone(t, 'sine', 110, 45, 0.3, this.env(t, 0.9, 0.003, 0.3), this.sfxBus);
+    this.noise(t, 0.9, 'bandpass', 1800, 0.6, this.sfxBus, this.env(t, 0.5, 0.01, 0.85));
+  }
+
   dryFire(): void {
     const ctx = this.ctx;
     if (!ctx) return;

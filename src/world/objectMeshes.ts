@@ -61,7 +61,7 @@ export function buildItemMesh(id: ItemId, light: number): THREE.Group {
     // Lying on its side on the ground.
     const w = buildWeaponModel(def.weapon!, Math.max(0.5, b));
     w.rotation.set(0, 0, Math.PI / 2);
-    w.position.y = id === 'axe' ? 0.03 : 0.025;
+    w.position.y = id === 'axe' ? 0.03 : id === 'rocket' ? 0.065 : 0.025;
     const g = new THREE.Group();
     g.add(w);
     if (id === 'kunai')
@@ -76,7 +76,7 @@ export function buildItemMesh(id: ItemId, light: number): THREE.Group {
   if (def.kind === 'ammo') {
     // A small cardboard box with the cartridge colour on the lid.
     const g = new THREE.Group();
-    const box = part(geo('ammo-box', () => new THREE.BoxGeometry(0.14, 0.07, 0.09)), mat(id === 'ammo_magnum' ? 0x6a3a24 : 0x3a5a3a, b), 0, 0.035, 0);
+    const box = part(geo('ammo-box', () => new THREE.BoxGeometry(0.14, 0.07, 0.09)), mat(id === 'ammo_magnum' ? 0x6a3a24 : id === 'ammo_rocket' ? 0x5a6448 : 0x3a5a3a, b), 0, 0.035, 0);
     const lid = part(geo('ammo-lid', () => new THREE.BoxGeometry(0.1, 0.002, 0.05)), mat(0xd8b040, b), 0, 0.071, 0);
     g.add(box, lid);
     return g;

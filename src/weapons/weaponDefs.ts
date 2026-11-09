@@ -8,9 +8,11 @@
  * - Kunai: thrown, arcs under gravity, picked up in bundles of 10, can be
  *   collected again after throwing.
  * - Axe: melee.
+ * - Rocket launcher (rare): slow rocket that explodes; the blast throws
+ *   everything back - including you (rocket jumps), without hurting you.
  */
-export type WeaponId = 'pistol' | 'magnum' | 'kunai' | 'axe';
-export type AmmoType = 'pistol' | 'magnum' | 'kunai';
+export type WeaponId = 'pistol' | 'magnum' | 'kunai' | 'axe' | 'rocket';
+export type AmmoType = 'pistol' | 'magnum' | 'kunai' | 'rocket';
 
 export interface WeaponDef {
   id: WeaponId;
@@ -42,6 +44,10 @@ export interface WeaponDef {
   range: number;
   /** Keeps firing while the button is held. */
   auto?: boolean;
+  /** Spare rounds that come with the weapon when picked up. */
+  bundle?: number;
+  /** Explodes on impact: blast radius (m), knockback on entities and on the player (m/s). */
+  explosive?: { radius: number; knock: number; selfKnock: number };
 }
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
@@ -98,6 +104,25 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     headMultiplier: 2.5,
     range: 70,
   },
+  rocket: {
+    id: 'rocket',
+    name: 'ロケットランチャー',
+    kind: 'projectile',
+    mag: 1,
+    ammo: 'rocket',
+    bundle: 4, // 5 rockets in all
+    interval: 0.9,
+    reloadTime: 1.4,
+    damage: 150,
+    speed: 36, // 0.8x the kunai
+    gravity: 0,
+    hipSpread: 0.008,
+    adsSpread: 0,
+    adsZoom: 0.8,
+    headMultiplier: 1,
+    range: 200,
+    explosive: { radius: 4.5, knock: 18, selfKnock: 21 },
+  },
   axe: {
     id: 'axe',
     name: '斧',
@@ -116,8 +141,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
 };
 
 /** Ammo found lying around / in a pickup. */
-export const AMMO_PICKUP: Record<AmmoType, number> = { pistol: 12, magnum: 6, kunai: 10 };
-export const AMMO_MAX: Record<AmmoType, number> = { pistol: 96, magnum: 36, kunai: 30 };
+export const AMMO_PICKUP: Record<AmmoType, number> = { pistol: 12, magnum: 6, kunai: 10, rocket: 5 };
+/** Reserve limit (user request: 999 for everything). */
+export const AMMO_MAX: Record<AmmoType, number> = { pistol: 999, magnum: 999, kunai: 999, rocket: 999 };
 
 /** Damage multiplier at distance d for a hitscan weapon. */
 export function falloffFactor(def: WeaponDef, d: number): number {

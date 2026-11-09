@@ -193,6 +193,29 @@ function shapeIcon(id: ItemId, size: number): HTMLCanvasElement {
       });
       fill('#d8dce0', () => g.rect(51, 14, 3, 16));
       break;
+    case 'rocket':
+      fill('#4f5a3a', () => g.rect(4, 22, 52, 12)); // tube
+      fill('#9a3a26', () => {
+        g.moveTo(4, 22);
+        g.lineTo(-4, 28);
+        g.lineTo(4, 34);
+        g.closePath();
+      }); // warhead
+      fill('#3a4230', () => g.rect(52, 20, 6, 16));
+      fill('#1e1f22', () => g.rect(26, 34, 6, 12)); // grip
+      fill('#22262a', () => g.rect(18, 15, 10, 7)); // sight
+      break;
+    case 'ammo_rocket':
+      for (const dx of [0, 14, 28]) {
+        fill('#5a6448', () => g.rect(12 + dx, 22, 10, 30));
+        fill('#9a3a26', () => {
+          g.moveTo(12 + dx, 22);
+          g.lineTo(17 + dx, 10);
+          g.lineTo(22 + dx, 22);
+          g.closePath();
+        });
+      }
+      break;
     default: {
       // ammo box
       fill(id === 'ammo_magnum' ? '#6a3a24' : '#3a5a3a', () => g.rect(12, 24, 40, 24));

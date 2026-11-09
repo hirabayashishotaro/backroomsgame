@@ -8,7 +8,7 @@ import { PlayerController, type WorldQuery } from '../player/controller';
 import { groundHeight, rayBox, type WBox } from '../world/collision';
 import { ENTITIES, type EntityKind } from './entityDefs';
 import { BLAST_KNOCK, BLOATER, BOMBER, GIANT, WITCH, hurt, newBrain, think, type BrainState } from './brain';
-import { animateEntity, buildBombMesh, buildEntityMesh, disposeEntityMesh, setEntityAlpha } from './models';
+import { animateEntity, buildBombMesh, buildEntityMesh, buildRocketMesh, disposeEntityMesh, setEntityAlpha } from './models';
 import { stepProjectile } from '../weapons/weaponLogic';
 import { falloffFactor, type WeaponDef } from '../weapons/weaponDefs';
 import { buildWeaponModel } from '../weapons/weaponModels';
@@ -25,6 +25,8 @@ export interface Host {
   /** Entities may not step here (near return doorways). */
   isSafe: (x: number, z: number) => boolean;
   onPlayerHit: (kind: EntityKind, damage: number) => void;
+  /** The player was thrown by their own rocket's blast (no fall damage until they land). */
+  onSelfBlast: () => void;
   /** Hit by a ranged attack (bullet, lightning): damage without the jump scare. */
   onRangedHit: (kind: EntityKind, damage: number) => void;
   onSeen: (kind: EntityKind) => void;
@@ -489,6 +491,8 @@ export class EntitySystem {
     let mesh: THREE.Object3D;
     if (def.kind === 'thrown') {
       mesh = buildWeaponModel('kunai', 1);
+    } else if (def.explosive) {
+      mesh = buildRocketMesh();
     } else {
       const m = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 1.2), new THREE.MeshBasicMaterial({ color: 0xffe8a0, transparent: true, opacity: 0.85 }));
       mesh = m;
@@ -518,7 +522,11 @@ export class EntitySystem {
         pr.travelled += len;
         if (hit) {
           const at: [number, number, number] = [x0 + (sx / len) * hit.t, y0 + (sy / len) * hit.t, z0 + (sz / len) * hit.t];
-          if (hit.entity) this.damage(hit.entity, pr.def, pr.def.damage, hit.head, at);
+          if (pr.def.explosive) {
+            // Detonate just in front of the surface it hit.
+            const back = 0.15;
+            this.rocketBlast(pr.def, [at[0] - (sx / len) * back, at[1] - (sy / len) * back, at[2] - (sz / len) * back], hit.entity);
+          } else if (hit.entity) this.damage(hit.entity, pr.def, pr.def.damage, hit.head, at);
           else {
             this.spark(at[0] - sx / len * 0.03, at[1] - sy / len * 0.03, at[2] - sz / len * 0.03, 0xffe0a0);
             this.host.audio.impact(false, this.panTo(at[0], at[2]), Math.hypot(at[0] - this.host.player.x, at[2] - this.host.player.z));
@@ -548,6 +556,7 @@ export class EntitySystem {
       const target = new THREE.Vector3(rx, pr.y, rz);
       pr.mesh.position.lerp(target, pr.def.kind === 'thrown' ? 1 : 0.35 + 0.65 * blend);
       pr.mesh.lookAt(pr.mesh.position.x + pr.vx, pr.mesh.position.y + pr.vy, pr.mesh.position.z + pr.vz);
+      if (pr.def.explosive) this.spark(pr.x - pr.vx * 0.012, pr.y - pr.vy * 0.012, pr.z - pr.vz * 0.012, Math.random() < 0.3 ? 0xffa040 : 0x9a9a96, 3 + Math.random() * 2, 0.6);
     }
   }
 
@@ -626,6 +635,50 @@ export class EntitySystem {
       e.flash = 1;
       if (dead) this.host.onKilled(e.kind);
       if (e.kind !== 'giant') e.body.knock(e.body.x - x || 0.01, e.body.z - z, knock * (0.4 + 0.6 * k), 3 + 4 * k);
+    }
+  }
+
+  /**
+   * Rocket blast: full damage to the entity it struck, falloff for the rest,
+   * everything thrown outward. The player is thrown too (rocket jumps) but
+   * never hurt by their own rocket.
+   */
+  private rocketBlast(def: WeaponDef, at: [number, number, number], direct: Entity | null): void {
+    const ex = def.explosive!;
+    const R = ex.radius;
+    const [x, y, z] = at;
+    const p = this.host.player;
+    const s = R / 5.5;
+    this.spark(x, y, z, 0xffb050, 55 * s, 0.45);
+    this.spark(x, y, z, 0xfff0c0, 25 * s, 0.25);
+    for (let k = 0; k < 16; k++) this.spark(x + (Math.random() - 0.5) * 3 * s, y + (Math.random() - 0.3) * 2, z + (Math.random() - 0.5) * 3 * s, 0x5a5048, 4, 0.8);
+    this.host.audio.entityVoice('boom', this.panTo(x, z), Math.hypot(p.x - x, p.z - z));
+    for (const e of this.entities) {
+      if (e.brain.hp <= 0) continue;
+      const b = e.body;
+      const d = e === direct ? 0 : Math.hypot(b.x - x, b.y + 0.9 - y, b.z - z);
+      if (d >= R) continue;
+      const k = 1 - d / R;
+      this.damage(e, def, e === direct ? def.damage : def.damage * (0.3 + 0.7 * k), false, [b.x, b.y + 1, b.z]);
+      if (e.kind !== 'giant') b.knock(b.x - x || 0.01, b.z - z, ex.knock * (0.4 + 0.6 * k), 3 + 5 * k);
+    }
+    // The shooter: thrown away from the blast along the 3D direction - fire at your feet to fly.
+    const dx = p.x - x;
+    const dy = p.y + 0.9 - y;
+    const dz = p.z - z;
+    const d = Math.hypot(dx, dy, dz);
+    if (d < R) {
+      const k = 1 - d / R;
+      const S = ex.selfKnock * (0.35 + 0.65 * k);
+      const l = d || 1;
+      const up = Math.max(0, (dy / l) * S) + 2 * k;
+      p.kx += (dx / l) * S;
+      p.kz += (dz / l) * S;
+      if (up > 0.5) {
+        p.vy = Math.min(17, Math.max(p.vy, 0) + up);
+        p.grounded = false;
+      }
+      this.host.onSelfBlast();
     }
   }
 

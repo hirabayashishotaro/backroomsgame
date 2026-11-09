@@ -19,7 +19,7 @@ export interface ArsenalData {
 
 export class Arsenal {
   mags: Partial<Record<WeaponId, number>> = {};
-  reserve: Record<AmmoType, number> = { pistol: 0, magnum: 0, kunai: 0 };
+  reserve: Record<AmmoType, number> = { pistol: 0, magnum: 0, kunai: 0, rocket: 0 };
   /** Seconds until the held weapon may fire again. */
   cooldown = 0;
   /** Reload in progress: weapon and time left. */
@@ -35,10 +35,11 @@ export class Arsenal {
       return;
     }
     if (alreadyOwned) {
-      if (def.ammo) this.addAmmo(def.ammo, def.mag);
+      if (def.ammo) this.addAmmo(def.ammo, def.mag + (def.bundle ?? 0));
       return;
     }
     if (def.mag > 0) this.mags[id] = def.mag;
+    if (def.ammo && def.bundle) this.addAmmo(def.ammo, def.bundle);
   }
 
   addAmmo(t: AmmoType, n: number): number {
@@ -121,7 +122,7 @@ export class Arsenal {
 
   load(d: ArsenalData | undefined): void {
     this.mags = { ...(d?.mags ?? {}) };
-    this.reserve = { pistol: 0, magnum: 0, kunai: 0, ...(d?.reserve ?? {}) };
+    this.reserve = { pistol: 0, magnum: 0, kunai: 0, rocket: 0, ...(d?.reserve ?? {}) };
     this.cooldown = 0;
     this.reloading = null;
     this.recoilDebt = 0;

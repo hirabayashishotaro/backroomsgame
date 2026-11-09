@@ -260,6 +260,10 @@ export class Game {
       audio: this.audio,
       isSafe: (x, z) => this.isSafeSpot(x, z),
       onPlayerHit: (kind, dmg) => this.onEntityHit(kind, dmg),
+      onSelfBlast: () => {
+        this.blastAirborne = true;
+        this.blastT = 0;
+      },
       onRangedHit: (_kind, dmg) => {
         const k = this.settings.difficulty === 'easy' ? 0.7 : this.settings.difficulty === 'hard' ? 1.3 : 1;
         this.stats.damage(dmg * k);
@@ -590,7 +594,7 @@ export class Game {
 
   /** Every weapon with a full magazine and full reserves; hold the pistol. */
   private labRefill(): void {
-    for (const id of ['pistol', 'magnum', 'kunai', 'axe'] as const) {
+    for (const id of ['pistol', 'magnum', 'kunai', 'axe', 'rocket'] as const) {
       if (!this.inventory.has(id)) {
         if (!this.inventory.add(id)) continue;
         this.arsenal.gainWeapon(id, false);
@@ -598,7 +602,7 @@ export class Game {
       const def = WEAPONS[id];
       if (def.mag > 0) this.arsenal.mags[id] = def.mag;
     }
-    for (const a of ['pistol', 'magnum', 'kunai'] as const) this.arsenal.reserve[a] = AMMO_MAX[a];
+    for (const a of ['pistol', 'magnum', 'kunai', 'rocket'] as const) this.arsenal.reserve[a] = AMMO_MAX[a];
     this.arsenal.cancelReload();
     const i = this.inventory.slots.indexOf('pistol');
     if (i >= 0) this.inventory.select(i);
@@ -613,6 +617,9 @@ export class Game {
     this.ents.spawnAt(kind, x, 0, z);
   }
 
+  /** Thrown by your own rocket: no fall damage until you land. */
+  private blastAirborne = false;
+  private blastT = 0;
   private labRefillT = 0;
   private labEndlessKey = '3:';
 
@@ -645,7 +652,7 @@ export class Game {
     const on = this.started && this.inArena;
     if (on && !this.paused) this.labEndless(dt);
     this.ents.aiStopped = on && this.lab.options.aiStopped;
-    if (on && this.lab.options.infiniteAmmo) for (const a of ['pistol', 'magnum', 'kunai'] as const) this.arsenal.reserve[a] = AMMO_MAX[a];
+    if (on && this.lab.options.infiniteAmmo) for (const a of ['pistol', 'magnum', 'kunai', 'rocket'] as const) this.arsenal.reserve[a] = AMMO_MAX[a];
     this.lab.updateInfo(
       on
         ? this.ents.entities.map((e) => ({
@@ -1165,7 +1172,8 @@ export class Game {
       this.audio.gunshot('pistol');
     } else if (def.kind === 'projectile') {
       this.ents.launch(def, o, d, this.viewmodel.muzzleWorld);
-      this.audio.gunshot('magnum');
+      if (def.explosive) this.audio.rocketLaunch();
+      else this.audio.gunshot('magnum');
     } else if (def.kind === 'thrown') {
       this.ents.launch(def, o, d, this.viewmodel.muzzleWorld);
       this.audio.throwWhoosh();
@@ -1174,7 +1182,7 @@ export class Game {
       this.audio.swing();
     }
     this.player.pitch = Math.min(1.55, this.player.pitch + r.kick);
-    this.viewmodel.fire(def.kind, def.kind === 'projectile' ? 1.6 : 0.6);
+    this.viewmodel.fire(def.kind, def.explosive ? 2.4 : def.kind === 'projectile' ? 1.6 : 0.6);
     // Auto-reload an emptied magazine.
     if (def.mag > 0 && this.arsenal.loaded(id) === 0 && this.arsenal.startReload(id)) this.beginReloadFx(id);
   }
@@ -1636,6 +1644,9 @@ export class Game {
         this.audio.drink();
         this.player.landingSpeed = 0;
       }
+      this.blastT += dt;
+      if (this.blastAirborne && this.player.landingSpeed < -4) this.player.landingSpeed = -4.01; // rocket jump: no fall damage
+      if (this.blastAirborne && this.player.grounded && this.blastT > 0.25) this.blastAirborne = false;
       if (this.player.landingSpeed < -11) {
         this.stats.damage((-this.player.landingSpeed - 11) * 6);
         this.audio.footstep(1.8, this.level.footstep);

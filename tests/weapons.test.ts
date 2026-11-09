@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Arsenal, stepProjectile } from '../src/weapons/weaponLogic';
-import { WEAPONS, falloffFactor } from '../src/weapons/weaponDefs';
+import { AMMO_MAX, AMMO_PICKUP, WEAPONS, falloffFactor } from '../src/weapons/weaponDefs';
 
 describe('weapons', () => {
   it('pistol: 12-round magazine, reload from reserve, no recoil', () => {
@@ -89,6 +89,24 @@ describe('weapons', () => {
     }
     expect(thrown).toBeGreaterThanOrEqual(4);
     expect(thrown).toBeLessThanOrEqual(5);
+  });
+
+  it('rocket launcher: 150 damage, 0.8x kunai speed, explosive, 5 rockets per find', () => {
+    const r = WEAPONS.rocket;
+    expect(r.damage).toBe(150);
+    expect(r.speed).toBeCloseTo(WEAPONS.kunai.speed! * 0.8);
+    expect(r.explosive!.selfKnock).toBeGreaterThan(15);
+    const a = new Arsenal();
+    a.gainWeapon('rocket', false);
+    expect(a.loaded('rocket') + a.reserve.rocket).toBe(5);
+    expect(AMMO_PICKUP.rocket).toBe(5);
+  });
+
+  it('every reserve holds up to 999', () => {
+    for (const v of Object.values(AMMO_MAX)) expect(v).toBe(999);
+    const a = new Arsenal();
+    a.addAmmo('pistol', 5000);
+    expect(a.reserve.pistol).toBe(999);
   });
 
   it('magnum and kunai fly straight (no gravity)', () => {

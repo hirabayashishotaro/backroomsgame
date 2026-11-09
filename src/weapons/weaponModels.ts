@@ -59,6 +59,21 @@ export function buildWeaponModel(id: WeaponId, shade = 1): THREE.Group {
       muzzle.position.set(0, 0, -0.18);
       break;
     }
+    case 'rocket': {
+      // Olive tube on the shoulder, grip and sight below/left, warhead peeking out.
+      cyl(g, 0.055, 0.78, 0, 0.07, -0.2, k(0x4f5a3a), 14); // tube
+      cyl(g, 0.062, 0.06, 0, 0.07, -0.58, k(0x3a4230), 14); // muzzle ring
+      cyl(g, 0.062, 0.06, 0, 0.07, 0.18, k(0x3a4230), 14); // rear ring
+      b(g, 0.03, 0.1, 0.045, 0, -0.02, -0.08, k(0x1e1f22)); // grip
+      b(g, 0.03, 0.08, 0.04, 0, -0.01, -0.3, k(0x1e1f22)); // front grip
+      b(g, 0.02, 0.05, 0.08, -0.07, 0.12, -0.2, k(0x22262a)); // sight
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.1, 10), mat(k(0x9a3a26)));
+      tip.rotation.x = -Math.PI / 2;
+      tip.position.set(0, 0.07, -0.62);
+      g.add(tip);
+      muzzle.position.set(0, 0.07, -0.66);
+      break;
+    }
     case 'axe':
       cyl(g, 0.016, 0.62, 0, 0, -0.2, k(0x6a4628)); // handle along -z
       b(g, 0.02, 0.17, 0.12, 0, 0.06, -0.47, k(0x9aa0a6)); // head

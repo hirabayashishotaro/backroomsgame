@@ -10,8 +10,8 @@
  */
 import { hash01, hashInts } from '../../core/rng';
 import type { Box, CeilingRect, ChunkData, ItemSpawn, LightPanel, Prop, Zone, ZoneKind } from '../../world/chunkData';
-import type { GenContext, LevelDefinition, LightSampler } from '../levelDefinition';
-import { pickLoot, spawnMeta } from '../../items/lootTables';
+import type { GenContext, LevelDefinition, LightSampler, SpawnPoint } from '../levelDefinition';
+import { ALMOND_ONLY, pickLoot } from '../../items/lootTables';
 import type { ItemId } from '../../items/itemDefs';
 
 export const CELL = 4; // metres per maze cell
@@ -35,6 +35,8 @@ const enum Salt {
   Loot = 19,
   LootPos = 20,
   PieceDoor = 21,
+  Thin = 22,
+  Arrival = 23,
 }
 
 export type EdgeKind = 0 | 1 | 2; // open | wall | wall with doorway
@@ -43,7 +45,7 @@ export type EdgeKind = 0 | 1 | 2; // open | wall | wall with doorway
 // Set pieces
 // ---------------------------------------------------------------------------
 
-export type PieceKind = Exclude<ZoneKind, never>;
+export type PieceKind = Exclude<ZoneKind, 'spawn'>;
 
 export interface Piece {
   kind: PieceKind;
@@ -282,6 +284,7 @@ function pushWallSegment(
   kind: EdgeKind,
   mat = 'wall',
   thick = WALL_T,
+  thin = false,
 ): void {
   const t = thick / 2;
   const e = WALL_T / 2;
@@ -290,7 +293,12 @@ function pushWallSegment(
       ? { minX: line - t, maxX: line + t, minZ: a, maxZ: b, minY: y0, maxY: y1, mat }
       : { minZ: line - t, maxZ: line + t, minX: a, maxX: b, minY: y0, maxY: y1, mat };
   if (kind === 1) {
-    out.push(mk(from - e, to + e, 0, height));
+    const b = mk(from - e, to + e, 0, height);
+    if (thin) {
+      b.thin = true;
+      b.mat = 'wall-thin';
+    }
+    out.push(b);
     return;
   }
   const mid = (from + to) / 2;
@@ -340,6 +348,10 @@ function doorWall(p: Piece, ox: number, oz: number): { x: number; z: number; rot
   }
 }
 
+export function isThinWall(seed: number, axis: number, gx: number, gz: number): boolean {
+  return hash01(seed, Salt.Thin, axis, gx, gz) < 0.012;
+}
+
 export function generateLevel0(ctx: GenContext, cx: number, cz: number): ChunkData {
   const seed = ctx.levelSeed;
   const H = ctx.level.ceilingHeight;
@@ -364,9 +376,12 @@ export function generateLevel0(ctx: GenContext, cx: number, cz: number): ChunkDa
       const lx = i * CELL;
       const lz = j * CELL;
       const wx = wallX(seed, gx, gz);
-      if (wx) pushWallSegment(solids, 'x', lx, lz, lz + CELL, H, wx);
       const wz = wallZ(seed, gx, gz);
-      if (wz) pushWallSegment(solids, 'z', lz, lx, lx + CELL, H, wz);
+      // Thin walls (noclip, SPEC §5.2) only in the plain maze, never on set pieces.
+      const thinX = !piece && wx === 1 && isThinWall(seed, 0, gx, gz);
+      const thinZ = !piece && wz === 1 && isThinWall(seed, 1, gx, gz);
+      if (wx) pushWallSegment(solids, 'x', lx, lz, lz + CELL, H, wx, 'wall', WALL_T, thinX);
+      if (wz) pushWallSegment(solids, 'z', lz, lx, lx + CELL, H, wz, 'wall', WALL_T, thinZ);
 
       if (wx === 1 && !piece && hash01(seed, Salt.Outlet, gx, gz) < 0.12) {
         const side = hashInts(seed, Salt.Outlet, gz, gx) & 1 ? 1 : -1;
@@ -408,7 +423,6 @@ export function generateLevel0(ctx: GenContext, cx: number, cz: number): ChunkDa
           y: 0,
           z: lz + 0.8 + hash01(seed, Salt.LootPos, gx, gz, 1) * (CELL - 1.6),
           rot: hash01(seed, Salt.LootPos, gx, gz, 2) * Math.PI * 2,
-          meta: spawnMeta(id, seed, gx, gz),
         });
       }
     }
@@ -448,15 +462,14 @@ export function generateLevel0(ctx: GenContext, cx: number, cz: number): ChunkDa
     const midZ = (rect.z0 + rect.z1) / 2;
     const uid = (n: number) => `p${n}`;
     const put = (id: ItemId, x: number, z: number, n: number) =>
-      items.push({ uid: uid(n), id, x, y: 0, z, rot: hash01(seed, Salt.LootPos, cx, cz, n) * 6.28, meta: spawnMeta(id, seed, cx * 31 + n, cz) });
+      items.push({ uid: uid(n), id, x, y: 0, z, rot: hash01(seed, Salt.LootPos, cx, cz, n) * 6.28 });
     switch (piece.kind) {
       case 'manila':
         pushLining(decor, seed, piece, ox, oz, 'wall-manila');
-        put('note', midX + 0.6, midZ - 0.4, 1);
         break;
       case 'chalk-room':
         pushLining(decor, seed, piece, ox, oz, 'chalk-graffiti');
-        put('chalk', midX, midZ, 1);
+        put('almond_water', midX, midZ, 1);
         break;
       case 'light-corridor': {
         // Reward at the dead end.
@@ -539,8 +552,24 @@ export function level0LightSampler(ctx: GenContext, cx: number, cz: number): Lig
   };
 }
 
+/** Arrival at a maze cell centre chosen from the entry hash, outside set pieces. */
+export function level0Arrival(ctx: GenContext, entryHash: number): SpawnPoint {
+  const seed = ctx.levelSeed;
+  const range = 40; // cells
+  let gx = Math.floor(hash01(seed, Salt.Arrival, entryHash, 1) * (range * 2 + 1)) - range;
+  const gz = Math.floor(hash01(seed, Salt.Arrival, entryHash, 2) * (range * 2 + 1)) - range;
+  while (pieceAtCell(seed, gx, gz)) gx++;
+  return {
+    x: gx * CELL + CELL / 2,
+    y: 0,
+    z: gz * CELL + CELL / 2,
+    yaw: Math.floor(hash01(seed, Salt.Arrival, entryHash, 3) * 4) * (Math.PI / 2),
+  };
+}
+
 export const level0: LevelDefinition = {
   id: '0',
+  title: 'Level 0',
   name: 'ロビー',
   subtitle: 'The Lobby',
   threatClass: 1,
@@ -559,33 +588,56 @@ export const level0: LevelDefinition = {
   generator: generateLevel0,
   lightSampler: level0LightSampler,
   setPieces: [
-    { id: 'manila', name: 'マニラ・ルーム', desc: '照明がひとつだけの、オレンジがかった薄暗い部屋。長居すると落ち着かない。' },
+    { id: 'manila', name: 'マニラ・ルーム', desc: '照明がひとつだけの、オレンジがかった薄暗い部屋。長居すると、どこか別の場所に立っている。' },
     { id: 'high-hall', name: '天井の高い広間', desc: '天井が突然高くなる広間。太い柱が並び、足音がよく響く。' },
     { id: 'light-corridor', name: '蛍光灯の行き止まり', desc: '蛍光灯だけがびっしり並んだ、まぶしい行き止まりの通路。' },
     { id: 'chalk-room', name: '落書きの部屋', desc: '壁一面にチョークの矢印や記号が書かれた部屋。誰が書いたのかは分からない。' },
-    { id: 'exit-door', name: '壁の非常口', desc: '緑の表示灯がついた非常口。だが扉は壁に埋まっている。' },
+    { id: 'exit-door', name: '壁の非常口', desc: '緑の表示灯がついた非常口。開くと、階段の匂いがした。' },
     { id: 'glass-door', name: 'ガラスの引き戸', desc: '温室のような、曇りガラスの引き戸。向こう側がぼんやり緑に光っている。' },
   ],
-  lootTable: {
-    perCell: 0.018,
-    rules: [
-      { item: 'almond_water', weight: 40 },
-      { item: 'energy_bar', weight: 12 },
-      { item: 'expired_water', weight: 10 },
-      { item: 'battery', weight: 8 },
-      { item: 'glowstick', weight: 8 },
-      { item: 'note', weight: 8 },
-      { item: 'chalk', weight: 5 },
-      { item: 'flashlight', weight: 5 },
-      { item: 'first_aid', weight: 3 },
-      { item: 'compass', weight: 1 },
-      { item: 'almond_water_blue', weight: 1 },
-    ],
-  },
-  statModifiers: { hydrationMul: 1, sanityDrain: 0.015, staminaRegenMul: 1 },
+  lootTable: { perCell: 0.014, rules: ALMOND_ONLY },
+  exits: [
+    { kind: 'walk', distance: 1500, targets: [{ levelId: '1', weight: 1 }], discovery: '長いあいだ歩き続けると、壁紙がコンクリートに変わっていった。' },
+    {
+      kind: 'special',
+      zone: 'manila',
+      seconds: 10,
+      targets: [
+        { levelId: '1', weight: 1 },
+        { levelId: '2', weight: 1 },
+      ],
+      discovery: 'オレンジ色の部屋に長くいたら、気づくと別の場所にいた。',
+    },
+    {
+      kind: 'wall',
+      push: 2.5,
+      targets: [
+        { levelId: '139', weight: 8 },
+        { levelId: '1', weight: 1 },
+      ],
+      discovery: '色の薄い壁に体を押しつけ続けたら、すり抜けた。',
+    },
+    {
+      kind: 'door',
+      prop: 'exit-door',
+      targets: [
+        { levelId: '14', weight: 6 },
+        { levelId: '5', weight: 1 },
+      ],
+      discovery: '壁に埋まった非常口は、本当に開いた。',
+    },
+    {
+      kind: 'door',
+      prop: 'glass-door',
+      targets: [{ levelId: '13', weight: 1 }],
+      discovery: '曇りガラスの引き戸の向こうは温室だった。',
+    },
+  ],
+  drainMul: 1,
   hallucination: 1.6,
   footstep: 'carpet',
   ambience: { humFreq: 60, humGain: 0.12, noiseGain: 0.025, noiseCutoff: 900 },
   environment: 'enclosed',
   spawn: { x: CELL / 2, y: 0, z: CELL / 2, yaw: 0 },
+  arrival: level0Arrival,
 };

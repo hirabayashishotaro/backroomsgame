@@ -32,6 +32,12 @@ export class LevelMaterials {
     this.byKey.set('outlet', mk('outlet'));
     this.byKey.set('wall-manila', mk('wallpaper-manila'));
     this.byKey.set('chalk-graffiti', mk('chalk-graffiti', true));
+    // Thin (noclippable) walls: same wallpaper, very slightly paler.
+    const thin = mk(p.wallTex);
+    (thin.mat as THREE.MeshBasicMaterial).color.setRGB(1.12, 1.1, 1.06);
+    this.byKey.set('wall-thin', thin);
+    this.byKey.set('pipe', mk('gen:metal:6a6560:77'));
+    this.byKey.set('crate', mk('gen:wood:8a6a3e:78'));
     this.lightOn = new THREE.MeshBasicMaterial({ color: p.lightColor });
     this.lightFlicker = new THREE.MeshBasicMaterial({ color: p.lightColor });
     this.lightOff = new THREE.MeshBasicMaterial({ color: 0x5a5648 });

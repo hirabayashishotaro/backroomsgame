@@ -1,81 +1,72 @@
 import { describe, expect, it } from 'vitest';
-import { Inventory } from '../src/player/inventory';
+import { Inventory, SLOTS } from '../src/player/inventory';
 import { Stats, type StatEnv } from '../src/player/stats';
 import { rayBox } from '../src/world/collision';
 import { WorldDeltas } from '../src/world/deltas';
+import { ITEMS } from '../src/items/itemDefs';
 
-const env = (o: Partial<StatEnv> = {}): StatEnv => ({
-  running: false,
-  moving: true,
-  light: 0.8,
-  flashlightOn: false,
-  hydrationMul: 1,
-  sanityDrain: 0,
-  staminaRegenMul: 1,
-  difficulty: 'normal',
-  ...o,
-});
+const env = (o: Partial<StatEnv> = {}): StatEnv => ({ running: false, drainMul: 1, difficulty: 'normal', ...o });
 
-describe('Inventory', () => {
-  it('stacks up to the item limit and fills 16 slots', () => {
+describe('Inventory (4 slots)', () => {
+  it('holds exactly 4 items, one per slot', () => {
     const inv = new Inventory();
+    expect(SLOTS).toBe(4);
     for (let i = 0; i < 4; i++) expect(inv.add('almond_water')).toBe(true);
-    expect(inv.slots[0]!.count).toBe(4);
-    expect(inv.add('almond_water')).toBe(true);
-    expect(inv.slots[1]!.count).toBe(1);
-    for (let i = 0; i < 14; i++) inv.add('flashlight');
-    expect(inv.add('flashlight')).toBe(false);
-    expect(inv.slots.every((s) => s)).toBe(true);
+    expect(inv.add('almond_water')).toBe(false);
+    expect(inv.full).toBe(true);
   });
-  it('loses half of all items on death', () => {
+  it('take empties the slot', () => {
     const inv = new Inventory();
-    for (let i = 0; i < 6; i++) inv.add('almond_water');
-    inv.add('flashlight');
-    inv.add('chalk');
-    const lost = inv.loseHalf(() => 0);
-    expect(lost.length).toBe(4);
-    const remaining = inv.slots.reduce((n, s) => n + (s ? s.count : 0), 0);
-    expect(remaining).toBe(4);
+    inv.add('almond_water');
+    expect(inv.take(0)).toBe('almond_water');
+    expect(inv.count).toBe(0);
   });
-  it('chalk keeps its uses as meta', () => {
+  it('loses half of the items on death', () => {
     const inv = new Inventory();
-    inv.add('chalk');
-    expect(inv.slots[0]!.meta).toBe(20);
+    for (let i = 0; i < 4; i++) inv.add('almond_water');
+    expect(inv.loseHalf(() => 0).length).toBe(2);
+    expect(inv.count).toBe(2);
+  });
+  it('wraps hotbar selection', () => {
+    const inv = new Inventory();
+    inv.select(-1);
+    expect(inv.selected).toBe(3);
+    inv.select(4);
+    expect(inv.selected).toBe(0);
   });
 });
 
-describe('Stats', () => {
-  it('hydration drains and running drains faster', () => {
+describe('Stats (health + dash only)', () => {
+  it('health drains slowly over time and almond water heals it', () => {
+    const s = new Stats();
+    for (let i = 0; i < 600; i++) s.update(0.1, env());
+    expect(s.health).toBeLessThan(100);
+    expect(s.health).toBeGreaterThan(80);
+    const before = s.health;
+    s.heal(ITEMS.almond_water.heal);
+    expect(s.health).toBeGreaterThan(before);
+  });
+  it('dash drains while running and recovers after stopping', () => {
+    const s = new Stats();
+    for (let i = 0; i < 20; i++) s.update(0.1, env({ running: true }));
+    const low = s.stamina;
+    expect(low).toBeLessThan(100);
+    for (let i = 0; i < 40; i++) s.update(0.1, env());
+    expect(s.stamina).toBeGreaterThan(low);
+  });
+  it('dies when health reaches zero', () => {
+    const s = new Stats();
+    s.health = 0.01;
+    expect(s.update(0.5, env())).toBe('exhaustion');
+  });
+  it('hard drains faster than easy', () => {
     const a = new Stats();
     const b = new Stats();
-    for (let i = 0; i < 600; i++) {
-      a.update(0.1, env());
-      b.update(0.1, env({ running: true }));
-    }
-    expect(a.hydration).toBeLessThan(100);
-    expect(b.hydration).toBeLessThan(a.hydration);
-  });
-  it('darkness reduces sanity, light does not', () => {
-    const dark = new Stats();
-    const lit = new Stats();
     for (let i = 0; i < 100; i++) {
-      dark.update(0.1, env({ light: 0.05 }));
-      lit.update(0.1, env({ light: 0.8 }));
+      a.update(0.1, env({ difficulty: 'easy' }));
+      b.update(0.1, env({ difficulty: 'hard' }));
     }
-    expect(dark.sanity).toBeLessThan(lit.sanity);
-  });
-  it('dies after staying dehydrated past the delay', () => {
-    const s = new Stats();
-    s.hydration = 0;
-    let cause = null;
-    for (let i = 0; i < 700 && !cause; i++) cause = s.update(0.1, env());
-    expect(cause).toBe('dehydration');
-  });
-  it('stamina cannot exceed the hunger-limited cap', () => {
-    const s = new Stats();
-    s.hunger = 0;
-    s.update(0.1, env({ moving: false }));
-    expect(s.stamina).toBeLessThanOrEqual(40);
+    expect(b.health).toBeLessThan(a.health);
   });
 });
 
@@ -90,13 +81,10 @@ describe('rayBox', () => {
 });
 
 describe('WorldDeltas', () => {
-  it('records taken and dropped items and round-trips through JSON', () => {
+  it('records taken items and round-trips through JSON', () => {
     const d = new WorldDeltas();
     d.take('0', '1,2', '3,4');
-    const dropped = d.drop('0', '1,2', { id: 'chalk', x: 1, y: 0, z: 2 });
     expect(d.isTaken('0', '1,2', '3,4')).toBe(true);
-    d.take('0', '1,2', dropped.uid);
-    expect(d.get('0', '1,2')!.dropped.length).toBe(0);
     const e = new WorldDeltas();
     e.load(JSON.parse(JSON.stringify(d.toJSON())));
     expect(e.isTaken('0', '1,2', '3,4')).toBe(true);

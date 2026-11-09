@@ -4,6 +4,7 @@
  */
 import * as THREE from 'three';
 import { Rng } from '../core/rng';
+import { drawAlmondLabel } from './icons';
 
 export interface ProcTexture {
   texture: THREE.Texture;
@@ -284,48 +285,168 @@ function frostedGreen(): ProcTexture {
   return finish(c, 1);
 }
 
-function label(bg: string, fg: string, stain = false): ProcTexture {
-  const S = 64;
+// ---------------------------------------------------------------------------
+// Parameterised textures for Level 1/2 and generated levels.
+// Key format: gen:<type>:<rrggbb>:<seed>
+// ---------------------------------------------------------------------------
+
+function rgb(hex: string, k = 1): string {
+  const n = parseInt(hex, 16);
+  const r = Math.min(255, Math.round(((n >> 16) & 255) * k));
+  const g = Math.min(255, Math.round(((n >> 8) & 255) * k));
+  const b = Math.min(255, Math.round((n & 255) * k));
+  return `rgb(${r},${g},${b})`;
+}
+
+function noiseFill(ctx: CanvasRenderingContext2D, rng: Rng, S: number, amp: number): void {
+  const img = ctx.getImageData(0, 0, S, S);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const n = (rng.float() - 0.5) * amp;
+    img.data[i] += n;
+    img.data[i + 1] += n;
+    img.data[i + 2] += n;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function genTexture(type: string, hex: string, seed: number): ProcTexture {
+  const S = 256;
   const [c, ctx] = canvas(S);
-  const rng = new Rng(8008);
-  ctx.fillStyle = bg;
+  const rng = new Rng(seed);
+  ctx.fillStyle = rgb(hex);
   ctx.fillRect(0, 0, S, S);
-  ctx.fillStyle = fg;
-  ctx.fillRect(0, 22, S, 22);
-  ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.fillRect(8, 30, 40, 3);
-  ctx.fillRect(8, 36, 26, 2);
-  if (stain) stains(ctx, rng, S, 4, '90,60,20');
+  switch (type) {
+    case 'concrete': {
+      noiseFill(ctx, rng, S, 26);
+      stains(ctx, rng, S, 8, '30,30,30');
+      speckle(ctx, rng, S, 500, '#222', 1.3);
+      // Form-work seams.
+      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx.fillRect(0, S / 2, S, 2);
+      ctx.fillRect(0, 0, S, 2);
+      return finish(c, 3);
+    }
+    case 'floor-concrete': {
+      noiseFill(ctx, rng, S, 22);
+      stains(ctx, rng, S, 10, '20,18,15');
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(0, 0, S, S);
+      // Painted lane marking fragment.
+      if (rng.chance(0.5)) {
+        ctx.fillStyle = 'rgba(220,190,40,0.35)';
+        ctx.fillRect(S * 0.45, 0, 10, S);
+      }
+      return finish(c, 4);
+    }
+    case 'brick': {
+      const bh = 16;
+      const bw = 48;
+      for (let y = 0; y < S; y += bh) {
+        const off = (y / bh) % 2 ? bw / 2 : 0;
+        for (let x = -bw; x < S + bw; x += bw) {
+          ctx.fillStyle = rgb(hex, rng.range(0.82, 1.12));
+          ctx.fillRect(x + off + 1, y + 1, bw - 2, bh - 2);
+        }
+      }
+      ctx.globalCompositeOperation = 'destination-over';
+      ctx.fillStyle = rgb(hex, 0.45);
+      ctx.fillRect(0, 0, S, S);
+      ctx.globalCompositeOperation = 'source-over';
+      stains(ctx, rng, S, 5, '20,15,10');
+      return finish(c, 2);
+    }
+    case 'tile': {
+      const n = 8;
+      const t = S / n;
+      for (let i = 0; i < n; i++)
+        for (let j = 0; j < n; j++) {
+          ctx.fillStyle = rgb(hex, rng.range(0.93, 1.05));
+          ctx.fillRect(i * t + 1, j * t + 1, t - 2, t - 2);
+        }
+      ctx.globalCompositeOperation = 'destination-over';
+      ctx.fillStyle = rgb(hex, 0.6);
+      ctx.fillRect(0, 0, S, S);
+      ctx.globalCompositeOperation = 'source-over';
+      stains(ctx, rng, S, 4, '40,40,30');
+      return finish(c, 2);
+    }
+    case 'stripes': {
+      for (let x = 0; x < S; x += 32) {
+        ctx.fillStyle = 'rgba(0,0,0,0.08)';
+        ctx.fillRect(x, 0, 14, S);
+      }
+      speckle(ctx, rng, S, 600, '#000', 1.1);
+      stains(ctx, rng, S, 6, '40,30,20');
+      return finish(c, 2);
+    }
+    case 'panel': {
+      // Smooth painted panels with seams.
+      noiseFill(ctx, rng, S, 10);
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(0, 0, 3, S);
+      ctx.fillRect(0, S - 40, S, 2);
+      stains(ctx, rng, S, 3, '30,30,30');
+      return finish(c, 2);
+    }
+    case 'carpet': {
+      noiseFill(ctx, rng, S, 34);
+      stains(ctx, rng, S, 8, '20,15,10');
+      return finish(c, 2);
+    }
+    case 'wood': {
+      for (let y = 0; y < S; y += 32) {
+        ctx.fillStyle = rgb(hex, rng.range(0.85, 1.1));
+        ctx.fillRect(0, y + 1, S, 30);
+        ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+        for (let k = 0; k < 6; k++) {
+          ctx.beginPath();
+          const yy = y + rng.range(4, 28);
+          ctx.moveTo(0, yy);
+          ctx.bezierCurveTo(S * 0.3, yy + rng.range(-3, 3), S * 0.7, yy + rng.range(-3, 3), S, yy);
+          ctx.stroke();
+        }
+      }
+      return finish(c, 2);
+    }
+    case 'metal': {
+      noiseFill(ctx, rng, S, 14);
+      stains(ctx, rng, S, 6, '90,45,15');
+      return finish(c, 1);
+    }
+    default:
+      noiseFill(ctx, rng, S, 18);
+      return finish(c, 2);
+  }
+}
+
+function doorTexture(hex: string, window: boolean): ProcTexture {
+  const S = 128;
+  const [c, ctx] = canvas(S);
+  const rng = new Rng(4242);
+  ctx.fillStyle = rgb(hex);
+  ctx.fillRect(0, 0, S, S);
+  noiseFill(ctx, rng, S, 10);
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(12, 10, S - 24, S - 20);
+  if (window) {
+    ctx.fillStyle = 'rgba(20,24,28,0.75)';
+    ctx.fillRect(40, 18, 48, 30);
+  }
   return finish(c, 1);
 }
 
-function chalkMark(kind: number): ProcTexture {
-  const S = 128;
-  const [c, ctx] = canvas(S);
-  const rng = new Rng(9100 + kind);
-  ctx.clearRect(0, 0, S, S);
-  ctx.strokeStyle = 'rgba(248,246,236,0.9)';
-  ctx.lineCap = 'round';
-  ctx.lineWidth = 7;
-  ctx.beginPath();
-  const j = () => rng.range(-3, 3);
-  if (kind === 0) {
-    ctx.moveTo(20 + j(), 64 + j());
-    ctx.lineTo(104 + j(), 64 + j());
-    ctx.moveTo(104, 64);
-    ctx.lineTo(78 + j(), 40 + j());
-    ctx.moveTo(104, 64);
-    ctx.lineTo(78 + j(), 88 + j());
-  } else if (kind === 1) {
-    ctx.moveTo(28 + j(), 28 + j());
-    ctx.lineTo(100 + j(), 100 + j());
-    ctx.moveTo(100 + j(), 28 + j());
-    ctx.lineTo(28 + j(), 100 + j());
-  } else {
-    ctx.arc(64, 64, 38, 0.2, Math.PI * 2.05);
-  }
-  ctx.stroke();
-  return finish(c, 1);
+function almondLabelTexture(): ProcTexture {
+  const W = 256;
+  const [c, ctx] = canvas(W);
+  ctx.clearRect(0, 0, W, W);
+  // The label wraps around the bottle: draw it twice across the width.
+  drawAlmondLabel(ctx, 0, 0, W / 2, W);
+  drawAlmondLabel(ctx, W / 2, 0, W / 2, W);
+  const t = finish(c, 1);
+  t.texture.wrapS = THREE.RepeatWrapping;
+  return t;
 }
 
 function flat(color: string): ProcTexture {
@@ -345,20 +466,21 @@ const FACTORIES: Record<string, () => ProcTexture> = {
   'exit-sign': exitSign,
   'metal-door': metalDoor,
   'frosted-green': frostedGreen,
-  'chalk-mark-0': () => chalkMark(0),
-  'chalk-mark-1': () => chalkMark(1),
-  'chalk-mark-2': () => chalkMark(2),
-  'label-almond': () => label('#f2eedc', '#c9a35a'),
-  'label-blue': () => label('#d8ecfa', '#3c7fc0'),
-  'label-expired': () => label('#b8a878', '#7a5a2a', true),
-  'label-aero': () => label('#e8fbff', '#2fb8c8'),
+  'label-almond': almondLabelTexture,
+
   white: () => flat('#ffffff'),
 };
 
 export function getTexture(key: string): ProcTexture {
   let t = cache.get(key);
   if (!t) {
-    t = (FACTORIES[key] ?? FACTORIES.white)();
+    if (key.startsWith('gen:')) {
+      const [, type, hex, seed] = key.split(':');
+      t = genTexture(type, hex, Number(seed) || 1);
+    } else if (key.startsWith('door:')) {
+      const [, hex, win] = key.split(':');
+      t = doorTexture(hex, win === '1');
+    } else t = (FACTORIES[key] ?? FACTORIES.white)();
     cache.set(key, t);
   }
   return t;

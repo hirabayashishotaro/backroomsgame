@@ -27,7 +27,7 @@ describe('Level 0 generation', () => {
       for (let cz = -2; cz <= 2; cz++) {
         const d = level0.generator(ctx, cx, cz);
         for (const b of d.solids) {
-          if (b.mat !== 'wall' || b.minY > 0) continue;
+          if (!b.mat.startsWith('wall') || b.minY > 0) continue;
           const wx = b.minX + cx * S;
           const wz = b.minZ + cz * S;
           const thinX = b.maxX - b.minX < 0.3;

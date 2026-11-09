@@ -1,12 +1,11 @@
 /**
- * Meshes for items, props and chalk marks. Geometries are shared (never
- * disposed); materials are per-object so they can carry the baked brightness
- * of their location, and are disposed with the chunk (userData.ownMat).
+ * Meshes for items and props. Geometries are shared (never disposed);
+ * materials are per-object so they can carry the baked brightness of their
+ * location, and are disposed with the chunk (userData.ownMat).
  */
 import * as THREE from 'three';
-import { ITEMS, type ItemId } from '../items/itemDefs';
+import type { ItemId } from '../items/itemDefs';
 import type { Prop } from './chunkData';
-import type { ChalkMark } from './deltas';
 import { getTexture } from '../proc-tex/textures';
 import { patchMaterial } from '../systems/lighting';
 
@@ -30,80 +29,79 @@ function part(g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0): 
   return mesh;
 }
 
-const LABEL: Partial<Record<ItemId, string>> = {
-  almond_water: 'label-almond',
-  almond_water_blue: 'label-blue',
-  expired_water: 'label-expired',
-  aero_water: 'label-aero',
-};
+/** PET bottle profile (radius, height) for a LatheGeometry, ~0.26m tall. */
+function bottleGeometry(): THREE.BufferGeometry {
+  const pts: Array<[number, number]> = [
+    [0.0, 0.0],
+    [0.03, 0.0],
+    [0.036, 0.006],
+    [0.037, 0.02],
+    [0.036, 0.03],
+    [0.037, 0.04],
+    [0.037, 0.15],
+    [0.036, 0.165],
+    [0.03, 0.19],
+    [0.02, 0.205],
+    [0.0135, 0.215],
+    [0.0135, 0.225],
+    [0.0, 0.225],
+  ];
+  return new THREE.LatheGeometry(
+    pts.map(([r, y]) => new THREE.Vector2(r, y)),
+    20,
+  );
+}
 
 /** Build a small world model for an item. `light` is the baked brightness at its spot. */
 export function buildItemMesh(id: ItemId, light: number): THREE.Group {
-  const def = ITEMS[id];
-  const b = Math.min(1.25, 0.35 + light * 0.9);
+  void id; // only almond water exists for now (SPEC §17)
+  const b = Math.min(1.3, 0.45 + light * 0.9);
   const g = new THREE.Group();
-  switch (def.shape) {
-    case 'bottle': {
-      const tex = LABEL[id] ? getTexture(LABEL[id]!).texture : undefined;
-      g.add(part(geo('bottle', () => new THREE.CylinderGeometry(0.038, 0.04, 0.2, 12)), mat(0xffffff, b, tex), 0, 0.1, 0));
-      g.add(part(geo('neck', () => new THREE.CylinderGeometry(0.016, 0.03, 0.05, 10)), mat(def.color, b), 0, 0.225, 0));
-      g.add(part(geo('cap', () => new THREE.CylinderGeometry(0.017, 0.017, 0.02, 10)), mat(0x2a6ab0, b), 0, 0.26, 0));
-      break;
-    }
-    case 'can':
-      g.add(part(geo('can', () => new THREE.CylinderGeometry(0.042, 0.042, 0.1, 14)), mat(def.color, b), 0, 0.05, 0));
-      break;
-    case 'bar':
-      g.add(part(geo('bar', () => new THREE.BoxGeometry(0.13, 0.025, 0.045)), mat(def.color, b), 0, 0.013, 0));
-      break;
-    case 'flashlight': {
-      const body = part(geo('fl', () => new THREE.CylinderGeometry(0.022, 0.022, 0.18, 10)), mat(def.color, b), 0, 0.025, 0);
-      body.rotation.z = Math.PI / 2;
-      const head = part(geo('flh', () => new THREE.CylinderGeometry(0.035, 0.024, 0.05, 10)), mat(0x3a3f46, b), 0.11, 0.035, 0);
-      head.rotation.z = Math.PI / 2;
-      g.add(body, head);
-      break;
-    }
-    case 'battery':
-      g.add(part(geo('bat', () => new THREE.CylinderGeometry(0.014, 0.014, 0.05, 8)), mat(def.color, b), 0, 0.025, 0));
-      g.add(part(geo('bat', () => new THREE.CylinderGeometry(0.014, 0.014, 0.05, 8)), mat(def.color, b), 0.035, 0.025, 0.01));
-      break;
-    case 'chalk':
-      g.add(part(geo('chalk', () => new THREE.BoxGeometry(0.08, 0.015, 0.015)), mat(def.color, b), 0, 0.008, 0));
-      break;
-    case 'stick': {
-      const s = part(geo('stick', () => new THREE.CylinderGeometry(0.01, 0.01, 0.16, 8)), mat(def.color, 0.9), 0, 0.012, 0);
-      s.rotation.z = Math.PI / 2;
-      g.add(s);
-      break;
-    }
-    case 'box':
-      g.add(part(geo('kit', () => new THREE.BoxGeometry(0.2, 0.08, 0.14)), mat(def.color, b), 0, 0.04, 0));
-      g.add(part(geo('kitx', () => new THREE.BoxGeometry(0.1, 0.002, 0.03)), mat(0xc02020, b), 0, 0.081, 0));
-      g.add(part(geo('kitz', () => new THREE.BoxGeometry(0.03, 0.002, 0.1)), mat(0xc02020, b), 0, 0.081, 0));
-      break;
-    case 'paper': {
-      const p = part(geo('paper', () => new THREE.PlaneGeometry(0.15, 0.2)), mat(def.color, b, undefined, { side: THREE.DoubleSide }), 0, 0.004, 0);
-      p.rotation.x = -Math.PI / 2;
-      g.add(p);
-      break;
-    }
-    default:
-      g.add(part(geo('tool', () => new THREE.BoxGeometry(0.12, 0.05, 0.08)), mat(def.color, b), 0, 0.025, 0));
-  }
+  // Clear plastic body with a faint tint.
+  const body = part(
+    geo('pet-body', bottleGeometry),
+    mat(0xd8ecf2, b, undefined, { transparent: true, opacity: 0.55, depthWrite: false }),
+  );
+  // Water inside, slightly smaller.
+  const water = part(
+    geo('pet-water', () => new THREE.CylinderGeometry(0.034, 0.034, 0.15, 16)),
+    mat(0xf0ecd8, b * 0.95, undefined, { transparent: true, opacity: 0.6, depthWrite: false }),
+    0,
+    0.083,
+    0,
+  );
+  const label = part(
+    geo('pet-label', () => new THREE.CylinderGeometry(0.0385, 0.0385, 0.07, 20, 1, true)),
+    mat(0xffffff, b, getTexture('label-almond').texture),
+    0,
+    0.095,
+    0,
+  );
+  const cap = part(geo('pet-cap', () => new THREE.CylinderGeometry(0.016, 0.016, 0.022, 14)), mat(0x2f78c8, b), 0, 0.236, 0);
+  g.add(water, label, body, cap);
+  // Lay some bottles on their side? Keep upright: easier to spot.
+  return g;
+}
+
+function doorMesh(color: number, b: number, window: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const hex = color.toString(16).padStart(6, '0');
+  const tex = getTexture(`door:${hex}:${window ? 1 : 0}`).texture;
+  g.add(part(geo('door-frame', () => new THREE.BoxGeometry(1.12, 2.16, 0.04)), mat(new THREE.Color(color).multiplyScalar(0.55), b), 0, 1.08, 0.015));
+  g.add(part(geo('door-slab', () => new THREE.BoxGeometry(0.96, 2.05, 0.05)), mat(0xffffff, b, tex), 0, 1.03, 0.04));
+  g.add(part(geo('door-knob', () => new THREE.SphereGeometry(0.035, 10, 8)), mat(0xc8c0a0, b), 0.36, 1.0, 0.09));
   return g;
 }
 
 /** Build a prop. The prop's front faces +Z before rotation. */
 export function buildPropMesh(p: Prop, light: number): THREE.Group {
-  const g = new THREE.Group();
+  let g = new THREE.Group();
   const b = Math.min(1.1, 0.3 + light);
   if (p.kind === 'exit-door') {
     const door = part(geo('door', () => new THREE.BoxGeometry(1.0, 2.1, 0.05)), mat(0xffffff, b, getTexture('metal-door').texture), 0, 1.05, 0.025);
     const frame = part(geo('doorframe', () => new THREE.BoxGeometry(1.14, 2.18, 0.03)), mat(0x3b443e, b), 0, 1.09, 0.012);
     const bar = part(geo('pushbar', () => new THREE.BoxGeometry(0.7, 0.05, 0.05)), mat(0xb8bcb8, b), 0, 1.0, 0.07);
     const sign = part(geo('exitsign', () => new THREE.BoxGeometry(0.46, 0.22, 0.04)), mat(0xffffff, 1.1, getTexture('exit-sign').texture), 0, 2.4, 0.03);
-    sign.userData.glow = true;
     g.add(frame, door, bar, sign);
   } else if (p.kind === 'glass-door') {
     const fm = () => mat(0xa8b0b4, b);
@@ -117,6 +115,13 @@ export function buildPropMesh(p: Prop, light: number): THREE.Group {
     const r = part(geo('gpane', () => new THREE.BoxGeometry(0.88, 2.16, 0.02)), pane(), 0.46, 1.1, 0.06);
     const handle = part(geo('ghandle', () => new THREE.BoxGeometry(0.03, 0.3, 0.03)), fm(), -0.1, 1.05, 0.06);
     g.add(frameTop, frameL, frameR, frameM, l, r, handle);
+  } else if (p.kind === 'metal-door') {
+    g = doorMesh(p.color ?? 0x5d6b62, b, true);
+  } else if (p.kind === 'white-door') {
+    // Unnaturally white and slightly self-lit.
+    g = doorMesh(0xffffff, 1.15, false);
+  } else {
+    g = doorMesh(p.color ?? 0x8a8f94, b, false);
   }
   g.position.set(p.x, p.y, p.z);
   g.rotation.y = p.rotY;
@@ -124,16 +129,30 @@ export function buildPropMesh(p: Prop, light: number): THREE.Group {
   return g;
 }
 
-export function buildChalkMark(m: ChalkMark): THREE.Mesh {
-  const tex = getTexture('chalk-mark-' + (m.kind % 3)).texture;
-  const mesh = part(
-    geo('chalkmark', () => new THREE.PlaneGeometry(0.5, 0.5)),
-    patchMaterial(new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })),
-    m.x + m.nx * 0.005,
-    m.y + m.ny * 0.005,
-    m.z + m.nz * 0.005,
-  );
-  mesh.lookAt(mesh.position.x + m.nx, mesh.position.y + m.ny, mesh.position.z + m.nz);
-  mesh.rotateZ(m.rot);
-  return mesh;
+/** The "return anchor" (SPEC §5.4.4): a softly glowing doorway back to where you came from. */
+export function buildReturnAnchor(): THREE.Group {
+  const g = new THREE.Group();
+  const frameMat = new THREE.MeshBasicMaterial({ color: 0xd8d4c4 });
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0xfff6dc, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
+  const top = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.08, 0.08), frameMat);
+  top.position.y = 2.2;
+  const l = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.2, 0.08), frameMat);
+  l.position.set(-0.6, 1.1, 0);
+  const r = l.clone();
+  r.position.x = 0.6;
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.12, 2.16), glowMat);
+  glow.position.y = 1.08;
+  glow.userData.glow = true;
+  g.add(top, l, r, glow);
+  return g;
+}
+
+export function disposeObject(o: THREE.Object3D): void {
+  o.traverse((c) => {
+    const m = c as THREE.Mesh;
+    if (!m.isMesh) return;
+    if (!m.userData.sharedGeo) m.geometry.dispose();
+    (m.material as THREE.Material).dispose();
+  });
+  o.removeFromParent();
 }

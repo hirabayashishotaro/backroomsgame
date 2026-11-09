@@ -1,6 +1,4 @@
-import { hash01 } from '../core/rng';
 import type { ItemId } from './itemDefs';
-import { NOTES } from './itemDefs';
 
 export interface LootRule {
   item: ItemId;
@@ -8,7 +6,7 @@ export interface LootRule {
 }
 
 export interface LootTable {
-  /** Probability that a given maze cell holds an item. */
+  /** Probability that a given grid cell holds an item. */
   perCell: number;
   rules: LootRule[];
 }
@@ -24,8 +22,4 @@ export function pickLoot(rules: LootRule[], u: number): ItemId {
   return rules[rules.length - 1].item;
 }
 
-/** Meta value for an item spawned at a hashed location (note index, chalk uses). */
-export function spawnMeta(id: ItemId, seed: number, a: number, b: number): number | undefined {
-  if (id === 'note') return Math.floor(hash01(seed, 991, a, b) * NOTES.length);
-  return undefined;
-}
+export const ALMOND_ONLY: LootRule[] = [{ item: 'almond_water', weight: 1 }];

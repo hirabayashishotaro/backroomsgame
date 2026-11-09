@@ -1,114 +1,100 @@
-/** HUD: stat bars (bottom-left), hotbar (bottom-centre), messages, prompts, overlays. */
-import { ITEMS, NOTES } from '../items/itemDefs';
-import { HOTBAR, SLOTS, type Inventory } from '../player/inventory';
+/** HUD (SPEC §17): health + dash bars, 4-slot item bar, level title card, prompts, fades. */
+import { ITEMS } from '../items/itemDefs';
+import { SLOTS, type Inventory } from '../player/inventory';
 import type { Stats } from '../player/stats';
+import { itemIcon } from '../proc-tex/icons';
 import { t } from './i18n';
 
 const CSS = `
-.hud { position: fixed; inset: 0; pointer-events: none; z-index: 20; font-size: 13px; color: #efe6bf;
-  text-shadow: 0 1px 2px #000; }
-.hud-stats { position: absolute; left: 16px; bottom: 16px; width: 190px; }
-.hud-stat { display: grid; grid-template-columns: 54px 1fr; align-items: center; gap: 6px; margin: 3px 0; }
-.hud-bar { height: 6px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.15); }
-.hud-bar > i { display: block; height: 100%; }
-.hud-bar.low > i { animation: hudpulse 1.2s ease-in-out infinite; }
-@keyframes hudpulse { 50% { opacity: 0.45; } }
-.hud-hotbar { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 4px; }
-.hud-slot { width: 46px; height: 46px; background: rgba(10,9,4,0.55); border: 1px solid rgba(255,240,180,0.18);
-  position: relative; display: flex; align-items: center; justify-content: center; }
-.hud-slot.sel { border-color: #f3dc7a; box-shadow: 0 0 6px rgba(243,220,122,0.5); }
-.hud-slot .k { position: absolute; left: 3px; top: 1px; font-size: 10px; opacity: 0.5; }
-.hud-slot .n { position: absolute; right: 3px; bottom: 1px; font-size: 11px; }
-.hud-icon { width: 24px; height: 24px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.5); }
-.hud-held { position: absolute; left: 50%; bottom: 68px; transform: translateX(-50%); font-size: 13px; opacity: 0.85; }
-.hud-msg { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); text-align: center; transition: opacity 0.4s; }
-.hud-prompt { position: absolute; left: 50%; top: 54%; transform: translateX(-50%); font-size: 14px;
-  background: rgba(0,0,0,0.4); padding: 3px 10px; border-radius: 3px; }
+.hud { position: fixed; inset: 0; pointer-events: none; z-index: 20; color: #efe6bf; text-shadow: 0 1px 2px #000; }
+.hud-bars { position: absolute; left: 20px; bottom: 20px; width: 240px; }
+.hud-bar-row { margin: 6px 0; }
+.hud-bar-row span { font-size: 12px; letter-spacing: 0.15em; opacity: 0.85; }
+.hud-bar { height: 9px; margin-top: 3px; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.18); }
+.hud-bar > i { display: block; height: 100%; transition: width 0.15s linear; }
+.hud-bar.low > i { animation: hudpulse 1s ease-in-out infinite; }
+@keyframes hudpulse { 50% { opacity: 0.4; } }
+.hud-slots { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 6px; }
+.hud-slot { width: 62px; height: 62px; background: rgba(10,9,4,0.6); border: 2px solid rgba(255,240,180,0.15);
+  border-radius: 6px; position: relative; display: flex; align-items: center; justify-content: center; }
+.hud-slot.sel { border-color: #f3dc7a; box-shadow: 0 0 10px rgba(243,220,122,0.45); }
+.hud-slot .k { position: absolute; left: 5px; top: 2px; font-size: 11px; opacity: 0.55; }
+.hud-slot img { width: 52px; height: 52px; image-rendering: auto; }
+.hud-held { position: absolute; left: 50%; bottom: 90px; transform: translateX(-50%); font-size: 14px; opacity: 0.9; }
+.hud-msg { position: absolute; left: 50%; top: 64%; transform: translateX(-50%); text-align: center; transition: opacity 0.5s;
+  font-size: 15px; }
+.hud-prompt { position: absolute; left: 50%; top: 55%; transform: translateX(-50%); font-size: 15px;
+  background: rgba(0,0,0,0.45); padding: 4px 12px; border-radius: 4px; }
 .hud-cross { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 50%;
   background: rgba(255,250,220,0.6); }
-.hud-hint { white-space: pre-line; transition: opacity 2s; position: absolute; right: 16px; bottom: 16px; text-align: right; opacity: 0.6; line-height: 1.7; font-size: 12px; }
-.hud-compass { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); font-size: 15px; letter-spacing: 0.3em; }
+.hud-hint { position: absolute; right: 20px; bottom: 20px; text-align: right; opacity: 0.6; line-height: 1.8; font-size: 12px;
+  white-space: pre-line; transition: opacity 2s; }
+.hud-title { position: fixed; inset: 0; z-index: 25; pointer-events: none; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; opacity: 0; color: #f4ecd0; text-shadow: 0 0 24px rgba(0,0,0,0.9), 0 2px 4px #000; }
+.hud-title .lv { font-size: clamp(48px, 9vw, 120px); letter-spacing: 0.18em; font-weight: 300; line-height: 1.1;
+  font-family: "Segoe UI", "Yu Gothic UI", sans-serif; }
+.hud-title .nm { margin-top: 10px; font-size: clamp(16px, 2.2vw, 26px); letter-spacing: 0.35em; opacity: 0.85; }
+.hud-title .cls { margin-top: 8px; font-size: 13px; letter-spacing: 0.3em; opacity: 0.55; }
 .hud-overlay { position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center;
-  background: rgba(0,0,0,0.72); color: #efe6bf; }
-.hud-note { width: min(440px, calc(100vw - 32px)); background: #efe8d0; color: #2b261a; padding: 28px 30px; line-height: 2;
-  font-size: 16px; box-shadow: 0 10px 40px #000; transform: rotate(-0.6deg); }
-.hud-note small { display: block; margin-top: 14px; opacity: 0.55; font-size: 12px; }
-.inv-panel { width: min(560px, calc(100vw - 32px)); }
-.inv-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; margin: 8px 0 18px; }
-.inv-grid .hud-slot { width: auto; aspect-ratio: 1; pointer-events: auto; cursor: pointer; }
-.inv-grid .hud-slot.pick { border-color: #8fd; }
-.inv-desc { min-height: 48px; font-size: 13px; opacity: 0.85; line-height: 1.6; }
-.dead { flex-direction: column; background: rgba(0,0,0,0.92); font-size: 22px; letter-spacing: 0.15em; }
-.dead small { margin-top: 12px; font-size: 13px; opacity: 0.6; letter-spacing: 0.05em; }
+  flex-direction: column; background: rgba(0,0,0,0.92); color: #efe6bf; font-size: 24px; letter-spacing: 0.15em; }
+.hud-overlay small { margin-top: 12px; font-size: 13px; opacity: 0.6; letter-spacing: 0.05em; }
+.hud-fade { position: fixed; inset: 0; z-index: 28; pointer-events: none; background: #000; opacity: 0; }
 .hud-vignette { position: fixed; inset: 0; pointer-events: none; z-index: 10;
-  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.75) 100%); opacity: 0.5; }
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.75) 100%); opacity: 0.45; }
+.hud-hurt { position: fixed; inset: 0; pointer-events: none; z-index: 11;
+  background: radial-gradient(ellipse at center, rgba(120,0,0,0) 50%, rgba(120,0,0,0.55) 100%); opacity: 0; }
 `;
-
-const STAT_COLORS: Record<string, string> = {
-  hydration: '#5fb3e6',
-  hunger: '#d9a04a',
-  stamina: '#9ad46a',
-  sanity: '#c79ae8',
-  battery: '#e8e07a',
-};
-
-function hex(c: number): string {
-  return '#' + c.toString(16).padStart(6, '0');
-}
 
 export class Hud {
   readonly root: HTMLDivElement;
-  private bars: Record<string, HTMLElement> = {};
+  private healthBar: HTMLElement;
+  private dashBar: HTMLElement;
   private slots: HTMLDivElement[] = [];
   private held: HTMLDivElement;
   private msg: HTMLDivElement;
   private prompt: HTMLDivElement;
   private hint: HTMLDivElement;
-  private compass: HTMLDivElement;
-  readonly vignette: HTMLDivElement;
-  private noteOverlay: HTMLDivElement;
-  private invOverlay: HTMLDivElement;
-  private invGrid: HTMLDivElement;
-  private invDesc: HTMLDivElement;
+  private title: HTMLDivElement;
+  private fade: HTMLDivElement;
+  private hurt: HTMLDivElement;
   private deadOverlay: HTMLDivElement;
   private msgTimer = 0;
-  private invPick: number | null = null;
+  private titleTime = -1;
   private lastInvKey = '';
-  inventoryOpen = false;
-  noteOpen = false;
+  /** Current fade opacity target and speed (per second). */
+  private fadeValue = 0;
+  private fadeTarget = 0;
+  private fadeSpeed = 2;
+  private fadeColor = '#000';
 
   constructor(parent: HTMLElement, private inv: Inventory) {
     const style = document.createElement('style');
     style.textContent = CSS;
     document.head.appendChild(style);
-    this.vignette = document.createElement('div');
-    this.vignette.className = 'hud-vignette';
-    this.root = document.createElement('div');
-    this.root.className = 'hud';
+    const vignette = this.div('hud-vignette');
+    this.hurt = this.div('hud-hurt');
+    this.root = this.div('hud');
 
-    const stats = document.createElement('div');
-    stats.className = 'hud-stats';
-    for (const key of ['hydration', 'hunger', 'stamina', 'sanity', 'battery']) {
-      const row = document.createElement('div');
-      row.className = 'hud-stat';
-      const label = document.createElement('span');
-      label.textContent = t('stat.' + key);
-      const bar = document.createElement('div');
-      bar.className = 'hud-bar';
+    const bars = this.div('hud-bars');
+    const mkBar = (label: string, color: string) => {
+      const row = this.div('hud-bar-row');
+      const l = document.createElement('span');
+      l.textContent = label;
+      const bar = this.div('hud-bar');
       const fill = document.createElement('i');
-      fill.style.background = STAT_COLORS[key];
+      fill.style.background = color;
       bar.appendChild(fill);
-      row.append(label, bar);
-      stats.appendChild(row);
-      this.bars[key] = bar;
-    }
+      row.append(l, bar);
+      bars.appendChild(row);
+      return bar;
+    };
+    this.healthBar = mkBar(t('stat.health'), 'linear-gradient(90deg,#b8323a,#e0565c)');
+    this.dashBar = mkBar(t('stat.dash'), 'linear-gradient(90deg,#c9b23a,#f0dc6a)');
 
-    const hotbar = document.createElement('div');
-    hotbar.className = 'hud-hotbar';
-    for (let i = 0; i < HOTBAR; i++) {
-      const s = document.createElement('div');
-      s.className = 'hud-slot';
-      hotbar.appendChild(s);
+    const slotRow = this.div('hud-slots');
+    for (let i = 0; i < SLOTS; i++) {
+      const s = this.div('hud-slot');
+      slotRow.appendChild(s);
       this.slots.push(s);
     }
     this.held = this.div('hud-held');
@@ -117,38 +103,13 @@ export class Hud {
     this.prompt.style.display = 'none';
     this.hint = this.div('hud-hint');
     this.hint.textContent = t('hud.hint');
-    this.compass = this.div('hud-compass');
-    this.compass.style.display = 'none';
-    const cross = this.div('hud-cross');
-    this.root.append(stats, hotbar, this.held, this.msg, this.prompt, this.hint, this.compass, cross);
+    this.root.append(bars, slotRow, this.held, this.msg, this.prompt, this.hint, this.div('hud-cross'));
 
-    // Note reader
-    this.noteOverlay = this.div('hud-overlay');
-    // Inventory
-    this.invOverlay = this.div('hud-overlay');
-    const panel = this.div('inv-panel');
-    const title = document.createElement('div');
-    title.textContent = t('inv.title');
-    title.style.cssText = 'font-size:18px;letter-spacing:0.15em;';
-    const sub = document.createElement('div');
-    sub.textContent = t('inv.help');
-    sub.style.cssText = 'font-size:12px;opacity:0.6;margin-top:4px;';
-    this.invGrid = this.div('inv-grid');
-    this.invDesc = this.div('inv-desc');
-    panel.append(title, sub, this.invGrid, this.invDesc);
-    this.invOverlay.appendChild(panel);
-    for (let i = 0; i < SLOTS; i++) {
-      const s = document.createElement('div');
-      s.className = 'hud-slot';
-      s.onclick = () => this.onInvClick(i);
-      s.onmouseenter = () => this.describe(i);
-      this.invGrid.appendChild(s);
-    }
-    // Death screen
-    this.deadOverlay = this.div('hud-overlay dead');
-
-    parent.append(this.vignette, this.root, this.noteOverlay, this.invOverlay, this.deadOverlay);
-    setTimeout(() => (this.hint.style.opacity = '0'), 40000);
+    this.title = this.div('hud-title');
+    this.fade = this.div('hud-fade');
+    this.deadOverlay = this.div('hud-overlay');
+    parent.append(vignette, this.hurt, this.root, this.title, this.fade, this.deadOverlay);
+    setTimeout(() => (this.hint.style.opacity = '0'), 45000);
   }
 
   private div(cls: string): HTMLDivElement {
@@ -174,118 +135,86 @@ export class Hud {
     } else this.prompt.style.display = 'none';
   }
 
-  setCompass(text: string | null): void {
-    this.compass.style.display = text ? '' : 'none';
-    if (text) this.compass.textContent = text;
+  /** Big level title that fades in, holds, then slowly fades out. */
+  showTitle(level: string, name: string, threat: number): void {
+    this.title.innerHTML = '';
+    const a = this.div('lv');
+    a.textContent = level;
+    const b = this.div('nm');
+    b.textContent = name;
+    const c = this.div('cls');
+    c.textContent = t('title.threat', { n: threat });
+    this.title.append(a, b, c);
+    this.titleTime = 0;
   }
 
-  private fillSlot(el: HTMLDivElement, i: number, showKey: boolean): void {
-    const s = this.inv.slots[i];
-    el.innerHTML = '';
-    if (showKey) {
-      const k = document.createElement('span');
-      k.className = 'k';
-      k.textContent = String(i + 1);
-      el.appendChild(k);
+  /** Fade the screen to `opacity` (0..1) at `speed` per second. */
+  fadeTo(opacity: number, speed = 2, color = '#000'): void {
+    this.fadeTarget = opacity;
+    this.fadeSpeed = speed;
+    if (color !== this.fadeColor) {
+      this.fadeColor = color;
+      this.fade.style.background = color;
     }
-    if (!s) return;
-    const icon = document.createElement('div');
-    icon.className = 'hud-icon';
-    icon.style.background = hex(ITEMS[s.id].color);
-    icon.title = ITEMS[s.id].name;
-    el.appendChild(icon);
-    const n = document.createElement('span');
-    n.className = 'n';
-    if (s.count > 1) n.textContent = String(s.count);
-    else if (s.id === 'chalk' && s.meta !== undefined) n.textContent = String(s.meta);
-    el.appendChild(n);
   }
 
-  update(dt: number, stats: Stats, flashlightOn: boolean): void {
-    const vals: Record<string, number> = {
-      hydration: stats.hydration,
-      hunger: stats.hunger,
-      stamina: stats.stamina,
-      sanity: stats.sanity,
-      battery: stats.battery,
-    };
-    for (const k in vals) {
-      const bar = this.bars[k];
-      (bar.firstChild as HTMLElement).style.width = vals[k].toFixed(1) + '%';
-      bar.classList.toggle('low', vals[k] < 20 && k !== 'stamina');
-    }
-    (this.bars.battery.parentElement as HTMLElement).style.opacity = this.inv.has('flashlight') ? '1' : '0.35';
-    void flashlightOn;
+  get fadeDone(): boolean {
+    return Math.abs(this.fadeValue - this.fadeTarget) < 0.01;
+  }
 
-    const key = JSON.stringify(this.inv.toJSON());
+  update(dt: number, stats: Stats): void {
+    (this.healthBar.firstChild as HTMLElement).style.width = stats.health.toFixed(1) + '%';
+    (this.dashBar.firstChild as HTMLElement).style.width = stats.stamina.toFixed(1) + '%';
+    this.healthBar.classList.toggle('low', stats.health < 25);
+
+    const key = this.inv.slots.join(',');
     if (key !== this.lastInvKey) {
       this.lastInvKey = key;
-      this.slots.forEach((el, i) => this.fillSlot(el, i, true));
-      if (this.inventoryOpen) this.renderInventory();
-      const h = this.inv.held;
-      this.held.textContent = h ? ITEMS[h.id].name : '';
+      this.slots.forEach((el, i) => {
+        el.innerHTML = '';
+        const k = document.createElement('span');
+        k.className = 'k';
+        k.textContent = String(i + 1);
+        el.appendChild(k);
+        const id = this.inv.slots[i];
+        if (id) {
+          const img = document.createElement('img');
+          img.src = itemIcon(id, 104);
+          img.alt = ITEMS[id].name;
+          el.appendChild(img);
+        }
+      });
     }
     this.slots.forEach((el, i) => el.classList.toggle('sel', i === this.inv.selected));
+    const h = this.inv.held;
+    this.held.textContent = h ? ITEMS[h].name : '';
 
     if (this.msgTimer > 0) {
       this.msgTimer -= dt;
       if (this.msgTimer <= 0) this.msg.style.opacity = '0';
     }
-    // Vignette deepens with low sanity.
-    this.vignette.style.opacity = String(0.45 + (1 - stats.sanity / 100) * 0.5);
-  }
 
-  // --- Inventory screen -----------------------------------------------------
-  openInventory(): void {
-    this.inventoryOpen = true;
-    this.invPick = null;
-    this.renderInventory();
-    this.invOverlay.style.display = 'flex';
-  }
-  closeInventory(): void {
-    this.inventoryOpen = false;
-    this.invOverlay.style.display = 'none';
-  }
-  private renderInventory(): void {
-    [...this.invGrid.children].forEach((el, i) => {
-      this.fillSlot(el as HTMLDivElement, i, i < HOTBAR);
-      el.classList.toggle('pick', i === this.invPick);
-      el.classList.toggle('sel', i === this.inv.selected);
-    });
-  }
-  private describe(i: number): void {
-    const s = this.inv.slots[i];
-    this.invDesc.textContent = s ? `${ITEMS[s.id].name} — ${ITEMS[s.id].desc}` : '';
-  }
-  private onInvClick(i: number): void {
-    if (this.invPick === null) {
-      if (this.inv.slots[i]) this.invPick = i;
-    } else {
-      this.inv.swap(this.invPick, i);
-      this.invPick = null;
+    // Title card: 0.8s fade in, 2.2s hold, 3s fade out.
+    if (this.titleTime >= 0) {
+      this.titleTime += dt;
+      const tt = this.titleTime;
+      const o = tt < 0.8 ? tt / 0.8 : tt < 3 ? 1 : Math.max(0, 1 - (tt - 3) / 3);
+      this.title.style.opacity = o.toFixed(3);
+      this.title.style.transform = `scale(${1 + tt * 0.012})`;
+      if (tt > 6.2) this.titleTime = -1;
     }
-    this.renderInventory();
-    this.lastInvKey = '';
+
+    // Screen fade
+    if (this.fadeValue !== this.fadeTarget) {
+      const step = this.fadeSpeed * dt;
+      this.fadeValue =
+        this.fadeValue < this.fadeTarget ? Math.min(this.fadeTarget, this.fadeValue + step) : Math.max(this.fadeTarget, this.fadeValue - step);
+      this.fade.style.opacity = this.fadeValue.toFixed(3);
+    }
+
+    this.hurt.style.opacity = stats.health < 30 ? String((1 - stats.health / 30) * 0.8) : '0';
   }
 
-  // --- Notes ----------------------------------------------------------------
-  showNote(index: number): void {
-    this.noteOpen = true;
-    this.noteOverlay.innerHTML = '';
-    const n = this.div('hud-note');
-    n.textContent = NOTES[index % NOTES.length];
-    const s = document.createElement('small');
-    s.textContent = t('note.close');
-    n.appendChild(s);
-    this.noteOverlay.appendChild(n);
-    this.noteOverlay.style.display = 'flex';
-  }
-  closeNote(): void {
-    this.noteOpen = false;
-    this.noteOverlay.style.display = 'none';
-  }
-
-  // --- Death ----------------------------------------------------------------
   showDeath(text: string, sub: string): void {
     this.deadOverlay.innerHTML = '';
     const a = document.createElement('div');
@@ -295,6 +224,7 @@ export class Hud {
     this.deadOverlay.append(a, b);
     this.deadOverlay.style.display = 'flex';
   }
+
   hideDeath(): void {
     this.deadOverlay.style.display = 'none';
   }

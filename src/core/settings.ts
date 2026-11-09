@@ -9,19 +9,12 @@ export type Action =
   | 'sprint'
   | 'crouch'
   | 'interact'
-  | 'flashlight'
   | 'use'
-  | 'drop'
-  | 'inventory'
   | 'pause'
   | 'slot1'
   | 'slot2'
   | 'slot3'
-  | 'slot4'
-  | 'slot5'
-  | 'slot6'
-  | 'slot7'
-  | 'slot8';
+  | 'slot4';
 
 export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   forward: ['KeyW'],
@@ -31,19 +24,12 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   sprint: ['ShiftLeft'],
   crouch: ['ControlLeft', 'KeyC'],
   interact: ['KeyE'],
-  flashlight: ['KeyF'],
-  use: ['KeyQ'],
-  drop: ['KeyG'],
-  inventory: ['Tab'],
+  use: ['KeyQ', 'Mouse0'],
   pause: ['Escape'],
   slot1: ['Digit1'],
   slot2: ['Digit2'],
   slot3: ['Digit3'],
   slot4: ['Digit4'],
-  slot5: ['Digit5'],
-  slot6: ['Digit6'],
-  slot7: ['Digit7'],
-  slot8: ['Digit8'],
 };
 
 export interface Settings {

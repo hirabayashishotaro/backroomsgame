@@ -137,6 +137,49 @@ export class AudioSystem {
     this.noiseBurst(2500, 0.03, 0.15, 'highpass');
   }
 
+  /** Low whoosh for level transitions. */
+  whoosh(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    const g = ctx.createGain();
+    const t = ctx.currentTime;
+    f.frequency.setValueAtTime(200, t);
+    f.frequency.exponentialRampToValueAtTime(1800, t + 0.8);
+    f.frequency.exponentialRampToValueAtTime(120, t + 1.6);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.35, t + 0.6);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 1.7);
+    src.connect(f).connect(g).connect(this.sfxBus);
+    src.start(t, 0, 1.8);
+  }
+
+  /** Door handle and creak. */
+  door(): void {
+    this.noiseBurst(1800, 0.05, 0.2, 'bandpass');
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    const g = ctx.createGain();
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 900;
+    f.Q.value = 6;
+    const t = ctx.currentTime + 0.08;
+    o.frequency.setValueAtTime(140, t);
+    o.frequency.linearRampToValueAtTime(95, t + 0.7);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.05, t + 0.1);
+    g.gain.linearRampToValueAtTime(0, t + 0.75);
+    o.connect(f).connect(g).connect(this.sfxBus);
+    o.start(t);
+    o.stop(t + 0.8);
+  }
+
   /** Chalk scratching on a wall. */
   noiseScratch(): void {
     for (let i = 0; i < 4; i++) setTimeout(() => this.noiseBurst(3200 + i * 300, 0.07, 0.06, 'bandpass'), i * 70);
@@ -215,20 +258,21 @@ export class AudioSystem {
     g.setTargetAtTime(this.ambience.humGain * this.humStrength, t + seconds, 0.3);
   }
 
-  /** Soft carpet footstep. */
-  footstep(intensity = 1): void {
+  /** Footstep; the surface changes the filter (carpet is soft, concrete clicks). */
+  footstep(intensity = 1, surface: 'carpet' | 'concrete' | 'tile' | 'water' | 'metal' = 'carpet'): void {
     const ctx = this.ctx;
     if (!ctx) return;
     const src = ctx.createBufferSource();
     src.buffer = this.noiseBuffer;
     const f = ctx.createBiquadFilter();
     f.type = 'lowpass';
-    f.frequency.value = 380 + Math.random() * 120; // cosmetic only, not world gen
+    const base = surface === 'carpet' ? 380 : surface === 'concrete' ? 1100 : surface === 'tile' ? 1600 : 700;
+    f.frequency.value = base + Math.random() * 120; // cosmetic only, not world gen
     const g = ctx.createGain();
     const t = ctx.currentTime;
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(0.22 * intensity, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    g.gain.exponentialRampToValueAtTime(0.001, t + (surface === 'carpet' ? 0.16 : 0.09));
     src.connect(f).connect(g).connect(this.sfxBus);
     src.start(t, Math.random() * 1.5, 0.2);
   }

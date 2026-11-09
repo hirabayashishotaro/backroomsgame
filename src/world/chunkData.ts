@@ -10,6 +10,8 @@ export interface Box {
   maxZ: number;
   /** Material key (resolved by the mesher via the level palette). */
   mat: string;
+  /** A "thin" wall that can be noclipped through (SPEC §5.2 wall). */
+  thin?: boolean;
 }
 
 export interface LightPanel {
@@ -39,10 +41,9 @@ export interface ItemSpawn {
   y: number;
   z: number;
   rot: number;
-  meta?: number;
 }
 
-export type PropKind = 'exit-door' | 'glass-door' | 'chalk-sign';
+export type PropKind = 'exit-door' | 'glass-door' | 'metal-door' | 'white-door' | 'plain-door' | 'hatch';
 
 export interface Prop {
   uid: string;
@@ -52,9 +53,11 @@ export interface Prop {
   z: number;
   /** Rotation about Y; the prop's front faces +Z rotated by this angle. */
   rotY: number;
+  /** Colour hint for generic doors (hex). */
+  color?: number;
 }
 
-export type ZoneKind = 'manila' | 'high-hall' | 'light-corridor' | 'chalk-room' | 'exit-door' | 'glass-door';
+export type ZoneKind = 'manila' | 'high-hall' | 'light-corridor' | 'chalk-room' | 'exit-door' | 'glass-door' | 'spawn';
 
 export interface Zone {
   kind: ZoneKind;

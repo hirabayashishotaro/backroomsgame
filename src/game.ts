@@ -20,6 +20,7 @@ import { ITEMS, type ItemId } from './items/itemDefs';
 import { AudioSystem } from './systems/audio';
 import { Hallucinations } from './systems/hallucination';
 import { SkyDome } from './systems/sky';
+import { ESCAPE_ROUTE } from './escapeRoute';
 import { Journal } from './systems/journal';
 import { JournalScreen } from './ui/journalScreen';
 import { DebugOverlay } from './ui/debugOverlay';
@@ -109,6 +110,7 @@ export function readLaunchOptions(): LaunchOptions {
   };
 }
 
+
 const SLOT_ACTIONS: Action[] = ['slot1', 'slot2', 'slot3', 'slot4'];
 
 export class Game {
@@ -145,6 +147,11 @@ export class Game {
   private crouchLatched = false;
   private lastFrameAt = 0;
   private launchLevel: string;
+  /** Game mode (SPEC §1.1) and escape-mode progress. */
+  private mode: 'endless' | 'escape' = 'endless';
+  private escapeStage = 0;
+  private endingTimer = -1;
+  private creditsShown = false;
   private hud: Hud;
   private halluc: Hallucinations;
   private sky = new SkyDome();
@@ -202,7 +209,7 @@ export class Game {
     this.journalScreen = new JournalScreen(container, this.journal);
     this.settingsScreen = new SettingsScreen(container, this.settings, this.input, (st) => this.applySettings(st));
     this.screens = new Screens(container, {
-      onNewGame: (slot) => this.newGame(slot),
+      onNewGame: (slot, mode) => this.newGame(slot, mode),
       onLoad: (slot) => this.loadGame(slot),
       onResume: () => this.resume(),
       onToTitle: () => this.toTitle(),
@@ -248,14 +255,20 @@ export class Game {
     this.anchors = {};
     this.history.length = 0;
     this.journal.load(null);
+    this.mode = 'endless';
+    this.escapeStage = 0;
+    this.endingTimer = -1;
+    this.hud.hideCredits();
     this.playTime = 0;
     this.autosaveTimer = 0;
   }
 
-  private newGame(slot: number): void {
+  private newGame(slot: number, mode: 'endless' | 'escape' = 'endless'): void {
     const seedStr = this.settings.worldSeed.trim();
     this.resetRun(seedStr ? parseWorldSeed(seedStr) : hashString(String(Date.now())));
     this.slot = slot;
+    this.mode = mode;
+    this.escapeStage = 0;
     this.enterLevel(this.launchLevel);
     this.titleShown = false;
     this.start();
@@ -267,6 +280,8 @@ export class Game {
     if (!d) return;
     this.resetRun(d.worldSeed);
     this.slot = slot;
+    this.mode = d.mode ?? 'endless';
+    this.escapeStage = Math.max(0, ESCAPE_ROUTE.indexOf(d.levelId));
     this.inventory.load(d.inventory);
     this.stats.load(d.stats);
     this.deltas.load(d.deltas);
@@ -302,6 +317,7 @@ export class Game {
       anchors,
       history: this.history.slice(-50),
       journal: this.journal.toJSON(),
+      mode: this.mode,
     };
   }
 
@@ -324,6 +340,21 @@ export class Game {
     this.input.requestLock();
     if (!this.titleShown) this.showLevelTitle();
     this.recordVisit();
+    this.onArrive();
+  }
+
+  /** Escape-mode bookkeeping and the ending trigger. */
+  private onArrive(): void {
+    const idx = ESCAPE_ROUTE.indexOf(this.level.id);
+    if (idx > this.escapeStage) this.escapeStage = idx;
+    if (this.mode === 'escape') {
+      const route = ESCAPE_ROUTE.slice(0, -1).join(' → ') + ' → 出口';
+      this.hud.setObjective(t('escape.objective', { route, now: this.level.id === 'frontrooms' ? '出口' : this.level.title }));
+    } else this.hud.setObjective('');
+    if (this.level.id === 'frontrooms' && this.endingTimer < 0) {
+      this.endingTimer = 0;
+      this.creditsShown = false;
+    }
   }
 
   /** Journal: note arriving in the current level, and celebrate milestones (SPEC §12). */
@@ -687,7 +718,13 @@ export class Game {
 
   /** Leave through an exit. `back` is where the return anchor in the new level leads. */
   private takeExit(rule: ExitRule, exitKey: string, back: SpawnPoint, color = '#000'): void {
-    const levelId = resolveExitTarget(this.worldSeed, this.level.id, rule, exitKey);
+    let levelId = resolveExitTarget(this.worldSeed, this.level.id, rule, exitKey);
+    if (this.mode === 'escape') {
+      // Escape mode: every exit moves one step along the fixed route (SPEC §1.1).
+      const idx = ESCAPE_ROUTE.indexOf(this.level.id);
+      const next = idx >= 0 ? idx + 1 : this.escapeStage;
+      levelId = ESCAPE_ROUTE[Math.min(ESCAPE_ROUTE.length - 1, next)];
+    }
     this.journal.travel(this.level.id, levelId, rule.kind, rule.discovery);
     this.startTransition({
       levelId,
@@ -718,6 +755,7 @@ export class Game {
     this.hud.fadeTo(0, 0.7, tr.color);
     this.showLevelTitle();
     this.recordVisit();
+    this.onArrive();
     if (tr.back) setTimeout(() => this.hud.message(t('msg.returnHere'), 4), 4500);
     // Always autosave on level transitions (SPEC §10.5).
     this.saveNow();
@@ -943,6 +981,19 @@ export class Game {
     const active =
       this.started && !overlay && (this.input.locked || this.input.padConnected) && this.deadTimer <= 0 && !this.transition;
 
+    if (this.endingTimer >= 0 && this.started && !overlay) {
+      this.endingTimer += realDt;
+      if (this.endingTimer > 9 && !this.creditsShown) {
+        this.creditsShown = true;
+        this.hud.showCredits(t('credits.roll'));
+      }
+      if (this.endingTimer > 37) {
+        this.endingTimer = -1;
+        this.hud.hideCredits();
+        this.hud.message(t('escape.end'), 4);
+        this.toTitle();
+      }
+    }
     if (this.started && !overlay) {
       this.playTime += realDt;
       this.autosaveTimer += realDt;

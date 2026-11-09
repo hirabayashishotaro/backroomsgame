@@ -112,5 +112,13 @@
   "journal.milestoneSub": "まだ、どこまでも続いている。",
   "menu.journal": "ジャーナル",
   "action.journal": "ジャーナル",
-  "journal.returned": "戻り口を通って引き返した。"
+  "journal.returned": "戻り口を通って引き返した。",
+  "menu.mode": "モードを選ぶ",
+  "mode.endless": "エンドレス",
+  "mode.endlessSub": "無限の世界を自由に探索し、できるだけ多くのレベルを記録する",
+  "mode.escape": "脱出モード",
+  "mode.escapeSub": "Level 0 → 1 → 2 → 3 → 4 と進み、現実への出口を目指す。どの出口も次のレベルにつながる",
+  "escape.objective": "脱出: {route} (現在 {now})",
+  "escape.end": "長い夢から覚めたような気がする。",
+  "credits.roll": "THE BACKROOMS: ENDLESS\n\n\n\nあなたは帰ってきた。\n\n\n\n企画\nプレイヤー\n\n実装\nClaude Code\n\n\n世界観\nInspired by the Backrooms Wiki community\n(backrooms.fandom.com)\n\n\n画像・音はすべて\nプログラムで生成されています\n\n\n\nありがとうございました\n\n\n\n……本当に、帰ってきたのだろうか?"
 }

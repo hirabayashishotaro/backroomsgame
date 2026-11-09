@@ -70,6 +70,8 @@ export class LevelMaterials {
     this.byKey.set('wood-red', mk('gen:panel:b8382a:101'));
     this.byKey.set('sign-green', { mat: new THREE.MeshBasicMaterial({ color: 0x1f7a4a }), metres: 1 });
     this.byKey.set('lantern', { mat: new THREE.MeshBasicMaterial({ color: 0xffc070 }), metres: 1 });
+    this.byKey.set('exit-sign', { mat: new THREE.MeshBasicMaterial({ map: getTexture('exit-sign').texture }), metres: 0.5 });
+    this.byKey.set('daylight', { mat: new THREE.MeshBasicMaterial({ color: 0xfafcff }), metres: 1 });
     // Transparent and self-lit materials.
     const clear = (color: number, opacity: number) => ({
       mat: patchMaterial(new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide })),
@@ -78,6 +80,7 @@ export class LevelMaterials {
     this.byKey.set('water', clear(0x4fb6d0, 0.55));
     this.byKey.set('glass', clear(0x9fd8f0, 0.22));
     this.byKey.set('water-dark', clear(0x0c1c26, 0.85));
+    this.byKey.set('water-shallow', clear(0x7fd0e0, 0.4));
     this.byKey.set('glow', { mat: new THREE.MeshBasicMaterial({ color: 0xfff6e0 }), metres: 1 });
     this.byKey.set('glow-blue', { mat: new THREE.MeshBasicMaterial({ color: 0x8fe0ff }), metres: 1 });
     // Floor that gives way: the floor texture, slightly cooler and pulsing (animated by the game).

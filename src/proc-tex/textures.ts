@@ -632,6 +632,39 @@ function grate(): ProcTexture {
   return finish(c, 0.5);
 }
 
+/** Exposed wall framing: wooden studs, insulation and stray wiring (Level 139). */
+function studs(): ProcTexture {
+  const S = 256;
+  const [c, ctx] = canvas(S);
+  const rng = new Rng(741);
+  // Insulation between the studs
+  ctx.fillStyle = '#c99a7a';
+  ctx.fillRect(0, 0, S, S);
+  for (let i = 0; i < 900; i++) {
+    ctx.fillStyle = `rgba(${rng.chance(0.5) ? '230,190,160' : '150,100,80'},0.25)`;
+    ctx.beginPath();
+    ctx.ellipse(rng.float() * S, rng.float() * S, rng.range(2, 7), rng.range(1, 3), rng.range(0, 3), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Studs every 0.4m (2m texture -> 5 studs)
+  for (let x = 0; x < S; x += S / 5) {
+    ctx.fillStyle = '#8a6a44';
+    ctx.fillRect(x, 0, 18, S);
+    ctx.fillStyle = 'rgba(40,25,10,0.35)';
+    ctx.fillRect(x + 15, 0, 3, S);
+  }
+  // Horizontal blocking and a wire
+  ctx.fillStyle = '#8a6a44';
+  ctx.fillRect(0, S * 0.45, S, 14);
+  ctx.strokeStyle = '#2a2a2a';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, S * 0.3);
+  ctx.bezierCurveTo(S * 0.3, S * 0.36, S * 0.6, S * 0.24, S, S * 0.3);
+  ctx.stroke();
+  return finish(c, 2);
+}
+
 function doorTexture(hex: string, window: boolean): ProcTexture {
   const S = 128;
   const [c, ctx] = canvas(S);
@@ -684,6 +717,7 @@ const FACTORIES: Record<string, () => ProcTexture> = {
   shoji,
   'aero-tile': aeroTile,
   grate,
+  studs,
 
   white: () => flat('#ffffff'),
 };

@@ -39,6 +39,12 @@ const CSS = `
   flex-direction: column; background: rgba(0,0,0,0.92); color: #efe6bf; font-size: 24px; letter-spacing: 0.15em; }
 .hud-overlay small { margin-top: 12px; font-size: 13px; opacity: 0.6; letter-spacing: 0.05em; }
 .hud-fade { position: fixed; inset: 0; z-index: 28; pointer-events: none; background: #000; opacity: 0; }
+.hud-objective { position: absolute; left: 20px; top: 16px; font-size: 13px; opacity: 0.8; letter-spacing: 0.05em; }
+.hud-credits { position: fixed; inset: 0; z-index: 35; display: none; overflow: hidden; pointer-events: none;
+  background: linear-gradient(rgba(0,0,0,0.0), rgba(0,0,0,0.75) 30%, rgba(0,0,0,0.75) 70%, rgba(0,0,0,0)); color: #f4ecd0; }
+.hud-credits div { position: absolute; left: 0; right: 0; top: 100%; text-align: center; line-height: 2.4; font-size: 17px;
+  letter-spacing: 0.12em; white-space: pre-line; animation: credits-roll 26s linear forwards; }
+@keyframes credits-roll { to { transform: translateY(-260%); } }
 .hud-subs { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 21; pointer-events: none;
   font-size: 15px; background: rgba(0,0,0,0.55); padding: 3px 12px; border-radius: 3px; color: #f4ecd0; transition: opacity 0.4s; opacity: 0; }
 .hud-vignette { position: fixed; inset: 0; pointer-events: none; z-index: 10;
@@ -61,6 +67,8 @@ export class Hud {
   private hurt: HTMLDivElement;
   private deadOverlay: HTMLDivElement;
   private subs: HTMLDivElement;
+  private objective: HTMLDivElement;
+  private credits: HTMLDivElement;
   private subTimer = 0;
   private msgTimer = 0;
   private titleTime = -1;
@@ -113,7 +121,10 @@ export class Hud {
     this.fade = this.div('hud-fade');
     this.deadOverlay = this.div('hud-overlay');
     this.subs = this.div('hud-subs');
-    parent.append(vignette, this.hurt, this.root, this.title, this.fade, this.deadOverlay, this.subs);
+    this.objective = this.div('hud-objective');
+    this.root.appendChild(this.objective);
+    this.credits = this.div('hud-credits');
+    parent.append(vignette, this.hurt, this.root, this.title, this.fade, this.deadOverlay, this.subs, this.credits);
     setTimeout(() => (this.hint.style.opacity = '0'), 45000);
   }
 
@@ -137,6 +148,29 @@ export class Hud {
     slots.style.transformOrigin = 'center bottom';
     this.held.style.bottom = `${Math.round(26 + 66 * k)}px`;
   }
+
+  /** Escape-mode objective line (empty string hides it). */
+  setObjective(text: string): void {
+    this.objective.textContent = text;
+  }
+
+  /** Scrolling staff roll for the ending (SPEC §12). */
+  showCredits(text: string): void {
+    this.credits.innerHTML = '';
+    const d = document.createElement('div');
+    d.textContent = text;
+    this.credits.appendChild(d);
+    this.credits.style.display = 'block';
+    this.rootDisplay = this.root.style.display;
+    this.root.style.display = 'none';
+  }
+
+  hideCredits(): void {
+    if (this.credits.style.display === 'none') return;
+    this.credits.style.display = 'none';
+    this.root.style.display = this.rootDisplay;
+  }
+  private rootDisplay = '';
 
   /** Subtitle for sounds (SPEC §11 字幕). */
   subtitle(text: string, seconds = 3): void {

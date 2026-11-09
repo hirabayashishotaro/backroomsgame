@@ -47,7 +47,15 @@ export const FEATURE_NAMES: Record<string, { name: string; desc: string }> = {
   gantry: { name: '標識門', desc: '意味の分からない地名の看板。その下の光は出口に見える。' },
   rest: { name: '浮かぶ休憩所', desc: '空中に浮かぶ駐車場。自販機の光と扉がひとつ。' },
   tower: { name: '立った道路', desc: '道路が壁のように垂直に立っている。' },
+  junction: { name: '空中ジャンクション', desc: '頭上をはるかに高く、別の道路が横切っていく。橋脚は雲の下まで続く。' },
+  'wide-platform': { name: '広い足場', desc: '虚空に浮かぶ広い床。ここだけは少し安心できる。' },
+  'lamp-post': { name: '孤独な街灯', desc: '足場の角に一本だけ立つ街灯。' },
+  'lone-door': { name: '宙の扉', desc: '何もない足場の上に、扉だけが立っている。' },
+  'lost-bottle': { name: '置き忘れのボトル', desc: '誰かが置いていったアーモンドウォーター。' },
+  pillar: { name: '底なしの柱', desc: '足場を支える柱は、闇の底まで続いている。' },
 };
+
+const WALKWAY_PIECES = ['wide-platform', 'lamp-post', 'lone-door', 'lost-bottle', 'pillar'];
 
 function sunOf(kind: SkyKind): [number, number, number] {
   return SKY_PRESETS[kind].sunDir;
@@ -87,19 +95,19 @@ function base(o: WorldOpts) {
 
 // ---------------------------------------------------------------------------
 
-export function makeGardenLevel(o: WorldOpts, style: 'garden' | 'aero', rng: Rng): LevelDefinition {
+export function makeGardenLevel(o: WorldOpts, style: 'garden' | 'aero' | 'greenhouse', rng: Rng): LevelDefinition {
   const night = o.sky === 'night' || o.sky === 'dusk';
   const p: GardenParams = {
     style,
     hedgeP: style === 'aero' ? 0.12 : 0.18 + rng.float() * 0.2,
-    hedgeH: style === 'aero' ? 2.2 : 1.3,
+    hedgeH: style === 'garden' ? 1.3 : 2.2,
     treeP: 0.18 + rng.float() * 0.15,
     leafMats: style === 'aero' ? ['leaves-lime', 'leaves-green'] : rng.pick([['leaves-green', 'leaves-dark'], ['leaves-autumn', 'leaves-green'], ['leaves-pink', 'leaves-green'], ['leaves-dark']]),
     bedP: 0.12,
     flowerMats: style === 'aero' ? ['flowers-3', 'flowers-1'] : ['flowers-0', 'flowers-1', 'flowers-2'],
     lampsOn: night || o.sky === 'void',
     featureP: 0.45,
-    features: style === 'aero' ? AERO_FEATURES : GARDEN_FEATURES,
+    features: style === 'aero' ? AERO_FEATURES : style === 'greenhouse' ? ['pond', 'fountain', 'flower-field', 'gazebo', 'hedge-maze', 'glass-tube'] : GARDEN_FEATURES,
     doorP: 0.012,
     thinFloorP: 0.006,
     lootP: 0.02,
@@ -167,7 +175,7 @@ export function makeWalkwayLevel(o: WorldOpts, rng: Rng, narrow = false): LevelD
     },
     generator: (ctx, cx, cz) => generateWalkways(ctx, p, cx, cz),
     lightSampler: (ctx, cx, cz) => walkwaySampler(ctx, p, cx, cz),
-    setPieces: [],
+    setPieces: WALKWAY_PIECES.map((id) => ({ id, ...FEATURE_NAMES[id] })),
     footstep: 'metal',
     ambience: { humFreq: 0, humGain: 0, noiseGain: 0.06, noiseCutoff: 300 },
     environment: 'open-sky',
@@ -208,7 +216,7 @@ export function makeRoadLevel(o: WorldOpts, rng: Rng): LevelDefinition {
     },
     generator: (ctx, cx, cz) => generateRoads(ctx, p, cx, cz),
     lightSampler: (ctx, cx, cz) => roadSampler(ctx, p, cx, cz),
-    setPieces: ['toll', 'gantry', 'rest', 'tower'].map((id) => ({ id, ...FEATURE_NAMES[id] })),
+    setPieces: ['junction', 'toll', 'gantry', 'rest', 'tower'].map((id) => ({ id, ...FEATURE_NAMES[id] })),
     footstep: 'concrete',
     ambience: { humFreq: 0, humGain: 0, noiseGain: 0.07, noiseCutoff: 260 },
     environment: 'open-sky',
@@ -221,7 +229,7 @@ export function makeRoadLevel(o: WorldOpts, rng: Rng): LevelDefinition {
   };
 }
 
-export function makeTatamiLevel(o: WorldOpts, rng: Rng): LevelDefinition {
+export function makeTatamiLevel(o: WorldOpts, _rng: Rng): LevelDefinition {
   const p: GridParams = {
     cell: 3.6,
     cellsPerChunk: 9,
@@ -244,7 +252,7 @@ export function makeTatamiLevel(o: WorldOpts, rng: Rng): LevelDefinition {
     doorKinds: [{ kind: 'plain-door', weight: 1, color: 0xd8cfb4 }],
     thinP: 0.012,
     lootP: 0.02,
-    pieces: ['taiko-bridge', 'tea-island', 'lantern-path', ...(rng.chance(0.5) ? ['door-row'] : ['reception'])],
+    pieces: ['taiko-bridge', 'tea-island', 'lantern-path', 'door-row', 'reception'],
     pieceRate: 0.8,
     featureCell: 2,
     thinFloorP: 0.005,
@@ -274,5 +282,83 @@ export function makeTatamiLevel(o: WorldOpts, rng: Rng): LevelDefinition {
     spawn: { x: 1.8, y: 0, z: 1.8, yaw: 0 },
     arrival: (ctx, h) => gridArrival(ctx, p, h),
     hallucination: 1.1,
+  };
+}
+
+/** Grid level from explicit parameters (hand-made Wiki levels). */
+export function makeGridLevel(
+  o: WorldOpts,
+  p: GridParams,
+  look: { wall: string; floor: string; ceiling: string; light: number; tint: [number, number, number]; fog: number; fogDensity: number; ambient: number },
+  extra: Partial<LevelDefinition> = {},
+): LevelDefinition {
+  return {
+    ...base(o),
+    chunkSize: p.cell * p.cellsPerChunk,
+    ceilingHeight: p.ceiling,
+    palette: {
+      wallTex: look.wall,
+      floorTex: look.floor,
+      ceilingTex: look.ceiling,
+      lightColor: look.light,
+      fogColor: look.fog,
+      fogDensity: look.fogDensity,
+      ambient: look.ambient,
+      lightTint: look.tint,
+    },
+    generator: (ctx, cx, cz) => generateGrid(ctx, p, cx, cz),
+    lightSampler: (ctx, cx, cz) => gridLightSampler(ctx, p, cx, cz),
+    setPieces: (p.pieces ?? []).map((id) => ({ id, name: GRID_PIECES[id].name, desc: GRID_PIECES[id].desc })),
+    footstep: 'concrete',
+    ambience: { humFreq: 50, humGain: 0.04, noiseGain: 0.03, noiseCutoff: 600 },
+    environment: 'enclosed',
+    spawn: { x: p.cell / 2, y: 0, z: p.cell / 2, yaw: 0 },
+    arrival: (ctx, h) => gridArrival(ctx, p, h),
+    lootTable: { perCell: p.lootP, rules: ALMOND_ONLY },
+    ...extra,
+  };
+}
+
+export function makeDocksLevel(o: WorldOpts): LevelDefinition {
+  const p: WalkwayParams = {
+    linkP: 0.66,
+    gapP: 0,
+    beamW: 2.2,
+    heightStep: 0,
+    lampP: 0.28,
+    doorP: 0.6,
+    lootP: 0.1,
+    pillarP: 0,
+    deckMat: 'wood-dark',
+    daylight: daylightOf(o.sky),
+    sun: sunOf(o.sky),
+    waterY: -1.4,
+    docks: true,
+  };
+  const sky = SKY_PRESETS[o.sky];
+  return {
+    ...base(o),
+    chunkSize: WALK_CELL * WALK_N,
+    ceilingHeight: 30,
+    palette: { wallTex: 'gen:wood:4a3420:81', floorTex: 'gen:wood:4a3420:81', ceilingTex: 'white', lightColor: 0xfff0d0, fogColor: sky.horizon, fogDensity: 0.03, ambient: 0.1, lightTint: [1, 0.92, 0.8] },
+    generator: (ctx, cx, cz) => generateWalkways(ctx, p, cx, cz),
+    lightSampler: (ctx, cx, cz) => walkwaySampler(ctx, p, cx, cz),
+    setPieces: [
+      { id: 'pier', name: '桟橋', desc: '暗い水の上に、木の桟橋がどこまでも延びている。' },
+      { id: 'bench', name: 'ベンチ', desc: '桟橋の先のベンチ。誰かが座って水面を眺めていたのだろうか。' },
+      { id: 'bin', name: 'ゴミ箱', desc: '空っぽの金属のゴミ箱。たまにアーモンドウォーターが捨てられている。' },
+      { id: 'lamp', name: '街灯', desc: '水面に揺れる、弱い街灯の光。' },
+      { id: 'doors', name: '扉の群れ', desc: '広い桟橋の上に、どこにもつながっていない扉が立っている。開けると別の場所に出る。' },
+    ],
+    footstep: 'carpet',
+    ambience: { humFreq: 0, humGain: 0, noiseGain: 0.05, noiseCutoff: 420 },
+    environment: 'open-sky',
+    sky: { kind: o.sky },
+    groundless: true,
+    fall: { killY: -2.5, mode: 'transition' },
+    spawn: { x: WALK_CELL / 2, y: 0, z: WALK_CELL / 2, yaw: 0 },
+    arrival: (ctx, h) => walkwayArrival(ctx, p, h),
+    hallucination: 0.5,
+    drainMul: 0.85,
   };
 }

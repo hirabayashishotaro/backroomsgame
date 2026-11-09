@@ -56,6 +56,10 @@ export interface GridParams {
   featureCell?: number;
   /** No ceiling at all: walls under the open sky (ruins). */
   noCeiling?: boolean;
+  /** A layer of shallow water over the whole floor at this height (Level 37). */
+  waterY?: number;
+  /** Chance of a glowing green exit sign on a cell's north wall (Level 14). */
+  signP?: number;
 }
 
 const enum Salt {
@@ -244,6 +248,12 @@ export function generateGrid(ctx: GenContext, p: GridParams, cx: number, cz: num
         }
       }
 
+      if (!here && wz === 1 && p.signP && hash01(seed, Salt.Door, gx, gz, 7) < p.signP) {
+        const sx = lx + C / 2;
+        const sz = lz + t + 0.03;
+        decor.push({ minX: sx - 0.25, maxX: sx + 0.25, minY: Math.min(2.2, H - 0.4), maxY: Math.min(2.2, H - 0.4) + 0.24, minZ: sz, maxZ: sz + 0.04, mat: 'exit-sign' });
+      }
+
       // Door prop on the inner face of this cell's north wall.
       if (!here && !piece && wz === 1 && !thinZ && hash01(seed, Salt.Door, gx, gz) < p.doorP) {
         const dk = pickDoor(p.doorKinds, hash01(seed, Salt.Door, gx, gz, 1));
@@ -306,6 +316,7 @@ export function generateGrid(ctx: GenContext, p: GridParams, cx: number, cz: num
   }
 
   if (p.noCeiling) ceilings.length = 0;
+  if (p.waterY !== undefined) decor.push({ minX: 0, maxX: S, minY: p.waterY - 0.01, maxY: p.waterY, minZ: 0, maxZ: S, mat: 'water-shallow' });
   return { levelId: ctx.level.id, cx, cz, size: S, solids, decor, lights, floors, ceilings, items, props, zones };
 }
 

@@ -4,7 +4,7 @@ import { getNative } from '../core/storage';
 import { t } from './i18n';
 
 export interface ScreenCallbacks {
-  onNewGame: (slot: number) => void;
+  onNewGame: (slot: number, mode: 'endless' | 'escape') => void;
   onLoad: (slot: number) => void;
   onResume: () => void;
   onToTitle: () => void;
@@ -31,7 +31,7 @@ const CSS = `
 .sc-credit { font-size: 13px; line-height: 2; white-space: pre-line; }
 `;
 
-type View = 'title' | 'pause' | 'new' | 'load' | 'credits' | 'confirm';
+type View = 'title' | 'pause' | 'new' | 'load' | 'credits' | 'confirm' | 'mode';
 
 export class Screens {
   private root: HTMLDivElement;
@@ -132,14 +132,20 @@ export class Screens {
       case 'new':
         this.heading(t('menu.newGame'), t('menu.pickSlot'));
         for (const s of listSlots())
-          this.btn(`${t('menu.slot')} ${s.slot}`, () => (s.data ? this.render('confirm', s.slot) : this.cb.onNewGame(s.slot)), {
+          this.btn(`${t('menu.slot')} ${s.slot}`, () => (s.data ? this.render('confirm', s.slot) : this.render('mode', s.slot)), {
             sub: s.data ? this.slotSummary(s.slot) + ' — ' + t('menu.overwrite') : t('menu.empty'),
           });
         this.btn(t('menu.back'), () => this.render(this.back));
         break;
       case 'confirm':
         this.heading(t('menu.confirmTitle'), `${t('menu.slot')} ${arg}: ${this.slotSummary(arg!)}`);
-        this.btn(t('menu.confirmYes'), () => this.cb.onNewGame(arg!), { primary: true });
+        this.btn(t('menu.confirmYes'), () => this.render('mode', arg), { primary: true });
+        this.btn(t('menu.back'), () => this.render('new'));
+        break;
+      case 'mode':
+        this.heading(t('menu.mode'), `${t('menu.slot')} ${arg}`);
+        this.btn(t('mode.endless'), () => this.cb.onNewGame(arg!, 'endless'), { primary: true, sub: t('mode.endlessSub') });
+        this.btn(t('mode.escape'), () => this.cb.onNewGame(arg!, 'escape'), { sub: t('mode.escapeSub') });
         this.btn(t('menu.back'), () => this.render('new'));
         break;
       case 'load':

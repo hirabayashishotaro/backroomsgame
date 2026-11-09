@@ -62,7 +62,7 @@ function outdoorSampler(daylight: number, sun: [number, number, number], lights:
 // ===========================================================================
 
 export interface GardenParams {
-  style: 'garden' | 'aero';
+  style: 'garden' | 'aero' | 'greenhouse';
   hedgeP: number;
   hedgeH: number;
   treeP: number;
@@ -270,7 +270,7 @@ export function generateGarden(ctx: GenContext, p: GardenParams, cx: number, cz:
       const lz = j * C;
       if (isPath(gx, gz)) box(o.decor, lx, 0.002, lz, lx + C, 0.02, lz + C, pathMat);
       const hh = p.hedgeH;
-      const hm = aero ? 'glass' : 'hedge';
+      const hm = p.style === 'garden' ? 'hedge' : 'glass';
       if (hedgeX(seed, p, gx, gz)) box(o.solids, lx - 0.35, 0, lz + 0.2, lx + 0.35, hh, lz + C - 0.2, hm);
       if (hedgeZ(seed, p, gx, gz)) box(o.solids, lx + 0.2, 0, lz - 0.35, lx + C - 0.2, hh, lz + 0.35, hm);
       if (lampAt(seed, p, gx, gz)) {
@@ -367,6 +367,10 @@ export interface WalkwayParams {
   deckMat: string;
   daylight: number;
   sun: [number, number, number];
+  /** Water surface below the decks (The Docks). */
+  waterY?: number;
+  /** Docks furniture: benches, bins, posts into the water. */
+  docks?: boolean;
 }
 
 export const WALK_CELL = 6;
@@ -435,16 +439,39 @@ export function generateWalkways(ctx: GenContext, p: WalkwayParams, cx: number, 
         const hm = (h + hn) / 2;
         halfBeam(o, p, mx + dx * r, mz + dz * r, mx + (dx * C) / 2, mz + (dz * C) / 2, h, hm, k === 2 && h === hn);
       }
+      const zoneName = (n: string) => o.zones.push({ kind: 'piece', name: n, x0: mx - r, z0: mz - r, x1: mx + r, z1: mz + r });
+      if (p.docks) {
+        // Mooring posts, a bench or a bin on the pier heads.
+        for (const [sx, sz] of [
+          [-1, -1],
+          [1, 1],
+        ])
+          box(o.solids, mx + sx * (r - 0.15) - 0.12, (p.waterY ?? -2) - 1, mz + sz * (r - 0.15) - 0.12, mx + sx * (r - 0.15) + 0.12, h + 0.5, mz + sz * (r - 0.15) + 0.12, 'wood-dark');
+        const f = hash01(seed, 706, gx, gz);
+        if (f < 0.25) {
+          box(o.solids, mx - 0.9, h, mz + r - 0.7, mx + 0.9, h + 0.45, mz + r - 0.25, 'wood-dark');
+          box(o.solids, mx - 0.9, h + 0.45, mz + r - 0.3, mx + 0.9, h + 0.9, mz + r - 0.22, 'wood-dark');
+          zoneName('bench');
+        } else if (f < 0.4) {
+          box(o.solids, mx + r - 0.6, h, mz - r + 0.2, mx + r - 0.2, h + 0.8, mz - r + 0.6, 'metal');
+          zoneName('bin');
+        } else if (big) zoneName('pier');
+      } else if (big) zoneName('wide-platform');
+      else if (hash01(seed, 704, gx, gz) < p.pillarP) zoneName('pillar');
       const roll = hash01(seed, 705, gx, gz);
       if (roll < p.lampP) {
         box(o.solids, mx + r - 0.3, h, mz + r - 0.3, mx + r - 0.15, h + 2.4, mz + r - 0.15, 'metal');
         box(o.decor, mx + r - 0.4, h + 2.4, mz + r - 0.4, mx + r - 0.05, h + 2.7, mz + r - 0.05, 'glow');
+        zoneName(p.docks ? 'lamp' : 'lamp-post');
       } else if (roll < p.lampP + p.doorP && big) {
         o.props.push({ uid: `w${i},${j}`, kind: 'plain-door', x: mx, y: h, z: mz, rotY: 0, color: 0x5a5a6a });
+        zoneName(p.docks ? 'doors' : 'lone-door');
       } else if (roll < p.lampP + p.doorP + p.lootP) {
         o.items.push({ uid: `${i},${j}`, id: 'almond_water', x: mx + 0.6, y: h, z: mz - 0.6, rot: roll * 30 });
+        if (!p.docks) zoneName('lost-bottle');
       }
     }
+  if (p.waterY !== undefined) box(o.decor, 0, p.waterY - 0.02, 0, S, p.waterY, S, 'water-dark');
   return chunkData(ctx, cx, cz, S, o, []);
 }
 
@@ -532,6 +559,7 @@ export function generateRoads(ctx: GenContext, p: RoadParams, cx: number, cz: nu
   }
   // Overpasses far above, continuous along whole rows/columns (decorative).
   if (hash01(seed, 806, 0, cz) < p.overpassP) {
+    o.zones.push({ kind: 'piece', name: 'junction', x0: 0, z0: 2, x1: S, z1: 10 });
     box(o.solids, 0, 11.4, 3, S, 12, 9, 'road-x');
     box(o.solids, 15, -30, 5, 17, 11.4, 7, 'stone');
   }

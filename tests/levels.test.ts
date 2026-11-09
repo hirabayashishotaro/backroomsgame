@@ -3,6 +3,8 @@ import { makeGenContext, resolveExitTarget, resolveLevel, entryHash } from '../s
 import type { LevelDefinition } from '../src/levels/levelDefinition';
 import { groundHeight } from '../src/world/collision';
 import { genomeOf } from '../src/levels/procedural/generated';
+import { HAND_LEVEL_IDS } from '../src/levels/registry';
+import { ESCAPE_ROUTE } from '../src/escapeRoute';
 
 const SEED = 4242;
 
@@ -32,7 +34,7 @@ function arrivalIsFree(level: LevelDefinition, h: number): boolean {
 }
 
 describe('levels', () => {
-  const ids = ['0', '1', '2', 'u1', 'u2', 'u3', 'void', '13', '14', '139', '482', '33.7', '-3', '4.3', '57', '88', '404', '999'];
+  const ids = ['0', '1', '2', 'u1', 'u2', 'u3', 'void', '4.3', '7.5', '13', '14', '27', '37', '139', '482', '33.7', '-3', '57', '88', '404', '999'];
   // plus one example of every generated grammar
   const seen = new Set<string>();
   for (let n = 3; n < 600; n++) {
@@ -113,6 +115,20 @@ describe('levels', () => {
     expect(resolveLevel('u2').setPieces.length).toBeGreaterThanOrEqual(3);
     expect(resolveLevel('u3').setPieces.length).toBeGreaterThanOrEqual(5);
     expect(resolveLevel('void').groundless).toBe(true);
+  });
+
+  it('every hand-made level has at least 5 kinds of set pieces (SPEC 3.5)', () => {
+    for (const id of HAND_LEVEL_IDS) {
+      if (id === 'frontrooms') continue; // the ending room
+      expect(resolveLevel(id).setPieces.length, id).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  it('escape route levels all resolve and the ending room has a bottle on the table', () => {
+    for (const id of ESCAPE_ROUTE) expect(resolveLevel(id).id).toBe(id);
+    const F = resolveLevel('frontrooms');
+    const d = F.generator(makeGenContext(SEED, F), 0, 0);
+    expect(d.items.some((i) => i.id === 'almond_water' && i.y > 0.5)).toBe(true);
   });
 
   it('generated levels produce at least 10 distinct themes', () => {

@@ -659,6 +659,7 @@ export const level0: LevelDefinition = {
   footstep: 'carpet',
   ambience: { humFreq: 60, humGain: 0.12, noiseGain: 0.025, noiseCutoff: 900 },
   environment: 'enclosed',
+  kindLabel: '屋内迷路(手作り)',
   spawn: { x: CELL / 2, y: 0, z: CELL / 2, yaw: 0 },
   arrival: level0Arrival,
 };

@@ -10,6 +10,7 @@ export interface ScreenCallbacks {
   onToTitle: () => void;
   onSettings: () => void;
   onLevelSelect: () => void;
+  onJournal: () => void;
   onQuit: () => void;
 }
 
@@ -122,6 +123,7 @@ export class Screens {
       case 'pause':
         this.heading(t('menu.paused'));
         this.btn(t('menu.resume'), () => this.cb.onResume(), { primary: true });
+        this.btn(t('menu.journal'), () => this.cb.onJournal());
         this.btn(t('menu.settings'), () => this.cb.onSettings());
         this.btn(t('dev.open'), () => this.cb.onLevelSelect());
         this.btn(t('menu.toTitle'), () => this.cb.onToTitle(), { sub: t('menu.toTitleSub') });

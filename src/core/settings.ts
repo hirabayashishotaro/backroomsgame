@@ -22,7 +22,8 @@ export type Action =
   | 'slot3'
   | 'slot4'
   | 'prevSlot'
-  | 'nextSlot';
+  | 'nextSlot'
+  | 'journal';
 
 export const ACTIONS: Action[] = [
   'forward',
@@ -40,6 +41,7 @@ export const ACTIONS: Action[] = [
   'slot4',
   'prevSlot',
   'nextSlot',
+  'journal',
   'pause',
 ];
 
@@ -60,6 +62,7 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   slot4: ['Digit4'],
   prevSlot: ['WheelUp'],
   nextSlot: ['WheelDown'],
+  journal: ['Tab', 'KeyJ'],
 };
 
 /**
@@ -75,6 +78,7 @@ export const DEFAULT_PAD_BINDINGS: Partial<Record<Action, number[]>> = {
   prevSlot: [4],
   nextSlot: [5],
   pause: [9],
+  journal: [8],
 };
 
 export type DisplayMode = 'window' | 'fullscreen' | 'borderless';

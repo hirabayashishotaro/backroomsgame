@@ -81,6 +81,7 @@ export const level2: LevelDefinition = {
   footstep: 'concrete',
   ambience: { humFreq: 45, humGain: 0.05, noiseGain: 0.06, noiseCutoff: 380 },
   environment: 'enclosed',
+  kindLabel: '配管トンネル(手作り)',
   spawn: { x: 1.6, y: 0, z: 1.6, yaw: 0 },
   arrival: (ctx, h) => gridArrival(ctx, LEVEL2_PARAMS, h),
 };

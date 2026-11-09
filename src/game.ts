@@ -20,6 +20,8 @@ import { ITEMS, type ItemId } from './items/itemDefs';
 import { AudioSystem } from './systems/audio';
 import { Hallucinations } from './systems/hallucination';
 import { SkyDome } from './systems/sky';
+import { Journal } from './systems/journal';
+import { JournalScreen } from './ui/journalScreen';
 import { DebugOverlay } from './ui/debugOverlay';
 import { Hud } from './ui/hud';
 import { Screens } from './ui/screens';
@@ -122,6 +124,8 @@ export class Game {
   readonly inventory = new Inventory();
   readonly stats = new Stats();
   readonly deltas = new WorldDeltas();
+  readonly journal = new Journal();
+  private journalScreen!: JournalScreen;
   private origin = new FloatingOrigin(32);
   private chunks!: ChunkManager<ChunkHandle>;
   level!: LevelDefinition;
@@ -136,6 +140,7 @@ export class Game {
   private playTime = 0;
   private autosaveTimer = 0;
   private paused = false;
+  private journalOpen = false;
   private sprintLatched = false;
   private crouchLatched = false;
   private lastFrameAt = 0;
@@ -194,6 +199,7 @@ export class Game {
     }
 
     this.levelSelect = new LevelSelect(container, (id) => this.devJump(id));
+    this.journalScreen = new JournalScreen(container, this.journal);
     this.settingsScreen = new SettingsScreen(container, this.settings, this.input, (st) => this.applySettings(st));
     this.screens = new Screens(container, {
       onNewGame: (slot) => this.newGame(slot),
@@ -202,6 +208,7 @@ export class Game {
       onToTitle: () => this.toTitle(),
       onSettings: () => this.settingsScreen.show(() => this.screens.refresh()),
       onLevelSelect: () => this.levelSelect.show(),
+      onJournal: () => this.journalScreen.show(() => {}),
       onQuit: () => {
         this.saveNow();
         getNative()?.quit?.();
@@ -210,7 +217,7 @@ export class Game {
 
     document.addEventListener('pointerlockchange', () => {
       if (document.pointerLockElement === this.renderer.domElement) return;
-      if (this.deadTimer > 0 || !this.started || this.paused) return;
+      if (this.deadTimer > 0 || !this.started || this.paused || this.journalOpen) return;
       this.pause();
     });
     window.addEventListener('resize', () => this.onResize());
@@ -240,6 +247,7 @@ export class Game {
     for (const a of Object.values(this.anchors).flat()) if (a.mesh) disposeObject(a.mesh);
     this.anchors = {};
     this.history.length = 0;
+    this.journal.load(null);
     this.playTime = 0;
     this.autosaveTimer = 0;
   }
@@ -264,6 +272,7 @@ export class Game {
     this.deltas.load(d.deltas);
     this.playTime = d.playTime;
     this.history.push(...d.history);
+    this.journal.load(d.journal);
     for (const [lid, list] of Object.entries(d.anchors)) this.anchors[lid] = list.map((a) => ({ ...a, back: { ...a.back } }));
     this.enterLevel(d.levelId, d.player);
     this.player.pitch = d.player.pitch;
@@ -292,6 +301,7 @@ export class Game {
       deltas: this.deltas.toJSON(),
       anchors,
       history: this.history.slice(-50),
+      journal: this.journal.toJSON(),
     };
   }
 
@@ -313,6 +323,25 @@ export class Game {
     this.audio.setAmbience(this.level.ambience);
     this.input.requestLock();
     if (!this.titleShown) this.showLevelTitle();
+    this.recordVisit();
+  }
+
+  /** Journal: note arriving in the current level, and celebrate milestones (SPEC §12). */
+  private recordVisit(): void {
+    const L = this.level;
+    const isNew = this.journal.visit({ id: L.id, title: L.title, name: L.subtitle ?? L.name, threat: L.threatClass, kind: L.kindLabel ?? '' });
+    if (!isNew) return;
+    const m = this.journal.milestone();
+    if (m) setTimeout(() => this.hud.showBanner(t('journal.milestone', { n: m }), t('journal.milestoneSub')), 6500);
+  }
+
+  private openJournal(): void {
+    if (document.pointerLockElement) document.exitPointerLock();
+    this.journalOpen = true;
+    this.journalScreen.show(() => {
+      this.journalOpen = false;
+      if (this.started && !this.paused) this.input.requestLock();
+    });
   }
 
   private pause(): void {
@@ -659,6 +688,7 @@ export class Game {
   /** Leave through an exit. `back` is where the return anchor in the new level leads. */
   private takeExit(rule: ExitRule, exitKey: string, back: SpawnPoint, color = '#000'): void {
     const levelId = resolveExitTarget(this.worldSeed, this.level.id, rule, exitKey);
+    this.journal.travel(this.level.id, levelId, rule.kind, rule.discovery);
     this.startTransition({
       levelId,
       entry: entryHash(this.level.id, rule.kind + ':' + exitKey),
@@ -687,6 +717,7 @@ export class Game {
     this.lastWarp = 0;
     this.hud.fadeTo(0, 0.7, tr.color);
     this.showLevelTitle();
+    this.recordVisit();
     if (tr.back) setTimeout(() => this.hud.message(t('msg.returnHere'), 4), 4500);
     // Always autosave on level transitions (SPEC §10.5).
     this.saveNow();
@@ -712,6 +743,7 @@ export class Game {
   }
 
   private useAnchor(a: Anchor): void {
+    this.journal.travel(this.level.id, a.back.levelId, 'return', t('journal.returned'));
     this.audio.door();
     this.startTransition({ levelId: a.back.levelId, at: { ...a.back }, color: '#000' });
   }
@@ -792,10 +824,12 @@ export class Game {
     if (zk !== this.zoneKey) {
       this.zoneKey = zk;
       this.zoneTime = 0;
-      if (zone?.kind === 'manila') this.hud.message(t('zone.manila'), 4);
-      else if (zone?.kind === 'piece' && zone.name) {
-        const sp = this.level.setPieces.find((p) => p.id === zone.name);
-        if (sp) this.hud.message(sp.name, 3);
+      const pid = zone ? (zone.kind === 'piece' ? zone.name : zone.kind) : undefined;
+      const sp = pid ? this.level.setPieces.find((p) => p.id === pid) : undefined;
+      if (sp) {
+        const isNew = this.journal.seePiece(this.level.id, sp.id);
+        if (zone?.kind === 'manila') this.hud.message(t('zone.manila'), 4);
+        else this.hud.message(isNew ? t('journal.newPiece', { name: sp.name }) : sp.name, 3);
       }
     }
     if (zone) {
@@ -868,6 +902,11 @@ export class Game {
 
   private handleActions(active: boolean): void {
     const inp = this.input;
+    if (inp.wasPressed('journal')) {
+      if (this.journalOpen) this.journalScreen.hide();
+      else if (active) this.openJournal();
+      return;
+    }
     if (inp.wasPressed('pause') && this.input.padConnected && !this.input.locked) {
       // Gamepad Start: toggle pause without a mouse.
       if (this.paused && this.started && !this.settingsScreen.visible) this.start();
@@ -900,7 +939,7 @@ export class Game {
     this.last = now;
     this.time += dt;
     this.input.pollGamepad();
-    const overlay = this.paused || this.settingsScreen.visible;
+    const overlay = this.paused || this.settingsScreen.visible || this.journalOpen;
     const active =
       this.started && !overlay && (this.input.locked || this.input.padConnected) && this.deadTimer <= 0 && !this.transition;
 

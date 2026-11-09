@@ -99,5 +99,18 @@
   "sub.whisper": "(どこかでささやき声がする)",
   "sub.steps": "(誰かの足音が聞こえる)",
   "sub.humDip": "(ハム音が途切れた)",
-  "sub.door": "(扉の軋む音)"
+  "sub.door": "(扉の軋む音)",
+  "journal.title": "放浪者の記録",
+  "journal.count": "発見したレベル: {n}",
+  "journal.tab.list": "記録",
+  "journal.tab.map": "経路図",
+  "journal.empty": "まだ何も記録されていない。",
+  "journal.pieces": "見つけた構造物 {a}/{b}:",
+  "journal.newLevel": "記録に追加: {name}",
+  "journal.newPiece": "記録に追加: {name}",
+  "journal.milestone": "{n} のレベルを記録した",
+  "journal.milestoneSub": "まだ、どこまでも続いている。",
+  "menu.journal": "ジャーナル",
+  "action.journal": "ジャーナル",
+  "journal.returned": "戻り口を通って引き返した。"
 }

@@ -6,6 +6,7 @@
 import { getStore } from './storage';
 import type { ItemId } from '../items/itemDefs';
 import type { DeltaData } from '../world/deltas';
+import type { JournalData } from '../systems/journal';
 
 export const SAVE_VERSION = 1;
 export const SLOT_COUNT = 3;
@@ -43,6 +44,10 @@ export interface SaveData {
   anchors: Record<string, SavedAnchor[]>;
   /** Recent level history (debug, SPEC §10.5 遷移履歴の一部). */
   history: string[];
+  /** Journal (SPEC §4.4). Optional for saves made before it existed. */
+  journal?: JournalData;
+  /** Game mode (SPEC §1.1). */
+  mode?: 'endless' | 'escape';
 }
 
 export interface SlotInfo {
@@ -85,6 +90,8 @@ export function validateSave(raw: unknown): SaveData | null {
     deltas: r.deltas && typeof r.deltas === 'object' ? (r.deltas as DeltaData) : {},
     anchors: r.anchors && typeof r.anchors === 'object' ? (r.anchors as Record<string, SavedAnchor[]>) : {},
     history: Array.isArray(r.history) ? (r.history as unknown[]).filter((x): x is string => typeof x === 'string').slice(-50) : [],
+    journal: r.journal && typeof r.journal === 'object' ? (r.journal as JournalData) : undefined,
+    mode: r.mode === 'escape' ? 'escape' : 'endless',
   };
 }
 

@@ -171,6 +171,18 @@ export class Hud {
     this.titleTime = 0;
   }
 
+  /** Large banner using the title-card style (journal milestones etc.). */
+  showBanner(big: string, sub: string): void {
+    this.title.innerHTML = '';
+    const a = this.div('lv');
+    a.style.fontSize = 'clamp(30px, 5vw, 64px)';
+    a.textContent = big;
+    const b = this.div('nm');
+    b.textContent = sub;
+    this.title.append(a, b);
+    this.titleTime = 0;
+  }
+
   /** Fade the screen to `opacity` (0..1) at `speed` per second. */
   fadeTo(opacity: number, speed = 2, color = '#000'): void {
     this.fadeTarget = opacity;

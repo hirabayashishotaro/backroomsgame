@@ -84,6 +84,7 @@ export const level1: LevelDefinition = {
   footstep: 'concrete',
   ambience: { humFreq: 50, humGain: 0.05, noiseGain: 0.04, noiseCutoff: 500 },
   environment: 'enclosed',
+  kindLabel: '倉庫(手作り)',
   spawn: { x: 4, y: 0, z: 4, yaw: 0 },
   arrival: (ctx, h) => gridArrival(ctx, LEVEL1_PARAMS, h),
 };

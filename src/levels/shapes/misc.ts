@@ -417,11 +417,13 @@ function caveOut(seed: number, cx: number, cz: number, cy: number): Out {
       if (rockAt(seed, gx, gz, cy)) {
         const ins = 0.3 + hash01(seed, 563, gx, gz, cy) * 0.6;
         box(o.solids, x0 - ins, y0, z0 - ins, x0 + CC + ins, y0 + CAVE_H, z0 + CC + ins, 'rock');
+        box(o.decor, x0, y0 + CAVE_H, z0, x0 + CC, y0 + CAVE_SLAB - 0.004, z0 + CC, 'rock');
         continue;
       }
       const shaft = shaftAt(seed, gx, gz, cy);
       if (!shaft) o.floors.push({ x0, z0, x1: x0 + CC, z1: z0 + CC, y: y0 });
-      if (!shaftAt(seed, gx, gz, cy + 1)) o.ceilings.push({ x0, z0, x1: x0 + CC, z1: z0 + CC, y: y0 + CAVE_H });
+      // Solid rock between this layer's ceiling and the next layer's floor.
+      if (!shaftAt(seed, gx, gz, cy + 1)) box(o.decor, x0, y0 + CAVE_H, z0, x0 + CC, y0 + CAVE_SLAB - 0.004, z0 + CC, 'rock');
       // Shaft walls through the rock below and ledges spiralling down to the layer below.
       if (shaft) {
         box(o.solids, x0 - 0.5, y0 - 4, z0 - 0.5, x0 + CC + 0.5, y0, z0, 'rock');
@@ -449,11 +451,13 @@ function caveOut(seed: number, cx: number, cz: number, cy: number): Out {
         o.lights.push({ x: x0 + 2, y: y0 + 1, z: z0 + 2, I: 2.5 });
         o.zones.push({ kind: 'piece', name: 'crystals', x0, z0, x1: x0 + CC, z1: z0 + CC });
       } else if (r < 0.075) {
-        // Hot spring
-        o.floors.pop();
-        o.floors.push({ x0, z0, x1: x0 + CC, z1: z0 + CC, y: y0 - 1 });
-        box(o.decor, x0, y0 - 0.35, z0, x0 + CC, y0 - 0.3, z0 + CC, 'hot-spring');
-        box(o.solids, x0, y0 - 1, z0, x0 + 0.8, y0 - 0.5, z0 + 0.8, 'rock');
+        // Hot spring: a basin with a low rock rim, filled with warm water
+        const r = 0.4;
+        box(o.solids, x0 + 0.2, y0, z0 + 0.2, x0 + CC - 0.2, y0 + r, z0 + 0.2 + r, 'rock');
+        box(o.solids, x0 + 0.2, y0, z0 + CC - 0.2 - r, x0 + CC - 0.2, y0 + r, z0 + CC - 0.2, 'rock');
+        box(o.solids, x0 + 0.2, y0, z0 + 0.2 + r, x0 + 0.2 + r, y0 + r, z0 + CC - 0.2 - r, 'rock');
+        box(o.solids, x0 + CC - 0.2 - r, y0, z0 + 0.2 + r, x0 + CC - 0.2, y0 + r, z0 + CC - 0.2 - r, 'rock');
+        box(o.decor, x0 + 0.6, y0 + 0.28, z0 + 0.6, x0 + CC - 0.6, y0 + 0.3, z0 + CC - 0.6, 'hot-spring');
         o.lights.push({ x: x0 + 2, y: y0, z: z0 + 2, I: 1.6 });
         o.zones.push({ kind: 'water', x0, z0, x1: x0 + CC, z1: z0 + CC });
         o.zones.push({ kind: 'piece', name: 'hot-spring', x0, z0, x1: x0 + CC, z1: z0 + CC });
@@ -486,7 +490,17 @@ export function caveArrival(ctx: GenContext, h: number): SpawnPoint {
     const gx = Math.floor(hash01(ctx.levelSeed, 564, h, k) * 80) - 40;
     const gz = Math.floor(hash01(ctx.levelSeed, 565, h, k) * 80) - 40;
     const cy = Math.floor(hash01(ctx.levelSeed, 566, h, k) * 6) - 3;
-    if (!rockAt(ctx.levelSeed, gx, gz, cy) && !shaftAt(ctx.levelSeed, gx, gz, cy)) return { x: gx * CC + 2, y: cy * CAVE_SLAB, z: gz * CC + 2, yaw: 0 };
+    if (rockAt(ctx.levelSeed, gx, gz, cy) || shaftAt(ctx.levelSeed, gx, gz, cy)) continue;
+    // Check the generated cell: an ordinary floor at the layer height and nothing standing there.
+    const cx = Math.floor(gx / CN);
+    const cz = Math.floor(gz / CN);
+    const o = caveOut(ctx.levelSeed, cx, cz, cy);
+    const lx = gx * CC + 2 - cx * 32;
+    const lz = gz * CC + 2 - cz * 32;
+    const y0 = cy * CAVE_SLAB;
+    const floorOk = o.floors.some((f) => f.y === y0 && lx > f.x0 && lx < f.x1 && lz > f.z0 && lz < f.z1);
+    const blocked = o.solids.some((b) => b.maxY > y0 + 0.45 && b.minY < y0 + 1.7 && lx > b.minX - 0.4 && lx < b.maxX + 0.4 && lz > b.minZ - 0.4 && lz < b.maxZ + 0.4);
+    if (floorOk && !blocked) return { x: gx * CC + 2, y: y0, z: gz * CC + 2, yaw: 0 };
   }
   return { x: 2, y: 0, z: 2, yaw: 0 };
 }

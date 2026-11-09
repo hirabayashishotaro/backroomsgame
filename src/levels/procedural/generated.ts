@@ -105,7 +105,9 @@ export type Grammar =
   | 'rooftops'
   | 'endisles'
   | 'pooltower'
-  | 'hospital';
+  | 'hospital'
+  | 'poolrooms'
+  | 'waterpark';
 
 const GRAMMARS: Array<[Grammar, number, SkyKind[]]> = [
   ['grid', 24, []],
@@ -120,9 +122,9 @@ const GRAMMARS: Array<[Grammar, number, SkyKind[]]> = [
   ['tunnel', 6, []],
   ['chaos', 4, []],
   ['mountain', 6, ['day', 'dawn', 'overcast']],
-  ['volcano', 4, []],
+  ['volcano', 4, ['dusk', 'night', 'overcast']],
   ['temple', 3, []],
-  ['island', 3, []],
+  ['island', 3, ['day', 'dusk', 'dawn', 'night']],
   ['cave', 6, []],
   ['mansion', 5, []],
   ['swamp', 5, []],
@@ -134,6 +136,8 @@ const GRAMMARS: Array<[Grammar, number, SkyKind[]]> = [
   ['endisles', 4, []],
   ['pooltower', 4, []],
   ['hospital', 5, []],
+  ['poolrooms', 8, []],
+  ['waterpark', 3, []],
 ];
 
 export const GRAMMAR_LABEL: Record<Grammar, string> = {
@@ -155,6 +159,8 @@ export const GRAMMAR_LABEL: Record<Grammar, string> = {
   endisles: '虚空の浮島',
   pooltower: '重なるプール(縦)',
   hospital: '夜の病院',
+  poolrooms: 'プールルーム',
+  waterpark: '屋内ウォーターパーク',
   grid: '屋内迷路',
   ruins: '空の下の廃墟',
   garden: '庭園',
@@ -186,6 +192,8 @@ const WORLD_NOUN: Partial<Record<Grammar, string[]>> = {
   endisles: ['浮島', '果て', '虚空'],
   pooltower: ['プール', '浴場', '水槽'],
   hospital: ['病院', '病棟', '療養所'],
+  poolrooms: ['プール', '浴場', '水の回廊', 'タイルの間'],
+  waterpark: ['ウォーターパーク', 'スライダー', '水の遊園地'],
   ruins: ['廃墟', '中庭', '遺構', '回廊跡'],
   garden: ['庭園', '植物園', '花園', '中庭'],
   aero: ['広場', 'テラス', 'アトリウム', '未来都市'],
@@ -297,7 +305,9 @@ export function makeGeneratedLevel(id: string): LevelDefinition {
         glassvoid: () => W.makeGlassVoid(so),
         rooftops: () => W.makeRooftops(so),
         endisles: () => W.makeEnd(so),
-        pooltower: () => W.makePoolTower(so),
+        pooltower: () => W.makePoolTower(so, rng),
+        poolrooms: () => W.makePoolrooms(so, rng),
+        waterpark: () => W.makePoolrooms(so, rng, { waterpark: true }),
         hospital: () => W.makeHospital(so),
       };
       def = make[grammar]();

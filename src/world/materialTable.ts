@@ -37,6 +37,7 @@ const FIXED_METRES: Record<string, number> = {
   'aero-tile': 2,
   grate: 0.5,
   studs: 2,
+  'clouds-window': 4,
 };
 
 const GEN_METRES: Record<string, number> = {
@@ -67,6 +68,7 @@ const GEN_METRES: Record<string, number> = {
   obsidian: 2,
   moss: 2,
   cap: 4,
+  pooltile: 1.6,
 };
 
 /** Metres covered by one repeat of a procedural texture. */
@@ -167,6 +169,19 @@ export function materialTable(p: Palette): Record<string, MatDef> {
     'hot-spring': clear(0x7ad8d0, 0.6),
     'glass-floor': clear(0xbfe4ff, 0.12),
     invisible: clear(0xffffff, 0),
+    // Solid underside of a floor in vertical levels (also the ceiling below).
+    slab: lit(p.ceilingTex),
+    'pool-tile': lit('gen:pooltile:f2f0e6:240'),
+    'pool-water': clear(0x38c4b0, 0.5),
+    'pool-water-blue': clear(0x3aa8d8, 0.5),
+    'pool-water-mint': clear(0x6ad8b8, 0.45),
+    'clouds-window': { kind: 'basic-tex', tex: 'clouds-window' },
+    'slide-red': lit('gen:panel:e8402a:241'),
+    'slide-yellow': lit('gen:panel:f4c830:242'),
+    'slide-blue': lit('gen:panel:2a7ae8:243'),
+    'slide-green': lit('gen:panel:3ac86a:244'),
+    'slide-pink': lit('gen:panel:f070b0:245'),
+    'cove-glow': basic(0xfff4d8),
     glass: clear(0x9fd8f0, 0.22),
     'water-dark': clear(0x0c1c26, 0.85),
     'water-shallow': clear(0x7fd0e0, 0.4),

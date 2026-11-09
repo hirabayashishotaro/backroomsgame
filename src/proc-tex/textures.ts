@@ -567,6 +567,29 @@ function genTexture(type: string, hex: string, seed: number): ProcTexture {
       }
       return finish(c, 2);
     }
+    case 'pooltile': {
+      // Small square tiles (10 cm) with thin grout, faint glaze variation.
+      const n = 16;
+      const t = S / n;
+      for (let i = 0; i < n; i++)
+        for (let j = 0; j < n; j++) {
+          ctx.fillStyle = rgb(hex, rng.range(0.96, 1.03));
+          ctx.fillRect(i * t, j * t, t, t);
+        }
+      ctx.fillStyle = 'rgba(70,80,78,0.55)';
+      for (let i = 0; i <= n; i++) {
+        ctx.fillRect(i * t - 0.8, 0, 1.6, S);
+        ctx.fillRect(0, i * t - 0.8, S, 1.6);
+      }
+      // glaze highlight
+      const g = ctx.createLinearGradient(0, 0, S, S);
+      g.addColorStop(0, 'rgba(255,255,255,0.08)');
+      g.addColorStop(0.5, 'rgba(255,255,255,0)');
+      g.addColorStop(1, 'rgba(255,255,255,0.06)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, S, S);
+      return finish(c, 1.6);
+    }
     case 'cap': {
       // Giant mushroom cap: soft gradient with pale glowing spots (not a red/white toadstool).
       for (let i = 0; i < 40; i++) {
@@ -831,6 +854,30 @@ function studs(): ProcTexture {
   return finish(c, 2);
 }
 
+/** A bright cloudy sky seen through an opening (self-lit). */
+function cloudsWindow(): ProcTexture {
+  const S = 256;
+  const [c, ctx] = canvas(S);
+  const rng = new Rng(901);
+  const g = ctx.createLinearGradient(0, 0, 0, S);
+  g.addColorStop(0, '#dfe8e4');
+  g.addColorStop(1, '#f6f1e2');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, S, S);
+  for (let i = 0; i < 90; i++) {
+    const x = rng.float() * S;
+    const y = rng.float() * S;
+    const r = rng.range(10, 40);
+    const cg = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const shade = rng.chance(0.5) ? '255,252,240' : '170,170,160';
+    cg.addColorStop(0, `rgba(${shade},${rng.range(0.25, 0.6)})`);
+    cg.addColorStop(1, `rgba(${shade},0)`);
+    ctx.fillStyle = cg;
+    for (const ox of [-S, 0, S]) ctx.fillRect(x - r + ox, y - r, r * 2, r * 2);
+  }
+  return finish(c, 4);
+}
+
 function doorTexture(hex: string, window: boolean): ProcTexture {
   const S = 128;
   const [c, ctx] = canvas(S);
@@ -884,6 +931,7 @@ const FACTORIES: Record<string, () => ProcTexture> = {
   'aero-tile': aeroTile,
   grate,
   studs,
+  'clouds-window': cloudsWindow,
 
   white: () => flat('#ffffff'),
 };

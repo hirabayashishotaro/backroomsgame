@@ -6,41 +6,12 @@
 import { hash01, hashInts, Rng } from '../../core/rng';
 import type { GenContext, LightSampler, SpawnPoint } from '../levelDefinition';
 import type { ChunkData } from '../../world/chunkData';
-import { box, emptyOut, fbm2, sampler, toChunk, neighbourLights, type Out } from './kit';
+import { box, emptyOut, fbm2, sampler, toChunk, neighbourLights } from './kit';
 import { makeTerrain } from '../../world/terrain';
 
-const CS = 2; // column size
-const N = 16; // columns per 32 m chunk
+const CS = 2; // grid size for placing things
+const N = 16;
 export const TERRAIN_S = CS * N;
-
-type HeightFn = (x: number, z: number) => number | null;
-
-/** Columns for a height function (null = no ground). Sides reach down to the lowest neighbour. */
-function columns(o: Out, cx: number, cz: number, h: HeightFn, mat: (top: number, steep: number, x: number, z: number) => string, depth = 0.6): void {
-  const ox = cx * TERRAIN_S;
-  const oz = cz * TERRAIN_S;
-  for (let i = 0; i < N; i++)
-    for (let j = 0; j < N; j++) {
-      const wx = ox + i * CS + CS / 2;
-      const wz = oz + j * CS + CS / 2;
-      const top = h(wx, wz);
-      if (top === null) continue;
-      let low = top;
-      let steep = 0;
-      for (const [dx, dz] of [
-        [CS, 0],
-        [-CS, 0],
-        [0, CS],
-        [0, -CS],
-      ]) {
-        const n = h(wx + dx, wz + dz);
-        const nn = n === null ? top - 3 : n;
-        low = Math.min(low, nn);
-        steep = Math.max(steep, top - nn);
-      }
-      box(o.solids, i * CS, low - depth, j * CS, i * CS + CS, top, j * CS + CS, mat(top, steep, wx, wz));
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Snowy mountain (Level 303): climbs forever along +x (diagonal expansion).
@@ -248,24 +219,43 @@ export function swampArrival(ctx: GenContext, p: SwampParams, h: number): SpawnP
 
 export const LAVA_Y = 0;
 
-function volcanoH(seed: number, x: number, z: number): number | null {
-  const r = Math.abs(fbm2(seed, 420, x / 38, z / 38, 3) * 2 - 1); // ridged: lines where r ~ 0
+/** How "walkable" a point is: 1 on ridges and rock islands, 0 out in the lava. */
+function volcanoWalk(seed: number, x: number, z: number): number {
+  const r = Math.abs(fbm2(seed, 420, x / 38, z / 38, 3) * 2 - 1); // 0 along ridge lines
   const island = fbm2(seed, 421, x / 60, z / 60, 2);
-  if (r > 0.07 && island < 0.72) return null;
-  return 0.8 + Math.round(1.6 * fbm2(seed, 422, x / 9, z / 9, 2) / 0.4) * 0.4;
+  const ridge = 1 - smoothstep(0.035, 0.085, r);
+  const isle = smoothstep(0.7, 0.75, island);
+  return Math.max(ridge, isle);
+}
+
+function smoothstep(a: number, b: number, v: number): number {
+  const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+/** Smooth ground height: ridges rise to ~1-2.5 m, everything else sinks under the lava. */
+function volcanoTerrainH(seed: number, x: number, z: number): number {
+  const w = volcanoWalk(seed, x, z);
+  return -3 + w * (4.2 + 1.4 * fbm2(seed, 422, x / 9, z / 9, 2));
+}
+
+/** Height where something can stand (null over lava). */
+function volcanoH(seed: number, x: number, z: number): number | null {
+  if (volcanoWalk(seed, x, z) < 0.9) return null;
+  return volcanoTerrainH(seed, x, z);
 }
 
 export function generateVolcano(ctx: GenContext, cx: number, cz: number): ChunkData {
   const seed = ctx.levelSeed;
   const o = emptyOut();
-  columns(o, cx, cz, (x, z) => volcanoH(seed, x, z), (_t, steep) => (steep > 1.5 ? 'rock' : 'basalt'), 1.4);
+  const terrain = makeTerrain(cx * TERRAIN_S, cz * TERRAIN_S, TERRAIN_S, 1, (x, z) => volcanoTerrainH(seed, x, z), { flat: 'basalt', steep: 'rock', steepAt: 0.9 });
   box(o.decor, 0, LAVA_Y - 0.05, 0, TERRAIN_S, LAVA_Y, TERRAIN_S, 'lava');
   o.zones.push({ kind: 'lava', x0: 0, z0: 0, x1: TERRAIN_S, z1: TERRAIN_S });
   const ox = cx * TERRAIN_S;
   const oz = cz * TERRAIN_S;
   const rng = new Rng(hashInts(seed, 423, cx, cz));
   // Things on solid ground: an obsidian door, a vent (gate), a bottle.
-  for (let k = 0; k < 16; k++) {
+  for (let k = 0; k < 26; k++) {
     const x = 1 + rng.int(0, 15) * 2;
     const z = 1 + rng.int(0, 15) * 2;
     const y = volcanoH(seed, ox + x, oz + z);
@@ -276,22 +266,23 @@ export function generateVolcano(ctx: GenContext, cx: number, cz: number): ChunkD
       o.props.push({ uid: 'od' + k, kind: 'plain-door', x, y, z: z + 0.22, rotY: 0, color: 0x1a1020 });
       o.zones.push({ kind: 'piece', name: 'obsidian-door', x0: x - 1, z0: z - 1, x1: x + 1, z1: z + 1 });
     } else if (roll < 0.2) {
-      box(o.solids, x - 1, y, z - 1, x + 1, y + 0.6, z - 0.7, 'basalt');
-      box(o.solids, x - 1, y, z + 0.7, x + 1, y + 0.6, z + 1, 'basalt');
+      box(o.decor, x - 1, y, z - 1, x + 1, y + 0.4, z - 0.7, 'basalt');
+      box(o.decor, x - 1, y, z + 0.7, x + 1, y + 0.4, z + 1, 'basalt');
       box(o.decor, x - 0.7, y + 0.02, z - 0.7, x + 0.7, y + 0.05, z + 0.7, 'portal');
       o.zones.push({ kind: 'gate', x0: x - 0.6, z0: z - 0.6, x1: x + 0.6, z1: z + 0.6 });
       o.zones.push({ kind: 'piece', name: 'vent', x0: x - 1, z0: z - 1, x1: x + 1, z1: z + 1 });
     } else if (roll < 0.32) o.items.push({ uid: 'v' + k, id: 'almond_water', x, y, z, rot: 0 });
   }
-  return toChunk(ctx, cx, cz, 0, TERRAIN_S, o);
+  return { ...toChunk(ctx, cx, cz, 0, TERRAIN_S, o), terrain };
 }
 
 export function volcanoArrival(ctx: GenContext, h: number): SpawnPoint {
   for (let k = 0; k < 400; k++) {
-    const x = Math.floor((hash01(ctx.levelSeed, 424, h, k) - 0.5) * 400 / 2) * 2 + 1;
-    const z = Math.floor((hash01(ctx.levelSeed, 425, h, k) - 0.5) * 400 / 2) * 2 + 1;
+    // Even coordinates: objects stand on odd grid points, so we never arrive inside one.
+    const x = Math.round((hash01(ctx.levelSeed, 424, h, k) - 0.5) * 200) * 2;
+    const z = Math.round((hash01(ctx.levelSeed, 425, h, k) - 0.5) * 200) * 2;
     const y = volcanoH(ctx.levelSeed, x, z);
-    if (y !== null && volcanoH(ctx.levelSeed, x + 2, z) !== null && volcanoH(ctx.levelSeed, x - 2, z) !== null) return { x, y, z, yaw: 0 };
+    if (y !== null && volcanoH(ctx.levelSeed, x + 2, z) !== null && volcanoH(ctx.levelSeed, x - 2, z) !== null && volcanoH(ctx.levelSeed, x, z + 2) !== null) return { x, y, z, yaw: 0 };
   }
   return { x: 1, y: 2, z: 1, yaw: 0 };
 }
@@ -305,17 +296,20 @@ export const SEA_R = 24;
 
 function islandH(seed: number, x: number, z: number): number | null {
   const d = Math.hypot(x, z);
-  if (d > SEA_R) return null;
-  if (d > ISLAND_R) return -0.5;
-  return Math.round((1.4 * (1 - (d / ISLAND_R) ** 2) + 0.5 * fbm2(seed, 430, x / 6, z / 6, 2)) / 0.2) * 0.2;
+  if (d > SEA_R + 8) return null;
+  const k = Math.min(1, d / ISLAND_R);
+  // Dune bumps fade out toward the shore; the beach slopes gently into the sea.
+  const land = 1.4 * (1 - k * k) + 0.5 * fbm2(seed, 430, x / 6, z / 6, 2) * (1 - k);
+  return d <= ISLAND_R ? land : -0.6 * Math.min(1, (d - ISLAND_R) / 4);
 }
 
 export function generateIsland(ctx: GenContext, cx: number, cz: number): ChunkData {
   const seed = ctx.levelSeed;
   const o = emptyOut();
+  let terrain: ReturnType<typeof makeTerrain> | undefined;
   box(o.decor, 0, 0.0, 0, TERRAIN_S, 0.05, TERRAIN_S, 'ocean');
   if (Math.abs(cx + 0.5) <= 1.5 && Math.abs(cz + 0.5) <= 1.5) {
-    columns(o, cx, cz, (x, z) => islandH(seed, x, z), (t) => (t < 0 ? 'sand' : 'sand'), 0.8);
+    terrain = makeTerrain(cx * TERRAIN_S, cz * TERRAIN_S, TERRAIN_S, 1, (x, z) => islandH(seed, x, z) ?? -0.6, { flat: 'sand', steep: 'sand', steepAt: 9 });
     const ox = cx * TERRAIN_S;
     const oz = cz * TERRAIN_S;
     // Invisible current: a ring of clear walls you cannot pass.
@@ -372,7 +366,7 @@ export function generateIsland(ctx: GenContext, cx: number, cz: number): ChunkDa
     }
     o.zones.push({ kind: 'water', x0: 0, z0: 0, x1: 32, z1: 32 });
   }
-  return toChunk(ctx, cx, cz, 0, TERRAIN_S, o);
+  return { ...toChunk(ctx, cx, cz, 0, TERRAIN_S, o), terrain };
 }
 
 export function islandArrival(ctx: GenContext): SpawnPoint {

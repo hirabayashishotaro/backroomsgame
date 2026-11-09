@@ -5,6 +5,7 @@
  */
 import { Rng } from '../../core/rng';
 import { makeDocksLevel, makeGardenLevel, makeGridLevel } from '../worlds';
+import { makePoolrooms } from '../worlds2';
 import type { GridParams } from '../gridLevel';
 import type { LevelDefinition } from '../levelDefinition';
 
@@ -122,26 +123,24 @@ export const level27 = makeGridLevel(
   { hallucination: 1.3, drainMul: 1.15 },
 );
 
-/** 37 — tiled rooms flooded with shallow, still water. */
-export const level37 = makeGridLevel(
+/** 37 — the Poolrooms: small white tiles, shallow turquoise water, spiral stairs, slides. */
+export const level37 = makePoolrooms(
   {
     id: '37',
     title: 'Level 37',
     name: 'プールルーム',
     subtitle: 'Poolrooms',
     threat: 0,
-    sky: 'day',
     kindLabel: 'プールルーム(手作り)',
     exits: [
-      { kind: 'door', prop: 'plain-door', targets: [{ levelId: '27', weight: 2 }, { levelId: '137', weight: 1 }], discovery: 'タイルの壁の扉は、薄暗い床下へ続いていた。' },
+      { kind: 'door', prop: 'plain-door', targets: [{ levelId: '27', weight: 2 }, { levelId: '37.2', weight: 2 }, { levelId: '137', weight: 1 }], discovery: '白いタイルの扉は、別の水辺に通じていた。' },
       { kind: 'floor', targets: [{ levelId: 'u2', weight: 2 }, { levelId: '370', weight: 1 }], discovery: '水の底のタイルが一枚抜けて、沈んでいった。' },
       { kind: 'wall', push: 2.5, targets: [{ levelId: '27', weight: 1 }], discovery: 'タイルの壁をすり抜けた。' },
       { kind: 'walk', distance: 1200, targets: [{ levelId: 'u2', weight: 1 }], discovery: '水の中を歩き続けると、畳の匂いがした。' },
     ],
   },
-  gp({ cell: 6, cellsPerChunk: 5, ceiling: 4.5, wallP: 0.32, doorwayP: 0.75, pillarP: 0.2, pillarHalf: 0.3, lightP: 0.5, lightIntensity: 1.6, waterY: 0.22, pieces: ['pool', 'water-tanks', 'light-well', 'pillar-forest', 'door-row'] }),
-  { wall: 'gen:tile:e6f0f2:331', floor: 'gen:tile:bfe2ea:332', ceiling: 'gen:tile:f0f6f7:333', light: 0xf2ffff, tint: [0.92, 1, 1], fog: 0xb8dbe2, fogDensity: 0.03, ambient: 0.18 },
-  { footstep: 'water', ambience: { humFreq: 0, humGain: 0, noiseGain: 0.03, noiseCutoff: 1500 }, hallucination: 0.5, drainMul: 0.8 },
+  new Rng(3737),
+  { fixed: true },
 );
 
 /** 139 — the space behind Level 0's walls: exposed studs, insulation and wiring. */

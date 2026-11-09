@@ -97,7 +97,7 @@ describe('walking the vertical worlds (no holes on the intended route)', () => {
     const ctx = makeGenContext(31, L);
     for (let cy = 0; cy < 4; cy++) {
       const d = L.generator(ctx, 0, 0, cy);
-      const steps = d.solids.filter((b) => b.mat === 'tile-white' && b.maxZ - b.minZ === 0.5 && b.maxX - b.minX > 3);
+      const steps = d.solids.filter((b) => Math.abs(b.maxZ - b.minZ - 0.5) < 1e-9 && b.maxX - b.minX > 3);
       steps.sort((a, b) => a.maxY - b.maxY);
       const first = steps[0];
       const p = new PlayerController();
@@ -148,5 +148,43 @@ describe('smooth terrain', () => {
     for (let i = 0; i < 100; i++) p.step(0.02, go(), w);
     expect(p.x).toBeLessThan(1.2);
     expect(p.y).toBeLessThan(0.5);
+  });
+});
+
+describe('solid floors in vertical worlds', () => {
+  it('every raised floor has a solid slab underneath (no paper-thin floors seen from below)', () => {
+    for (const id of ['512', '37.2', '120']) {
+      const L = resolveLevel(id);
+      const ctx = makeGenContext(31, L);
+      for (let cy = -2; cy <= 2; cy++) {
+        const d = L.generator(ctx, 0, 0, cy);
+        const below = L.generator(ctx, 0, 0, cy - 1);
+        for (const f of d.floors) {
+          const under = [...d.decor, ...d.solids, ...below.decor, ...below.solids].some(
+            (b) => b.maxY <= f.y + 0.01 && b.maxY >= f.y - 0.05 && b.minY < f.y - 0.25 && b.minX <= f.x0 + 0.01 && b.maxX >= f.x1 - 0.01 && b.minZ <= f.z0 + 0.01 && b.maxZ >= f.z1 - 0.01,
+          );
+          expect(under, `${id} cy=${cy} floor ${JSON.stringify(f)}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('poolrooms: every chunk edge wall has an opening (rooms always connect)', () => {
+    const L = resolveLevel('37');
+    const ctx = makeGenContext(31, L);
+    for (let cx = -3; cx < 3; cx++)
+      for (let cz = -3; cz < 3; cz++) {
+        const d = L.generator(ctx, cx, cz);
+        // West wall boxes on the line x=0 that reach the floor: they must not cover all of z 0..32.
+        const west = d.solids.filter((b) => b.minX < 0 && b.maxX > 0 && b.minY <= 0.01).map((b) => [b.minZ, b.maxZ]).sort((a, b) => a[0] - b[0]);
+        let covered = 0;
+        let end = 0;
+        for (const [a, b] of west) {
+          if (a > end + 0.5) break;
+          end = Math.max(end, b);
+          covered = end;
+        }
+        expect(covered, `${cx},${cz}`).toBeLessThan(31.5);
+      }
   });
 });

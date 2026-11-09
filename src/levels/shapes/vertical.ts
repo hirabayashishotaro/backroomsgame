@@ -8,6 +8,15 @@ import type { GenContext, LightSampler, SpawnPoint } from '../levelDefinition';
 import type { ChunkData } from '../../world/chunkData';
 import { box, emptyOut, ring, sampler, toChunk, type Light, type Out } from './kit';
 
+/**
+ * Give every floor rectangle a solid slab underneath (down to the ceiling of
+ * the storey below), so floors are never paper-thin from below or at hole
+ * edges. Slabs are decor (rendered on all sides, no collision).
+ */
+function solidify(o: Out, thickness: number, mat = 'slab'): void {
+  for (const f of o.floors) box(o.decor, f.x0, f.y - thickness, f.z0, f.x1, f.y - 0.004, f.z1, mat);
+}
+
 // ---------------------------------------------------------------------------
 // Endless spiral stairwell (Level 111)
 // ---------------------------------------------------------------------------
@@ -203,10 +212,7 @@ function mansionOut(seed: number, cx: number, cz: number, cy: number): Out {
     o.floors.push({ x0: SX0, z0: hz0 === CZ0 ? MID : CZ0, x1: SX1, z1: hz0 === CZ0 ? CZ1 : MID, y: y0 });
     void hz1;
   } else o.floors.push({ x0: 0, z0: 0, x1: 32, z1: 32, y: y0 });
-  if (stair) {
-    o.ceilings.push({ x0: 0, z0: CZ0, x1: SX0, z1: CZ1, y: y0 + H }, { x0: SX1, z0: CZ0, x1: 32, z1: CZ1, y: y0 + H });
-    o.ceilings.push({ x0: SX0, z0: oz0 === CZ0 ? MID : CZ0, x1: SX1, z1: oz0 === CZ0 ? CZ1 : MID, y: y0 + H });
-  } else o.ceilings.push({ x0: 0, z0: CZ0, x1: 32, z1: CZ1, y: y0 + H });
+  // (No separate ceilings: the solid slab under the floor above is the ceiling.)
   // Corridor walls with room doors every 6 m (some rooms open, most closed doors)
   for (let i = 0; i < 5; i++) {
     const rx = 1 + i * 6.2;
@@ -233,8 +239,6 @@ function mansionOut(seed: number, cx: number, cz: number, cy: number): Out {
         const bz = side ? zW + 5 : zW - 7;
         box(o.solids, rx + 0.4, y0, bz, rx + 2.4, y0 + 0.55, bz + 2, 'fabric');
         box(o.solids, rx + 4, y0, bz + 0.5, rx + 5.2, y0 + 0.75, bz + 1.5, 'wood-dark');
-        o.ceilings.push({ x0: rx, z0: Math.min(zIn, zOut), x1: rx + 6.2, z1: Math.max(zIn, zOut), y: y0 + H });
-        o.floors.push({ x0: rx, z0: Math.min(zIn, zOut), x1: rx + 6.2, z1: Math.max(zIn, zOut), y: y0 });
         if (hash01(seed, 922, cx * 10 + i, cy, side) < 0.4) o.items.push({ uid: `r${i}${side}`, id: 'almond_water', x: rx + 4.6, y: y0 + 0.75, z: bz + 1, rot: 0 });
         o.lights.push({ x: rx + 3, y: y0 + 3, z: (zIn + zOut) / 2, I: 1.2 });
         o.zones.push({ kind: 'piece', name: 'apartment', x0: rx, z0: Math.min(zIn, zOut), x1: rx + 6.2, z1: Math.max(zIn, zOut) });
@@ -257,6 +261,8 @@ function mansionOut(seed: number, cx: number, cz: number, cy: number): Out {
     o.zones.push({ kind: 'piece', name: 'stairwell', x0: 0, z0: CZ0, x1: SX1, z1: CZ1 });
   }
   if (hash01(seed, 924, cx, cy) < 0.15) o.items.push({ uid: 'c', id: 'almond_water', x: 20, y: y0, z: CZ0 + 0.6, rot: 0 });
+  // Walls reach the slab above, slabs fill the storey gap.
+  solidify(o, MANSION_SLAB - H);
   return o;
 }
 
@@ -318,18 +324,15 @@ function poolOut(seed: number, cx: number, cz: number, cy: number): Out {
       const z0 = j * T;
       if (isPool) {
         // A sunken pool tile: floor 1.6 m down, water, and a zone that softens landings.
-        o.floors.push({ x0, z0, x1: x0 + T, z1: z0 + T, y: y0 - 1.6 });
-        box(o.decor, x0, y0 - 0.5, z0, x0 + T, y0 - 0.45, z0 + T, 'water');
+        o.floors.push({ x0, z0, x1: x0 + T, z1: z0 + T, y: y0 - 1.2 });
+        box(o.decor, x0, y0 - 0.35, z0, x0 + T, y0 - 0.33, z0 + T, 'pool-water');
         o.zones.push({ kind: 'water', x0, z0, x1: x0 + T, z1: z0 + T });
-        box(o.solids, x0, y0 - 1.6, z0, x0 + 0.8, y0 - 0.9, z0 + 0.8, 'tile-white'); // a step out
+        box(o.solids, x0, y0 - 1.2, z0, x0 + 0.8, y0 - 0.6, z0 + 0.8, 'wall'); // a step out
       } else if (!isHole) o.floors.push({ x0, z0, x1: x0 + T, z1: z0 + T, y: y0 });
-      // Ceiling, open above our pools (the slab above has holes there) and where our stairs climb.
-      const stairShaft = i === stairI && j >= stairJ - 2 && j <= stairJ;
-      if (!isPool && !stairShaft) o.ceilings.push({ x0, z0, x1: x0 + T, z1: z0 + T, y: y0 + H });
     }
   // Pillars on the tile grid corners (arches feel)
   for (let i = 1; i < 8; i += 3)
-    for (let j = 1; j < 8; j += 3) box(o.solids, i * T - 0.35, y0, j * T - 0.35, i * T + 0.35, y0 + H, j * T + 0.35, 'tile-white');
+    for (let j = 1; j < 8; j += 3) box(o.solids, i * T - 0.35, y0, j * T - 0.35, i * T + 0.35, y0 + H, j * T + 0.35, 'wall');
   // Stairs up along +z in the stair column, ending flush with the far edge of
   // the tile that is a hole in the slab above (so you step straight onto its floor).
   const sx0 = stairI * T + 0.4;
@@ -338,14 +341,27 @@ function poolOut(seed: number, cx: number, cz: number, cy: number): Out {
   for (let s = 0; s < 20; s++) {
     const top = y0 + (s + 1) * 0.4;
     const z = zStart + s * 0.5;
-    box(o.solids, sx0, top - 0.3, z, sx0 + 3.2, top, z + 0.5, 'tile-white');
+    box(o.solids, sx0, top - 0.3, z, sx0 + 3.2, top, z + 0.5, 'wall');
   }
   // Side walls along the stair tile column above the floor, so the climb is enclosed.
-  box(o.solids, sx0 - 0.25, y0, zStart, sx0 - 0.05, y0 + 8, zEnd, 'tile-white');
+  box(o.solids, sx0 - 0.25, y0, zStart, sx0 - 0.05, y0 + 8, zEnd, 'wall');
+  // Daylight leaking from a high window band on one side
+  box(o.decor, 0.05, y0 + 3, 12, 0.1, y0 + 5.5, 20, 'clouds-window');
   o.zones.push({ kind: 'piece', name: 'pool-stairs', x0: sx0, z0: zStart, x1: sx0 + 3.2, z1: zEnd });
   if (holes.length) o.zones.push({ kind: 'piece', name: 'pool-drop', x0: holes[0][0] * T, z0: holes[0][1] * T, x1: holes[0][0] * T + T, z1: holes[0][1] * T + T });
   for (let k = 0; k < 4; k++) o.lights.push({ x: 4 + (k % 2) * 16 + 4, y: y0 + H - 0.3, z: 4 + Math.floor(k / 2) * 16 + 4, I: 2 });
   if (hash01(seed, 932, cx, cz, cy) < 0.5) o.items.push({ uid: 'p', id: 'almond_water', x: 2, y: y0, z: 2, rot: 0 });
+  // Merge the floor tiles row by row (fewer, larger boxes), then give them
+  // solid slabs down to the storey below and a sheet of shallow water.
+  const merged: typeof o.floors = [];
+  for (const f of [...o.floors].sort((a, b) => a.y - b.y || a.z0 - b.z0 || a.x0 - b.x0)) {
+    const last = merged[merged.length - 1];
+    if (last && last.y === f.y && last.z0 === f.z0 && last.z1 === f.z1 && Math.abs(last.x1 - f.x0) < 1e-6) last.x1 = f.x1;
+    else merged.push({ ...f });
+  }
+  o.floors = merged;
+  for (const f of o.floors) box(o.decor, f.x0, y0 - (POOL_SLAB - H), f.z0, f.x1, f.y - 0.004, f.z1, 'slab');
+  for (const f of o.floors) if (f.y === y0) box(o.decor, f.x0, y0 + 0.16, f.z0, f.x1, y0 + 0.18, f.z1, 'pool-water');
   if (hash01(seed, 935, cx, cz, cy) < 0.2) {
     o.props.push({ uid: 'pd', kind: 'plain-door', x: 1 * T, y: y0, z: 1 * T + 0.37, rotY: 0, color: 0xdfe6e8 });
     o.zones.push({ kind: 'piece', name: 'pool-door', x0: T - 1, z0: T, x1: T + 1, z1: T + 1.5 });

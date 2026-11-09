@@ -13,6 +13,7 @@ import * as V from './shapes/vertical';
 import * as T from './shapes/terrain';
 import * as M from './shapes/misc';
 import { chaosArrival, chaosSampler, generateChaos } from './shapes/chaos';
+import { generatePoolrooms, poolroomsArrival, poolroomsSampler, type PoolParams } from './shapes/pools';
 import { sampler } from './shapes/kit';
 
 export interface ShapeOpts {
@@ -134,11 +135,14 @@ export function makeMansion(o: ShapeOpts, rng: Rng): LevelDefinition {
   };
 }
 
-export function makePoolTower(o: ShapeOpts): LevelDefinition {
+export function makePoolTower(o: ShapeOpts, rng?: Rng): LevelDefinition {
+  const tile = rng ? rng.pick(POOL_TILES) : POOL_TILES[0];
+  const tex = `gen:pooltile:${tile}:${rng ? rng.int(1, 999) : 630}`;
   return {
     ...common(o),
+    meshDetail: 2,
     chunkSize: 32,
-    palette: look('gen:tile:e6f0f2:630', 'gen:tile:bfe2ea:631', 'gen:tile:f0f6f7:632', 0xb8dbe2, 0.03, 0.2, 0xf2ffff, [0.92, 1, 1]),
+    palette: look(tex, tex, tex, 0xd8e4dc, 0.025, 0.25, 0xfff6e0, [1, 0.98, 0.92]),
     generator: (ctx, cx, cz, cy) => V.generatePoolTower(ctx, cx, cz, cy),
     lightSampler: (ctx, cx, cz, cy) => V.poolTowerSampler(ctx, cx, cz, cy),
     setPieces: pieces([
@@ -365,7 +369,7 @@ export function makeVolcano(o: ShapeOpts): LevelDefinition {
     footstep: 'concrete',
     ambience: { humFreq: 30, humGain: 0.05, noiseGain: 0.07, noiseCutoff: 200 },
     environment: 'open-sky',
-    sky: { kind: 'dusk' },
+    sky: { kind: o.sky ?? 'dusk' },
     lava: { y: T.LAVA_Y, damage: 35 },
     spawn: { x: 1, y: 2, z: 1, yaw: 0 },
     arrival: (ctx, h) => T.volcanoArrival(ctx, h),
@@ -380,7 +384,8 @@ export function makeIsland(o: ShapeOpts): LevelDefinition {
     chunkSize: T.TERRAIN_S,
     palette: look('gen:sand:d8c690:205', 'gen:sand:d8c690:205', 'white', SKY_PRESETS.day.horizon, 0.012, 0.2),
     generator: (ctx, cx, cz) => T.generateIsland(ctx, cx, cz),
-    lightSampler: (_ctx, cx, cz) => sampler(1, SKY_PRESETS.day.sunDir, Math.abs(cx + 0.5) < 1 && Math.abs(cz + 0.5) < 1 ? [{ x: 0, y: 1, z: 2, I: 2 }] : []),
+    lightSampler: (_ctx, cx, cz) =>
+      sampler({ day: 1, dusk: 0.6, dawn: 0.7, night: 0.25, overcast: 0.75, void: 0.15 }[o.sky ?? 'day'], SKY_PRESETS[o.sky ?? 'day'].sunDir, Math.abs(cx + 0.5) < 1 && Math.abs(cz + 0.5) < 1 ? [{ x: 0, y: 1, z: 2, I: 2 }] : []),
     setPieces: pieces([
       ['campfire', '焚き火', '誰が起こしたのか分からない焚き火。'],
       ['wreck', '難破船', '砂に埋もれた小舟の残骸。'],
@@ -391,7 +396,7 @@ export function makeIsland(o: ShapeOpts): LevelDefinition {
     footstep: 'carpet',
     ambience: { humFreq: 0, humGain: 0, noiseGain: 0.07, noiseCutoff: 700 },
     environment: 'open-sky',
-    sky: { kind: 'day' },
+    sky: { kind: o.sky ?? 'day' },
     topology: 'closed',
     drifters: { radius: 21 },
     spawn: { x: 1, y: 1.4, z: -1, yaw: 0 },
@@ -564,3 +569,47 @@ export function makeChaos(o: ShapeOpts, rng: Rng): LevelDefinition {
 }
 
 export { QUIET };
+
+// --- Poolrooms (after the reference images) ------------------------------------
+
+export const POOL_TILES = ['f2f0e6', 'f6ede4', 'e6f2ee', 'e8eef4', 'f2ead2'];
+const POOL_WATERS = ['pool-water', 'pool-water-blue', 'pool-water-mint'];
+const SLIDES = ['slide-red', 'slide-yellow', 'slide-blue', 'slide-green', 'slide-pink'];
+
+export function makePoolrooms(o: ShapeOpts, rng: Rng, opts: { waterpark?: boolean; fixed?: boolean } = {}): LevelDefinition {
+  const tile = opts.fixed ? POOL_TILES[0] : rng.pick(POOL_TILES);
+  const p: PoolParams = {
+    H: opts.fixed ? 5 : rng.pick([4.5, 5, 5.5, 6]),
+    water: opts.fixed ? 'pool-water' : rng.pick(POOL_WATERS),
+    weights: opts.waterpark ? [1, 1, 2, 6, 1, 1] : opts.fixed ? [2, 2, 3, 1.5, 2, 1.5] : [rng.range(0.5, 3), rng.range(0.5, 3), rng.range(1, 4), rng.range(0.5, 2.5), rng.range(1, 3), rng.range(0.5, 2)],
+    slideMats: opts.fixed ? SLIDES : SLIDES.filter(() => rng.chance(0.7)).concat(['slide-red']),
+    sun: opts.fixed ? 1 : rng.range(0.75, 1.3),
+  };
+  const tex = `gen:pooltile:${tile}:${opts.fixed ? 240 : rng.int(1, 999)}`;
+  return {
+    ...common(o),
+    chunkSize: 32,
+    ceilingHeight: p.H,
+    meshDetail: 1.5,
+    palette: look(tex, tex, tex, 0xe8e4d0, 0.02, 0.3, 0xfff6e0, [1.05, 0.98, 0.84]),
+    generator: (ctx, cx, cz) => generatePoolrooms(ctx, p, cx, cz),
+    lightSampler: (ctx, cx, cz) => poolroomsSampler(ctx, p, cx, cz),
+    setPieces: pieces([
+      ['spiral-stair', 'タイルの螺旋階段', 'タイル張りの柱を螺旋階段が巻き、上の天窓から光が降りてくる。'],
+      ['curved-corridor', '曲がる回廊', '浅い水の張った回廊が、ゆるやかに曲がって先が見えない。'],
+      ['raised-pools', '縁のあるプール', 'タイルの縁で囲まれたプールがいくつも並ぶ。天井の間接照明が水面に映る。'],
+      ['water-slide', 'ウォータースライダー', '塔の上から、色とりどりのスライダーが渦を巻いて水に落ちる。'],
+      ['cloud-window', '雲の窓', '壁の窓の外には、まぶしい雲しか見えない。'],
+      ['tile-tunnel', 'タイルのトンネル', 'ヴォールト天井のタイルのトンネル。向こうから光が漏れている。'],
+      ['pillared-hall', '列柱の間', '丸い柱が立ち並ぶ静かな広間。'],
+      ['tile-door', '白い扉', '白いタイルの壁に、白い扉がひとつ。'],
+    ]),
+    footstep: 'water',
+    ambience: { humFreq: 0, humGain: 0, noiseGain: 0.03, noiseCutoff: 1600 },
+    environment: 'enclosed',
+    spawn: { x: 11, y: 0, z: 16, yaw: -Math.PI / 2 },
+    arrival: (ctx, h) => poolroomsArrival(ctx, p, h),
+    hallucination: 0.4,
+    drainMul: 0.8,
+  };
+}

@@ -99,16 +99,18 @@ export function chaosSampler(ctx: GenContext, p: ChaosParams, cx: number, cz: nu
   };
 }
 
-/** Somewhere solid to stand in chunk (0,0). */
+/** Somewhere solid and free to stand near chunk (0,0). */
 export function chaosArrival(ctx: GenContext, p: ChaosParams): { x: number; y: number; z: number; yaw: number } {
   for (let k = 0; k < 9; k++) {
     const cx = (k % 3) - 1;
     const cz = Math.floor(k / 3) - 1;
     const d = generateChaos(ctx, p, cx, cz);
-    const f = d.floors.find((r) => r.x1 - r.x0 > 2 && r.z1 - r.z0 > 2);
-    if (f) return { x: cx * S + (f.x0 + f.x1) / 2, y: f.y, z: cz * S + (f.z0 + f.z1) / 2, yaw: 0 };
-    const b = d.solids.find((q) => q.maxX - q.minX > 2 && q.maxZ - q.minZ > 2 && q.maxY > -20);
-    if (b) return { x: cx * S + (b.minX + b.maxX) / 2, y: b.maxY, z: cz * S + (b.minZ + b.maxZ) / 2, yaw: 0 };
+    const free = (x: number, y: number, z: number) =>
+      !d.solids.some((b) => !(b.maxY <= y + 0.45 || b.minY >= y + 1.7) && x > b.minX - 0.5 && x < b.maxX + 0.5 && z > b.minZ - 0.5 && z < b.maxZ + 0.5) &&
+      !d.zones.some((zn) => zn.kind === 'thin-floor' && x > zn.x0 - 0.5 && x < zn.x1 + 0.5 && z > zn.z0 - 0.5 && z < zn.z1 + 0.5);
+    for (const f of d.floors)
+      for (let x = Math.ceil(f.x0) + 1; x < f.x1 - 1; x += 2)
+        for (let z = Math.ceil(f.z0) + 1; z < f.z1 - 1; z += 2) if (free(x, f.y, z)) return { x: cx * S + x, y: f.y, z: cz * S + z, yaw: 0 };
   }
   return { x: 16, y: 0, z: 16, yaw: 0 };
 }

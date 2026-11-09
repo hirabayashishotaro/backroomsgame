@@ -12,7 +12,12 @@ export interface MoveInput {
 export interface WorldQuery {
   boxes: (x: number, z: number) => WBox[];
   floors: (x: number, z: number) => FloorRect[];
+  /** Smooth terrain height at a point (null = none there). */
+  terrain?: (x: number, z: number) => number | null;
 }
+
+/** Steepest walkable terrain slope (rise / run): about 47 degrees. */
+export const MAX_SLOPE = 1.05;
 
 export const PLAYER_RADIUS = 0.3;
 export const BODY_HEIGHT = 1.8;
@@ -76,10 +81,29 @@ export class PlayerController {
     const px = this.x;
     const pz = this.z;
     const step = this.grounded ? STEP_HEIGHT : 0.05;
+    const subLen = dist / steps;
+    // Height we are walking from on smooth terrain (updated as we climb).
+    let ref = this.y;
     for (let i = 0; i < steps; i++) {
       const nx = this.x + mx / steps;
       const nz = this.z + mz / steps;
       const r = resolveCylinder(nx, this.y, nz, PLAYER_RADIUS, BODY_HEIGHT, world.boxes(nx, nz), step);
+      if (world.terrain) {
+        // Terrain too steep to climb acts like a wall; slide along it if possible.
+        const lim = ref + (this.grounded ? Math.max(0.04, subLen * MAX_SLOPE) : 0.03);
+        const ok = (x: number, z: number) => {
+          const th = world.terrain!(x, z);
+          return th === null || th <= lim;
+        };
+        if (ok(r.x, r.z)) {
+          this.x = r.x;
+          this.z = r.z;
+        } else if (ok(r.x, this.z)) this.x = r.x;
+        else if (ok(this.x, r.z)) this.z = r.z;
+        const th = world.terrain(this.x, this.z);
+        if (this.grounded && th !== null && th > ref) ref = th;
+        continue;
+      }
       this.x = r.x;
       this.z = r.z;
     }
@@ -90,7 +114,9 @@ export class PlayerController {
 
     // Vertical
     const boxes = world.boxes(this.x, this.z);
-    const ground = groundHeight(this.x, this.z, PLAYER_RADIUS * 0.8, this.y + STEP_HEIGHT, world.floors(this.x, this.z), boxes);
+    const terrainH = world.terrain ? world.terrain(this.x, this.z) : null;
+    const withTerrain = (g: number, maxY: number) => (terrainH !== null && terrainH <= maxY && terrainH > g ? terrainH : g);
+    const ground = withTerrain(groundHeight(this.x, this.z, PLAYER_RADIUS * 0.8, this.y + STEP_HEIGHT, world.floors(this.x, this.z), boxes), this.y + STEP_HEIGHT);
     if (this.grounded && input.jump) {
       this.vy = JUMP_SPEED;
       this.grounded = false;
@@ -113,7 +139,8 @@ export class PlayerController {
           this.vy = 0;
         }
       }
-      const g = groundHeight(this.x, this.z, PLAYER_RADIUS * 0.8, Math.max(this.y, ny) + 0.01, world.floors(this.x, this.z), boxes);
+      const top = Math.max(this.y, ny) + 0.01;
+      const g = withTerrain(groundHeight(this.x, this.z, PLAYER_RADIUS * 0.8, top, world.floors(this.x, this.z), boxes), top + 0.05);
       if (this.vy <= 0 && ny <= g) {
         this.landingSpeed = this.vy;
         this.y = g;

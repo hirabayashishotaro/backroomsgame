@@ -7,6 +7,7 @@ import { hash01, hashInts, Rng } from '../../core/rng';
 import type { GenContext, LightSampler, SpawnPoint } from '../levelDefinition';
 import type { ChunkData } from '../../world/chunkData';
 import { box, emptyOut, fbm2, sampler, toChunk, neighbourLights, type Out } from './kit';
+import { makeTerrain } from '../../world/terrain';
 
 const CS = 2; // column size
 const N = 16; // columns per 32 m chunk
@@ -58,20 +59,23 @@ const pathZ = (x: number) => 30 * Math.sin(x / 80) + 12 * Math.sin(x / 23);
 export function mountainHeight(seed: number, p: MountainParams, x: number, z: number): number {
   const base = x * p.slope;
   const dz = Math.abs(z - pathZ(x));
+  // The trail: a smooth, gentle slope (always walkable).
   const smooth = base + 3 * fbm2(seed, 401, x / 40, 0.5, 2);
-  if (dz < 3) return Math.round(smooth / 0.4) * 0.4; // the climbable path: steps of 0.4 m
+  if (dz < 3) return smooth;
   const wild = base + p.rough * fbm2(seed, 402, x / 55, z / 55) + (p.rough / 2.5) * fbm2(seed, 403, x / 14, z / 14) - p.rough * 0.3;
-  const k = Math.min(1, (dz - 3) / 10);
-  return Math.round((smooth * (1 - k) + wild * k) / 0.4) * 0.4;
+  // Smoothstep blend from the trail into the wild slopes.
+  const k = Math.min(1, (dz - 3) / 12);
+  const e = k * k * (3 - 2 * k);
+  return smooth * (1 - e) + wild * e;
 }
 
 export function generateMountain(ctx: GenContext, p: MountainParams, cx: number, cz: number): ChunkData {
   const seed = ctx.levelSeed;
   const o = emptyOut();
   const h = (x: number, z: number) => mountainHeight(seed, p, x, z);
-  columns(o, cx, cz, h, (_t, steep) => (steep > 1.6 ? p.cliffMat : p.snowMat), 1.5);
   const ox = cx * TERRAIN_S;
   const oz = cz * TERRAIN_S;
+  const terrain = makeTerrain(ox, oz, TERRAIN_S, 1, h, { flat: p.snowMat, steep: p.cliffMat, steepAt: 0.9 });
   for (let i = 0; i < N; i += 2)
     for (let j = 0; j < N; j += 2) {
       const wx = ox + i * CS + 1;
@@ -115,12 +119,12 @@ export function generateMountain(ctx: GenContext, p: MountainParams, cx: number,
       o.lights.push({ x: 14.5, y: y + 1, z: pz, I: 2.5 });
     }
   }
-  return toChunk(ctx, cx, cz, 0, TERRAIN_S, o);
+  return { ...toChunk(ctx, cx, cz, 0, TERRAIN_S, o), terrain };
 }
 
 export function mountainArrival(ctx: GenContext, p: MountainParams, h: number): SpawnPoint {
-  const x = (Math.floor(hash01(ctx.levelSeed, 405, h) * 40) - 20) * 32 + 17; // a column centre
-  const z = Math.floor(pathZ(x) / 2) * 2 + 1;
+  const x = (Math.floor(hash01(ctx.levelSeed, 405, h) * 40) - 20) * 32 + 17;
+  const z = Math.round(pathZ(x));
   return { x, y: mountainHeight(ctx.levelSeed, p, x, z), z, yaw: -Math.PI / 2 };
 }
 
@@ -136,8 +140,9 @@ export interface SwampParams {
 const WATER = 0.4;
 
 function swampH(seed: number, p: SwampParams, x: number, z: number): number {
-  const v = p.amp * fbm2(seed, 410, x / 25, z / 25) + (p.amp / 2) * fbm2(seed, 411, x / 7, z / 7) - p.amp * 0.4;
-  return Math.max(-0.6, Math.round(v / 0.4) * 0.4);
+  const v = p.amp * fbm2(seed, 410, x / 25, z / 25) + (p.amp / 2) * fbm2(seed, 411, x / 9, z / 9) - p.amp * 0.4;
+  // Soft floor under the water instead of a hard clamp.
+  return v > -0.6 ? v : -0.6 + (v + 0.6) * 0.2;
 }
 
 interface Shroom {
@@ -172,7 +177,7 @@ export function generateSwamp(ctx: GenContext, p: SwampParams, cx: number, cz: n
   const seed = ctx.levelSeed;
   const o = emptyOut();
   const h = (x: number, z: number) => swampH(seed, p, x, z);
-  columns(o, cx, cz, h, (t) => (t <= WATER ? 'rock' : 'moss'), 1);
+  const terrain = makeTerrain(cx * TERRAIN_S, cz * TERRAIN_S, TERRAIN_S, 1, h, { flat: 'moss', steep: 'rock', steepAt: 1.1 });
   box(o.decor, 0, WATER - 0.02, 0, TERRAIN_S, WATER, TERRAIN_S, 'water-dark');
   const ox = cx * TERRAIN_S;
   const oz = cz * TERRAIN_S;
@@ -217,7 +222,7 @@ export function generateSwamp(ctx: GenContext, p: SwampParams, cx: number, cz: n
     }
   }
   o.zones.push({ kind: 'water', x0: 0, z0: 0, x1: TERRAIN_S, z1: TERRAIN_S });
-  return toChunk(ctx, cx, cz, 0, TERRAIN_S, o);
+  return { ...toChunk(ctx, cx, cz, 0, TERRAIN_S, o), terrain };
 }
 
 export function swampSampler(ctx: GenContext, p: SwampParams, cx: number, cz: number): LightSampler {
@@ -229,8 +234,8 @@ export function swampSampler(ctx: GenContext, p: SwampParams, cx: number, cz: nu
 
 export function swampArrival(ctx: GenContext, p: SwampParams, h: number): SpawnPoint {
   for (let k = 0; k < 50; k++) {
-    const x = Math.floor(((hash01(ctx.levelSeed, 413, h, k) - 0.5) * 600) / 2) * 2 + 1;
-    const z = Math.floor(((hash01(ctx.levelSeed, 414, h, k) - 0.5) * 600) / 2) * 2 + 1;
+    const x = Math.round((hash01(ctx.levelSeed, 413, h, k) - 0.5) * 600);
+    const z = Math.round((hash01(ctx.levelSeed, 414, h, k) - 0.5) * 600);
     const y = swampH(ctx.levelSeed, p, x, z);
     if (y > WATER + 0.4) return { x, y, z, yaw: 0 };
   }

@@ -14,6 +14,7 @@ import { FloatingOrigin } from './world/floatingOrigin';
 import { rayBox, toWorldBox, type FloorRect, type WBox } from './world/collision';
 import { chunkKey, type ChunkData, type PropKind, type ZoneKind } from './world/chunkData';
 import { WorldDeltas } from './world/deltas';
+import { sampleTerrain, type TerrainGrid } from './world/terrain';
 import { buildItemMesh, buildPropMesh, buildReturnAnchor, disposeObject } from './world/objectMeshes';
 import { PlayerController } from './player/controller';
 import { Inventory } from './player/inventory';
@@ -66,6 +67,9 @@ interface ChunkHandle {
   group: THREE.Group;
   boxes: WBox[];
   floors: FloorRect[];
+  terrain?: TerrainGrid;
+  ox: number;
+  oz: number;
   items: Map<string, WorldItem>;
   props: WorldProp[];
   zones: WorldZone[];
@@ -188,6 +192,8 @@ export class Game {
   private pushTime = 0;
   private walkWarned = false;
   private sinkTime = 0;
+  /** Smoothed view height (feet). */
+  private camY = 0;
   private safeTimer = 0;
   private lastSafe: SpawnPoint = { x: 0, y: 0, z: 0, yaw: 0 };
   private gateTime = 0;
@@ -614,6 +620,9 @@ export class Game {
       group,
       boxes: data.solids.map((b) => Object.assign(toWorldBox(b, ox, oz), { thin: b.thin })),
       floors: data.floors.map((f) => ({ x0: f.x0 + ox, z0: f.z0 + oz, x1: f.x1 + ox, z1: f.z1 + oz, y: f.y })),
+      terrain: data.terrain,
+      ox,
+      oz,
       items,
       props,
       zones: data.zones.map((z) => ({ kind: z.kind, name: z.name, x0: z.x0 + ox, z0: z.z0 + oz, x1: z.x1 + ox, z1: z.z1 + oz })),
@@ -657,7 +666,7 @@ export class Game {
   /** All loaded chunks of the column containing (x, z). */
   private columnAt(x: number, z: number): ChunkHandle[] {
     const S = this.level.chunkSize;
-    return this.chunks.column(Math.floor(x / S), Math.floor(z / S)).map((c) => c.handle);
+    return this.chunks.column(Math.floor(x / S), Math.floor(z / S), this.chunks.slabCoord(this.player.y)).map((c) => c.handle);
   }
 
   private boxesNear = (x: number, z: number, r = 1): Array<WBox & { thin?: boolean }> => {
@@ -665,7 +674,7 @@ export class Game {
     const out: Array<WBox & { thin?: boolean }> = [];
     for (let cx = Math.floor((x - r) / S); cx <= Math.floor((x + r) / S); cx++)
       for (let cz = Math.floor((z - r) / S); cz <= Math.floor((z + r) / S); cz++)
-        for (const c of this.chunks.column(cx, cz))
+        for (const c of this.chunks.column(cx, cz, this.chunks.slabCoord(this.player.y)))
           for (const b of c.handle.boxes) {
             if (b.maxX < x - r || b.minX > x + r || b.maxZ < z - r || b.minZ > z + r) continue;
             out.push(b);
@@ -678,7 +687,49 @@ export class Game {
     return col.length === 1 ? col[0].floors : col.flatMap((c) => c.floors);
   };
 
-  private world = { boxes: (x: number, z: number) => this.boxesNear(x, z), floors: (x: number, z: number) => this.floorsNear(x, z) };
+  /** Smooth terrain height at a world point (flat-topology levels only). */
+  private terrainAt = (x: number, z: number): number | null => {
+    const S = this.level.chunkSize;
+    const c = this.chunks.get(Math.floor(x / S), Math.floor(z / S))?.handle;
+    return c?.terrain ? sampleTerrain(c.terrain, x - c.ox, z - c.oz) : null;
+  };
+
+  private world = {
+    boxes: (x: number, z: number) => this.boxesNear(x, z),
+    floors: (x: number, z: number) => this.floorsNear(x, z),
+    terrain: (x: number, z: number) => this.terrainAt(x, z),
+  };
+
+  /**
+   * Keep the ground under and just ahead of the player generated
+   * synchronously (vertical levels also the slabs above and below), so a
+   * chunk still waiting in the background never becomes a hole.
+   */
+  private ensureGround(): void {
+    const S = this.level.chunkSize;
+    const p = this.player;
+    const pts: Array<[number, number]> = [
+      [p.x, p.z],
+      [p.x + p.dirX * 3, p.z + p.dirZ * 3],
+      [p.x + 1.5, p.z],
+      [p.x - 1.5, p.z],
+      [p.x, p.z + 1.5],
+      [p.x, p.z - 1.5],
+    ];
+    const vertical = !!this.level.vertical;
+    const cy = this.chunks.slabCoord(p.y);
+    const done = new Set<string>();
+    for (const [x, z] of pts) {
+      const cx = Math.floor(x / S);
+      const cz = Math.floor(z / S);
+      for (const dy of vertical ? [0, -1, 1] : [0]) {
+        const k = cx + ',' + cz + ',' + (cy + dy);
+        if (done.has(k)) continue;
+        done.add(k);
+        this.chunks.ensure(cx, cz, vertical ? cy + dy : 0);
+      }
+    }
+  }
 
   /** Horizontal ray against walls at chest height. */
   private rayWall = (x: number, z: number, dx: number, dz: number, max: number) => {
@@ -748,7 +799,7 @@ export class Game {
     const pz = this.player.z;
     for (let cx = Math.floor((px - 3) / S); cx <= Math.floor((px + 3) / S); cx++)
       for (let cz = Math.floor((pz - 3) / S); cz <= Math.floor((pz + 3) / S); cz++)
-        for (const c of this.chunks.column(cx, cz)) {
+        for (const c of this.chunks.column(cx, cz, this.chunks.slabCoord(this.player.y))) {
         for (const it of c.handle.items.values()) {
           const sc = this.aimScore(it.x, it.y + 0.12, it.z, 2.4, 0.95);
           if (sc > bestScore) (bestScore = sc), (best = { type: 'item', item: it });
@@ -1166,6 +1217,7 @@ export class Game {
       const sprintHeld = s.sprintToggle ? this.sprintLatched : this.input.isDown('sprint');
       const crouch = s.crouchToggle ? this.crouchLatched : this.input.isDown('crouch');
       running = sprintHeld && this.stats.canRun && forward > 0;
+      this.ensureGround();
       this.player.step(dt, { forward, strafe: r, sprint: running, crouch, jump: this.input.wasPressed('jump') }, this.world);
       // Hard landings hurt (water breaks the fall).
       const inWater = this.player.landingSpeed < -4 && this.zoneAt(this.player.x, this.player.z, 'water');
@@ -1248,9 +1300,17 @@ export class Game {
     const sway = (this.stats.health < 20 ? (20 - this.stats.health) * 0.0015 : 0) * shakeK;
     const warp = Math.min(1, this.pushTime / 2.5);
     const bob = Math.sin(this.player.bobPhase) * 0.035 * s.headBob;
+    // Smooth the view height over steps and slopes; follow jumps and falls exactly.
+    const dyCam = this.player.y - this.camY;
+    if (!this.player.grounded || Math.abs(dyCam) > 1.5) this.camY = this.player.y;
+    else {
+      this.camY += dyCam * (1 - Math.exp(-realDt * 12));
+      // Never lag far behind (keeps the eye out of the floor on fast climbs).
+      this.camY = Math.max(this.player.y - 0.7, Math.min(this.player.y + 0.7, this.camY));
+    }
     this.camera.position.set(
       this.origin.toRenderX(this.player.x),
-      this.player.y + this.player.eye + bob - sink,
+      this.camY + this.player.eye + bob - sink,
       this.origin.toRenderZ(this.player.z),
     );
     this.camera.rotation.set(

@@ -5,6 +5,7 @@
 import type { Box, ChunkData } from './chunkData';
 import type { LightSampler, Palette } from '../levels/levelDefinition';
 import { materialTable, matMetres } from './materialTable';
+import { terrainAt } from './terrain';
 
 export interface MeshArrays {
   mat: string;
@@ -73,6 +74,15 @@ class GeoBuilder {
         if (!flip) this.idx.push(p0, p1, p2, p0, p2, p3);
         else this.idx.push(p0, p2, p1, p0, p3, p2);
       }
+  }
+
+  /** Append one prebuilt vertex; returns its index. */
+  vertex(x: number, y: number, z: number, nx: number, ny: number, nz: number, u: number, v: number, r: number, g: number, b: number): number {
+    this.pos.push(x, y, z);
+    this.nrm.push(nx, ny, nz);
+    this.uv.push(u, v);
+    this.col.push(r, g, b);
+    return this.pos.length / 3 - 1;
   }
 
   toArrays(mat: string): MeshArrays | null {
@@ -144,6 +154,62 @@ export function buildChunkArrays(data: ChunkData, palette: Palette, H: number, s
       if (w <= 0 || d <= 0) continue;
       gbFor('ceiling').quad([c.x0, c.y, c.z0], [w, 0, 0], [0, 0, d], [0, -1, 0], segs(w), segs(d), (x, _y, z) => [(x + offx) / m, (z + offz) / m]);
     }
+  }
+  if (data.terrain) {
+    // Smooth ground: per-vertex normals from the apron, triangles split by slope into two materials.
+    const t = data.terrain;
+    const st = t.step;
+    const N = t.n;
+    const w = N + 1;
+    const vx: number[] = [];
+    for (let i = 0; i <= N; i++)
+      for (let j = 0; j <= N; j++) {
+        const y = terrainAt(t, i, j);
+        let nx = (terrainAt(t, i - 1, j) - terrainAt(t, i + 1, j)) / (2 * st);
+        let nz = (terrainAt(t, i, j - 1) - terrainAt(t, i, j + 1)) / (2 * st);
+        let ny = 1;
+        const l = Math.hypot(nx, ny, nz);
+        nx /= l;
+        ny /= l;
+        nz /= l;
+        const L = sampler(i * st + ox, y + 0.05, j * st + oz, nx, ny, nz);
+        vx.push(i * st, y, j * st, nx, ny, nz, L);
+      }
+    const limit = 1 / Math.sqrt(1 + t.steepAt * t.steepAt);
+    const maps = new Map<string, Map<number, number>>();
+    const put = (mat: string, k: number) => {
+      const gb = gbFor(mat);
+      let m = maps.get(mat);
+      if (!m) maps.set(mat, (m = new Map()));
+      let idx = m.get(k);
+      if (idx === undefined) {
+        const o = k * 7;
+        const mm = matMetres(table, mat);
+        idx = gb.vertex(vx[o], vx[o + 1], vx[o + 2], vx[o + 3], vx[o + 4], vx[o + 5], (vx[o] + fmod(ox, mm)) / mm, (vx[o + 2] + fmod(oz, mm)) / mm, vx[o + 6] * tint[0], vx[o + 6] * tint[1], vx[o + 6] * tint[2]);
+        m.set(k, idx);
+      }
+      return idx;
+    };
+    const tri = (a: number, b: number, c: number) => {
+      // Face normal y-component decides the material.
+      const ax = vx[a * 7], ay = vx[a * 7 + 1], az = vx[a * 7 + 2];
+      const ux = vx[b * 7] - ax, uy = vx[b * 7 + 1] - ay, uz = vx[b * 7 + 2] - az;
+      const wx = vx[c * 7] - ax, wy = vx[c * 7 + 1] - ay, wz = vx[c * 7 + 2] - az;
+      const cx = uy * wz - uz * wy, cy = uz * wx - ux * wz, cz = ux * wy - uy * wx;
+      const ny = Math.abs(cy) / (Math.hypot(cx, cy, cz) || 1);
+      const mat = ny < limit ? t.steep : t.flat;
+      gbFor(mat).idx.push(put(mat, a), put(mat, b), put(mat, c));
+    };
+    for (let i = 0; i < N; i++)
+      for (let j = 0; j < N; j++) {
+        const p00 = i * w + j;
+        const p10 = (i + 1) * w + j;
+        const p01 = i * w + j + 1;
+        const p11 = (i + 1) * w + j + 1;
+        // Counter-clockwise seen from above (+y), split along 00-11 like sampleTerrain.
+        tri(p00, p11, p10);
+        tri(p00, p01, p11);
+      }
   }
   for (const b of data.solids) {
     const m = matMetres(table, b.mat);

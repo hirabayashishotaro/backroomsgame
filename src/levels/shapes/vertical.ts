@@ -186,12 +186,27 @@ function mansionOut(seed: number, cx: number, cz: number, cy: number): Out {
     return o;
   }
   const stair = ((cx % 2) + 2) % 2 === 0;
-  // Floor (with a hole over the stairs of the floor below) and ceiling.
+  // Switchback stairwell in two lanes of the corridor: even floors climb in the
+  // north lane (toward -x), odd floors in the south lane (toward +x). The floor
+  // only has a hole over the lane the flight from the floor below arrives in,
+  // and the ceiling only opens over this floor's own flight.
+  const SX0 = 1.5;
+  const SX1 = 8;
+  const MID = (CZ0 + CZ1) / 2;
+  const laneOf = (y: number) => ((((y % 2) + 2) % 2) === 0 ? [CZ0, MID] : [MID, CZ1]);
+  const [hz0, hz1] = laneOf(cy - 1);
+  const [oz0, oz1] = laneOf(cy);
   if (stair) {
-    o.floors.push({ x0: 0, z0: 0, x1: 32, z1: CZ0, y: y0 }, { x0: 0, z0: CZ1, x1: 32, z1: 32, y: y0 }, { x0: 8, z0: CZ0, x1: 32, z1: CZ1, y: y0 });
-    o.floors.push({ x0: 0, z0: CZ0, x1: 1.5, z1: CZ1, y: y0 });
+    o.floors.push({ x0: 0, z0: 0, x1: 32, z1: CZ0, y: y0 }, { x0: 0, z0: CZ1, x1: 32, z1: 32, y: y0 });
+    o.floors.push({ x0: 0, z0: CZ0, x1: SX0, z1: CZ1, y: y0 }, { x0: SX1, z0: CZ0, x1: 32, z1: CZ1, y: y0 });
+    // the other lane between SX0 and SX1 is solid floor
+    o.floors.push({ x0: SX0, z0: hz0 === CZ0 ? MID : CZ0, x1: SX1, z1: hz0 === CZ0 ? CZ1 : MID, y: y0 });
+    void hz1;
   } else o.floors.push({ x0: 0, z0: 0, x1: 32, z1: 32, y: y0 });
-  o.ceilings.push(stair ? { x0: 8, z0: CZ0, x1: 32, z1: CZ1, y: y0 + H } : { x0: 0, z0: CZ0, x1: 32, z1: CZ1, y: y0 + H });
+  if (stair) {
+    o.ceilings.push({ x0: 0, z0: CZ0, x1: SX0, z1: CZ1, y: y0 + H }, { x0: SX1, z0: CZ0, x1: 32, z1: CZ1, y: y0 + H });
+    o.ceilings.push({ x0: SX0, z0: oz0 === CZ0 ? MID : CZ0, x1: SX1, z1: oz0 === CZ0 ? CZ1 : MID, y: y0 + H });
+  } else o.ceilings.push({ x0: 0, z0: CZ0, x1: 32, z1: CZ1, y: y0 + H });
   // Corridor walls with room doors every 6 m (some rooms open, most closed doors)
   for (let i = 0; i < 5; i++) {
     const rx = 1 + i * 6.2;
@@ -229,13 +244,17 @@ function mansionOut(seed: number, cx: number, cz: number, cy: number): Out {
     o.lights.push({ x: rx + 3, y: y0 + H - 0.1, z: (CZ0 + CZ1) / 2, I: 1.4 });
   }
   if (stair) {
-    // Straight flight up from (8,y0) to (1.5, y0+4) along -x inside the corridor.
-    for (let s = 0; s < 10; s++) {
-      const top = y0 + (s + 1) * 0.4;
-      const x1 = 8 - s * 0.65;
-      box(o.solids, x1 - 0.65, top - 0.3, CZ0 + 0.2, x1, top, CZ1 - 0.2, 'stone');
+    // This floor's flight: 10 steps of 0.4 m over 6.5 m in its own lane.
+    const even = (((cy % 2) + 2) % 2) === 0;
+    const run = (SX1 - SX0) / 10;
+    for (let s2 = 0; s2 < 10; s2++) {
+      const top = y0 + (s2 + 1) * 0.4;
+      const xa = even ? SX1 - (s2 + 1) * run : SX0 + s2 * run;
+      box(o.solids, xa, top - 0.3, oz0 + 0.1, xa + run, top, oz1 - 0.1, 'stone');
     }
-    o.zones.push({ kind: 'piece', name: 'stairwell', x0: 0, z0: CZ0, x1: 8, z1: CZ1 });
+    // A railing between the lanes so you do not step into the lower flight's hole by accident.
+    box(o.solids, SX0 + run, y0, MID - 0.05, SX1 - run, y0 + 1, MID + 0.05, 'metal');
+    o.zones.push({ kind: 'piece', name: 'stairwell', x0: 0, z0: CZ0, x1: SX1, z1: CZ1 });
   }
   if (hash01(seed, 924, cx, cy) < 0.15) o.items.push({ uid: 'c', id: 'almond_water', x: 20, y: y0, z: CZ0 + 0.6, rot: 0 });
   return o;
@@ -282,13 +301,18 @@ function poolOut(seed: number, cx: number, cz: number, cy: number): Out {
   const H = 6.5;
   const holes = poolHoles(seed, cx, cz, cy);
   const pools = poolHoles(seed, cx, cz, cy + 1); // under the holes of the slab above
-  const stairI = 6;
-  const stairJ = ((hashInts(seed, 931, cx, cz, cy) % 4) + 4) % 4 + 2;
-  // The stair top opens into the slab above: that tile is a hole there.
-  const aboveStair = ((hashInts(seed, 931, cx, cz, cy - 1) % 4) + 4) % 4 + 2;
+  // Stairs alternate between tile columns 6 and 5 from slab to slab, so the
+  // flight arriving from below never collides with the flight leaving upward.
+  const colOf = (c: number) => ((((c % 2) + 2) % 2) === 0 ? 6 : 5);
+  const rowOf = (c: number) => ((hashInts(seed, 931, cx, cz, c) % 4) + 4) % 4 + 2;
+  const stairI = colOf(cy);
+  const stairJ = rowOf(cy);
+  // The stair top of the slab below opens into this slab: that tile is a hole here.
+  const belowI = colOf(cy - 1);
+  const aboveStair = rowOf(cy - 1);
   for (let i = 0; i < 8; i++)
     for (let j = 0; j < 8; j++) {
-      const isHole = holes.some(([a, b]) => a === i && b === j) || (i === stairI && j === aboveStair);
+      const isHole = holes.some(([a, b]) => a === i && b === j) || (i === belowI && j === aboveStair);
       const isPool = pools.some(([a, b]) => a === i && b === j);
       const x0 = i * T;
       const z0 = j * T;
@@ -300,20 +324,25 @@ function poolOut(seed: number, cx: number, cz: number, cy: number): Out {
         box(o.solids, x0, y0 - 1.6, z0, x0 + 0.8, y0 - 0.9, z0 + 0.8, 'tile-white'); // a step out
       } else if (!isHole) o.floors.push({ x0, z0, x1: x0 + T, z1: z0 + T, y: y0 });
       // Ceiling, open above our pools (the slab above has holes there) and where our stairs climb.
-      const stairShaft = i === stairI && (j === stairJ || j === stairJ - 1);
+      const stairShaft = i === stairI && j >= stairJ - 2 && j <= stairJ;
       if (!isPool && !stairShaft) o.ceilings.push({ x0, z0, x1: x0 + T, z1: z0 + T, y: y0 + H });
     }
   // Pillars on the tile grid corners (arches feel)
   for (let i = 1; i < 8; i += 3)
     for (let j = 1; j < 8; j += 3) box(o.solids, i * T - 0.35, y0, j * T - 0.35, i * T + 0.35, y0 + H, j * T + 0.35, 'tile-white');
-  // Stairs up along +z inside the stair tile column (from y0 to y0+8)
+  // Stairs up along +z in the stair column, ending flush with the far edge of
+  // the tile that is a hole in the slab above (so you step straight onto its floor).
   const sx0 = stairI * T + 0.4;
+  const zEnd = (stairJ + 1) * T;
+  const zStart = zEnd - 20 * 0.5;
   for (let s = 0; s < 20; s++) {
     const top = y0 + (s + 1) * 0.4;
-    const z = (stairJ - 2) * T + s * 0.5;
+    const z = zStart + s * 0.5;
     box(o.solids, sx0, top - 0.3, z, sx0 + 3.2, top, z + 0.5, 'tile-white');
   }
-  o.zones.push({ kind: 'piece', name: 'pool-stairs', x0: sx0, z0: (stairJ - 2) * T, x1: sx0 + 3.2, z1: stairJ * T + 2 });
+  // Side walls along the stair tile column above the floor, so the climb is enclosed.
+  box(o.solids, sx0 - 0.25, y0, zStart, sx0 - 0.05, y0 + 8, zEnd, 'tile-white');
+  o.zones.push({ kind: 'piece', name: 'pool-stairs', x0: sx0, z0: zStart, x1: sx0 + 3.2, z1: zEnd });
   if (holes.length) o.zones.push({ kind: 'piece', name: 'pool-drop', x0: holes[0][0] * T, z0: holes[0][1] * T, x1: holes[0][0] * T + T, z1: holes[0][1] * T + T });
   for (let k = 0; k < 4; k++) o.lights.push({ x: 4 + (k % 2) * 16 + 4, y: y0 + H - 0.3, z: 4 + Math.floor(k / 2) * 16 + 4, I: 2 });
   if (hash01(seed, 932, cx, cz, cy) < 0.5) o.items.push({ uid: 'p', id: 'almond_water', x: 2, y: y0, z: 2, rot: 0 });

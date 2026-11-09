@@ -99,13 +99,15 @@ export class ChunkManager<H> {
   }
 
   /** All loaded chunks of a column near the player's slab (vertical levels). */
-  column(cx: number, cz: number): LoadedChunk<H>[] {
+  column(cx: number, cz: number, centerY?: number): LoadedChunk<H>[] {
     if (this.vRadius === 0) {
       const c = this.get(cx, cz);
       return c ? [c] : [];
     }
     const out: LoadedChunk<H>[] = [];
-    for (let cy = this.ccy - this.vRadius - 1; cy <= this.ccy + this.vRadius + 1; cy++) {
+    // Around the given slab (the player's), falling back to the streaming centre.
+    const c0 = centerY ?? this.ccy;
+    for (let cy = c0 - 2; cy <= c0 + 2; cy++) {
       const c = this.get(cx, cz, cy);
       if (c) out.push(c);
     }
@@ -141,6 +143,19 @@ export class ChunkManager<H> {
     for (let dy = -vr; dy <= vr; dy++)
       for (let dx = -radius; dx <= radius; dx++)
         for (let dz = -radius; dz <= radius; dz++) this.load(ccx + dx, ccz + dz, ccy + dy);
+  }
+
+  /**
+   * Make sure a chunk exists right now (generated synchronously if needed).
+   * Used for the ground under and just ahead of the player, so a chunk still
+   * in the async queue never leaves a hole to fall through.
+   */
+  ensure(cx: number, cz: number, cy = 0): boolean {
+    const key = chunkKey(cx, cz, cy);
+    if (this.chunks.has(key)) return false;
+    if (this.vRadius === 0 && cy !== 0) return false;
+    this.load(cx, cz, cy);
+    return true;
   }
 
   clear(): void {

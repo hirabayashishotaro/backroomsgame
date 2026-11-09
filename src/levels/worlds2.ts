@@ -530,7 +530,7 @@ export function makeHospital(o: ShapeOpts): LevelDefinition {
 
 // --- Chaos ----------------------------------------------------------------------
 
-export const CHAOS_DONORS = ['0', '1', '2', 'u3', '13', '451', 'null', '222', '77', '303'];
+export const CHAOS_DONORS = ['0', '1', '2', 'u3', '13', '451', 'null', '222', '186', '139'];
 
 export function makeChaos(o: ShapeOpts, rng: Rng): LevelDefinition {
   const donors = rng.chance(0.3) ? CHAOS_DONORS.filter(() => rng.chance(0.7)) : CHAOS_DONORS;

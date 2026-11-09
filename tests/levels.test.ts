@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeGenContext, resolveExitTarget, resolveLevel, entryHash } from '../src/levels/registry';
 import type { LevelDefinition } from '../src/levels/levelDefinition';
 import { groundHeight } from '../src/world/collision';
+import { sampleTerrain } from '../src/world/terrain';
 import { genomeOf } from '../src/levels/procedural/generated';
 import { HAND_LEVEL_IDS } from '../src/levels/registry';
 import { ESCAPE_ROUTE } from '../src/escapeRoute';
@@ -33,7 +34,13 @@ function arrivalIsFree(level: LevelDefinition, h: number): boolean {
     if (a.x > b.minX - 0.3 && a.x < b.maxX + 0.3 && a.z > b.minZ - 0.3 && a.z < b.maxZ + 0.3) return false;
   }
   // ...and there is ground under the feet (groundless levels arrive on a platform).
-  return Math.abs(groundHeight(a.x, a.z, 0.2, a.y + 0.45, floors, boxes) - a.y) < 0.05;
+  let g = groundHeight(a.x, a.z, 0.2, a.y + 0.45, floors, boxes);
+  const d0 = level.generator(ctx, cx, cz, 0);
+  if (d0.terrain) {
+    const th = sampleTerrain(d0.terrain, a.x - cx * S, a.z - cz * S);
+    if (th !== null && th <= a.y + 0.45) g = Math.max(g, th);
+  }
+  return Math.abs(g - a.y) < 0.05;
 }
 
 describe('levels', () => {
@@ -199,7 +206,7 @@ describe('shaped worlds (user request)', () => {
   it('the mountain climbs: the path gets higher along +x', () => {
     const L = resolveLevel('303');
     const ctx = makeGenContext(SEED, L);
-    const top = (cx: number) => Math.max(...L.generator(ctx, cx, 0).solids.map((b) => b.maxY));
+    const top = (cx: number) => Math.max(...L.generator(ctx, cx, 0).terrain!.h);
     expect(top(20)).toBeGreaterThan(top(0) + 60);
   });
 

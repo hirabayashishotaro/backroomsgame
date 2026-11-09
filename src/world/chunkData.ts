@@ -1,5 +1,6 @@
 /** Pure, renderer-independent chunk content. Coordinates are local to the chunk origin. */
 import type { ItemId } from '../items/itemDefs';
+import type { TerrainGrid } from './terrain';
 
 export interface Box {
   minX: number;
@@ -98,6 +99,8 @@ export interface ChunkData {
   /** Non-collidable rendered boxes (outlets, wall linings). */
   decor: Box[];
   lights: LightPanel[];
+  /** Smooth heightfield ground (natural terrain), local coordinates. */
+  terrain?: TerrainGrid;
   /** Walkable floor rectangles (usually one covering the chunk at y=0; pits are gaps). */
   floors: CeilingRect[];
   ceilings: CeilingRect[];

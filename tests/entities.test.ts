@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BLOATER, hurt, newBrain, think, type Perception } from '../src/entities/brain';
+import { BLOATER, GUNMAN, WITCH, hurt, newBrain, think, type Perception } from '../src/entities/brain';
 import { Director, entityTableFor } from '../src/entities/director';
 
 const P = (o: Partial<Perception> = {}): Perception => ({ dist: 20, watched: false, los: true, playerRunning: false, playerCrouching: false, playerRetreat: 0, ...o });
@@ -74,6 +74,35 @@ describe('entity behaviour', () => {
     d = think(b, P({ dist: BLOATER.cancel + 1 }), 0.05);
     expect(b.mode).toBe('stalk');
     expect(d.explode).toBeFalsy();
+  });
+
+  it('gunman keeps its distance, strafes, and fires bursts of six with a reload', () => {
+    const g = newBrain('gunman');
+    const times: number[] = [];
+    let strafed = false;
+    for (let t = 0; t < 12; t += 0.05) {
+      const d = think(g, P({ dist: 15 }), 0.05);
+      if (d.fire) times.push(t);
+      if (Math.abs(d.strafe ?? 0) > 0) strafed = true;
+    }
+    expect(strafed).toBe(true);
+    expect(times.length).toBeGreaterThanOrEqual(GUNMAN.mag * 2);
+    const gaps = times.slice(1).map((t, i) => t - times[i]);
+    expect(Math.max(...gaps)).toBeGreaterThan(GUNMAN.reload - 0.1);
+    expect(Math.min(...gaps)).toBeLessThan(GUNMAN.rate + 0.06);
+    // Too close: backs away. Out of sight: comes looking.
+    expect(think(newBrain('gunman'), P({ dist: 4 }), 0.05).speed).toBeLessThan(0);
+    expect(think(newBrain('gunman'), P({ dist: 15, los: false }), 0.05).speed).toBeGreaterThan(0);
+  });
+
+  it('witch casts lightning only with line of sight, on a cooldown', () => {
+    const w = newBrain('witch');
+    let casts = 0;
+    for (let t = 0; t < 20; t += 0.05) if (think(w, P({ dist: 20 }), 0.05).cast) casts++;
+    expect(casts).toBeGreaterThanOrEqual(3);
+    expect(casts).toBeLessThanOrEqual(Math.ceil(20 / WITCH.cooldown) + 1);
+    const hidden = newBrain('witch');
+    for (let t = 0; t < 10; t += 0.05) expect(think(hidden, P({ dist: 20, los: false }), 0.05).cast).toBeFalsy();
   });
 
   it('giant walks in, winds up and stomps with a cooldown', () => {

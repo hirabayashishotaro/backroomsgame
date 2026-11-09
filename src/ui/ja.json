@@ -19,7 +19,7 @@
   "msg.pickup": "{name} を拾った",
   "msg.full": "アイテム欄がいっぱいだ",
   "msg.nothingHeld": "何も持っていない",
-  "msg.drink": "{name} を飲んだ。体力が回復した",
+  "msg.drink": "{name} を飲んだ。体力が回復し、ダッシュが満タンになった",
   "msg.fullHealth": "今は飲まなくても大丈夫そうだ",
   "msg.noclip": "壁が……揺らいでいる",
   "msg.walkFar": "景色が少しずつ変わっていく……",
@@ -169,6 +169,8 @@
   "omen.skinstealer": "(遠くで誰かが「助けて」と言った)",
   "omen.bloater": "(どこかで、湿った袋が擦れるような音がした)",
   "omen.giant": "(地面がかすかに揺れた)",
+  "omen.gunman": "(遠くで撃鉄を起こす音がした)",
+  "omen.witch": "(空気がぴりぴりと張りつめた)",
   "entity.seen": "記録に追加: {name}",
   "entity.killed": "{name} を倒した",
   "msg.caught": "{name} に襲われた!"

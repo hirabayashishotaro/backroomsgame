@@ -250,6 +250,13 @@ export class Hud {
   }
 
   /** Jump scare overlay: a face rushing at the screen, then a red fade. */
+  /** Brief red edge flash when hit by a bullet or spell. */
+  hurtFlash(): void {
+    this.scareT = 0.2;
+    this.scare.style.background = 'radial-gradient(ellipse at center, rgba(150,0,0,0) 40%, rgba(150,0,0,0.55) 100%)';
+    this.scare.innerHTML = '';
+  }
+
   jumpscare(strength: 'off' | 'mild' | 'full', color: string): void {
     if (strength === 'off') {
       this.scareT = 0.35;

@@ -260,6 +260,12 @@ export class Game {
       audio: this.audio,
       isSafe: (x, z) => this.isSafeSpot(x, z),
       onPlayerHit: (kind, dmg) => this.onEntityHit(kind, dmg),
+      onRangedHit: (_kind, dmg) => {
+        const k = this.settings.difficulty === 'easy' ? 0.7 : this.settings.difficulty === 'hard' ? 1.3 : 1;
+        this.stats.damage(dmg * k);
+        this.audio.hurt();
+        this.hud.hurtFlash();
+      },
       onSeen: (kind) => {
         const lv = this.journal.data.levels[this.level.id];
         if (lv && !lv.entities.includes(kind)) {
@@ -1040,12 +1046,13 @@ export class Game {
       this.hud.message(t('msg.nothingHeld'));
       return;
     }
-    if (this.stats.health >= 99) {
+    if (this.stats.health >= 99 && this.stats.stamina >= 99) {
       this.hud.message(t('msg.fullHealth'));
       return;
     }
     const id = this.inventory.take(slot)!;
     this.stats.heal(ITEMS[id].heal);
+    this.stats.stamina = 100; // also refills the dash gauge
     this.audio.drink();
     this.hud.message(t('msg.drink', { name: ITEMS[id].name }));
   }
@@ -1175,7 +1182,8 @@ export class Game {
     this.adsT += ((aiming ? 1 : 0) - this.adsT) * Math.min(1, dt * 14);
     if (active) {
       if (id) {
-        if (this.input.wasPressed('attack')) this.fireWeapon(id);
+        // Kunai keep flying while the button is held (when there are any left).
+        if (this.input.wasPressed('attack') || (WEAPONS[id].auto && this.input.isDown('attack') && this.arsenal.loaded(id) > 0)) this.fireWeapon(id);
         if (this.input.wasPressed('reload') && this.arsenal.startReload(id)) this.beginReloadFx(id);
       } else if (held === 'almond_water' && this.input.wasPressed('attack')) this.useHeld();
     }
@@ -1232,7 +1240,7 @@ export class Game {
       // Always a warning first (SPEC §7.1): a sound, flickering lights, the hum faltering.
       this.flickerT = 3;
       this.audio.humDip(2.5);
-      const voice = ev.kind === 'hound' ? 'growl' : ev.kind === 'smiler' ? 'giggle' : ev.kind === 'skinstealer' ? 'help' : ev.kind === 'giant' ? 'stomp' : 'hum';
+      const voice = ev.kind === 'hound' ? 'growl' : ev.kind === 'smiler' ? 'giggle' : ev.kind === 'skinstealer' ? 'help' : ev.kind === 'giant' ? 'stomp' : ev.kind === 'gunman' ? 'shot' : ev.kind === 'witch' ? 'zap' : 'hum';
       this.audio.entityVoice(voice, (this.rng.float() - 0.5) * 2, 40);
       this.hud.subtitle(t('omen.' + ev.kind), 3.5);
     } else if (ev?.type === 'spawn') {

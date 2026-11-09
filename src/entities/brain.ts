@@ -30,10 +30,15 @@ export interface BrainState {
   hp: number;
   /** 1 = fully visible, 0 = gone. */
   alpha: number;
+  /** Ranged attackers: seconds until the next shot/spell, rounds left, strafe side and its timer. */
+  cd: number;
+  n: number;
+  side: number;
+  sideT: number;
 }
 
 export function newBrain(kind: EntityKind): BrainState {
-  return { kind, mode: 'idle', t: 0, watch: 0, heard: 99, hp: ENTITIES[kind].hp, alpha: 0 };
+  return { kind, mode: 'idle', t: 0, watch: 0, heard: 99, hp: ENTITIES[kind].hp, alpha: 0, cd: 1.5, n: GUNMAN.mag, side: 1, sideT: 0 };
 }
 
 export interface Decision {
@@ -45,6 +50,33 @@ export interface Decision {
   explode?: boolean;
   /** Giant: stomp now (area damage around it). */
   stomp?: boolean;
+  /** Sideways speed (m/s, + = to its right). */
+  strafe?: number;
+  /** Gunman: fire one shot now. */
+  fire?: boolean;
+  /** Witch: call down lightning on the player's position now. */
+  cast?: boolean;
+}
+
+/** Gunman: magazine, time between shots in a burst, reload, preferred range. */
+export const GUNMAN = { mag: 6, rate: 0.28, reload: 2.6, near: 8, far: 20, maxRange: 38 };
+/** Witch: spell cooldown, warning time before the strike, blast radius, preferred range. */
+export const WITCH = { cooldown: 4.2, warn: 1.1, radius: 3.5, near: 13, far: 26, maxRange: 42 };
+
+/** Keep a preferred distance and strafe side to side, switching direction now and then. */
+function keepRange(b: BrainState, p: Perception, dt: number, near: number, far: number, walk: number, run: number): Decision {
+  b.sideT -= dt;
+  if (b.sideT <= 0) {
+    b.side = -b.side;
+    b.sideT = 1.2 + ((b.t * 7.31) % 1.3);
+  }
+  if (!p.los || p.dist > far + 2) {
+    if (b.mode !== 'chase') set(b, 'chase');
+    return { speed: run, gone: false };
+  }
+  if (b.mode !== 'attack') set(b, 'attack');
+  if (p.dist < near) return { speed: -walk, gone: false, strafe: b.side * walk };
+  return { speed: 0, gone: false, strafe: b.side * walk * 1.2 };
 }
 
 /** Bloater: distance that starts the fuse, fuse time, distance that cancels it, blast radius. */
@@ -138,6 +170,31 @@ export function think(b: BrainState, p: Perception, dt: number): Decision {
       if (b.mode !== 'stalk') set(b, 'stalk');
       return { speed: p.dist < 15 ? def.run : def.walk, gone: false };
     }
+    case 'gunman': {
+      // Keeps its distance, strafes, and empties its revolver in bursts.
+      const d = keepRange(b, p, dt, GUNMAN.near, GUNMAN.far, def.walk, def.run);
+      b.cd -= dt;
+      if (p.los && p.dist < GUNMAN.maxRange && b.cd <= 0 && b.alpha > 0.6) {
+        b.n--;
+        b.cd = GUNMAN.rate;
+        if (b.n <= 0) {
+          b.n = GUNMAN.mag;
+          b.cd = GUNMAN.reload;
+        }
+        d.fire = true;
+      }
+      return d;
+    }
+    case 'witch': {
+      // Hangs back and calls lightning down where you stand.
+      const d = keepRange(b, p, dt, WITCH.near, WITCH.far, def.walk, def.run);
+      b.cd -= dt;
+      if (p.los && p.dist < WITCH.maxRange && b.cd <= 0 && b.alpha > 0.6) {
+        b.cd = WITCH.cooldown;
+        d.cast = true;
+      }
+      return d;
+    }
     case 'giant': {
       // Slow, relentless; stomps when you are at its feet.
       if (b.mode === 'attack') {
@@ -175,7 +232,7 @@ export function hurt(b: BrainState, dmg: number): boolean {
   if ((b.kind === 'hound' || b.kind === 'skinstealer') && dmg >= 50) {
     b.mode = 'stagger';
     b.t = 0;
-  } else if (b.kind !== 'bloater' && b.kind !== 'giant' && b.mode !== 'stagger') {
+  } else if (b.kind !== 'bloater' && b.kind !== 'giant' && b.kind !== 'gunman' && b.kind !== 'witch' && b.mode !== 'stagger') {
     // Shooting it wakes it up.
     if (b.mode !== 'chase') {
       b.mode = 'chase';

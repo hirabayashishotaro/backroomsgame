@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { PlayerController, type WorldQuery } from '../player/controller';
 import { groundHeight, rayBox, type WBox } from '../world/collision';
 import { ENTITIES, type EntityKind } from './entityDefs';
-import { BLOATER, GIANT, hurt, newBrain, think, type BrainState } from './brain';
+import { BLOATER, GIANT, WITCH, hurt, newBrain, think, type BrainState } from './brain';
 import { animateEntity, buildEntityMesh, disposeEntityMesh, setEntityAlpha } from './models';
 import { stepProjectile } from '../weapons/weaponLogic';
 import { falloffFactor, type WeaponDef } from '../weapons/weaponDefs';
@@ -25,6 +25,8 @@ export interface Host {
   /** Entities may not step here (near return doorways). */
   isSafe: (x: number, z: number) => boolean;
   onPlayerHit: (kind: EntityKind, damage: number) => void;
+  /** Hit by a ranged attack (bullet, lightning): damage without the jump scare. */
+  onRangedHit: (kind: EntityKind, damage: number) => void;
   onSeen: (kind: EntityKind) => void;
   onKilled: (kind: EntityKind) => void;
   onHit: (head: boolean, kill: boolean) => void;
@@ -47,7 +49,34 @@ interface Entity {
   /** Consecutive detours (longer each time, same side) and time moving freely. */
   tries: number;
   freeT: number;
+  /** Side-to-side weave while approaching (phase and rate). */
+  weave: number;
+  weaveF: number;
 }
+
+interface EnemyShot {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  life: number;
+  mesh: THREE.Mesh;
+}
+
+/** A lightning strike: a glowing ring on the ground, then the bolt. */
+interface Strike {
+  x: number;
+  y: number;
+  z: number;
+  t: number;
+  ring: THREE.Mesh;
+  bolt: THREE.Mesh | null;
+}
+
+/** Enemy bullet speed (m/s): fast, but you can see it and step aside. */
+export const ENEMY_SHOT_SPEED = 55;
 
 interface Projectile {
   x: number;
@@ -109,6 +138,14 @@ const HITBOXES: Record<EntityKind, Array<{ f: number; y0: number; y1: number; r:
     { f: 0, y0: 0, y1: 5.3, r: 0.95, head: false },
     { f: 0, y0: 5.3, y1: 6.5, r: 0.5, head: true },
   ],
+  gunman: [
+    { f: 0, y0: 0, y1: 1.5, r: 0.3, head: false },
+    { f: 0, y0: 1.5, y1: 1.85, r: 0.17, head: true },
+  ],
+  witch: [
+    { f: 0, y0: 0, y1: 1.45, r: 0.34, head: false },
+    { f: 0, y0: 1.45, y1: 1.8, r: 0.16, head: true },
+  ],
 };
 
 /** Eye-level height used for line of sight. */
@@ -124,12 +161,17 @@ export class EntitySystem {
   readonly entities: Entity[] = [];
   readonly projectiles: Projectile[] = [];
   readonly kunai: LooseKunai[] = [];
+  readonly shots: EnemyShot[] = [];
+  readonly strikes: Strike[] = [];
   /** Developer combat lab: entities stand still and never attack. */
   aiStopped = false;
   private sparks: Spark[] = [];
   private prevPX = 0;
   private prevPZ = 0;
   private sparkGeo = new THREE.SphereGeometry(0.04, 6, 4);
+  private shotGeo = new THREE.BoxGeometry(0.05, 0.05, 0.7);
+  private ringGeo = new THREE.RingGeometry(0.86, 1, 40);
+  private boltGeo = new THREE.CylinderGeometry(0.12, 0.25, 30, 6);
 
   constructor(private host: Host) {}
 
@@ -146,6 +188,13 @@ export class EntitySystem {
     this.kunai.length = 0;
     for (const s of this.sparks) s.mesh.removeFromParent();
     this.sparks.length = 0;
+    for (const s of this.shots) s.mesh.removeFromParent();
+    this.shots.length = 0;
+    for (const s of this.strikes) {
+      s.ring.removeFromParent();
+      s.bolt?.removeFromParent();
+    }
+    this.strikes.length = 0;
   }
 
   // ------------------------------------------------------------------ spawn --
@@ -196,7 +245,7 @@ export class EntitySystem {
     const mesh = buildEntityMesh(kind);
     setEntityAlpha(mesh, 0);
     this.host.fx.add(mesh);
-    this.entities.push({ kind, brain: newBrain(kind), body, mesh, phase: 0, flash: 0, seen: false, voiceT: 2, stuck: 0, detour: 0, detourT: 0, lastStep: 0, tries: 0, freeT: 0 });
+    this.entities.push({ kind, brain: newBrain(kind), body, mesh, phase: 0, flash: 0, seen: false, voiceT: 2, stuck: 0, detour: 0, detourT: 0, lastStep: 0, tries: 0, freeT: 0, weave: Math.random() * 6.28, weaveF: 1.4 + Math.random() * 0.9 });
   }
 
   // ---------------------------------------------------------------- update --
@@ -249,6 +298,8 @@ export class EntitySystem {
         continue;
       }
       if (d.stomp) this.stomp(e, dist);
+      if (d.fire) this.enemyFire(e, dist);
+      if (d.cast) this.cast(e, dist);
       if (e.brain.mode !== prevMode) {
         if (e.kind === 'bloater' && e.brain.mode === 'fuse') this.host.audio.entityVoice('hiss', this.panTo(b.x, b.z), dist);
         if (e.kind === 'giant' && e.brain.mode === 'attack') this.host.audio.entityVoice('groan', this.panTo(b.x, b.z), dist);
@@ -259,19 +310,25 @@ export class EntitySystem {
         continue;
       }
       // Movement toward (or away from) the player, with a simple detour when stuck.
-      let yaw = Math.atan2(-dx, -dz); // face the player (forward = (-sin, -cos))
+      const face = Math.atan2(-dx, -dz); // face the player (forward = (-sin, -cos))
+      let yaw = face;
       if (e.detourT > 0) {
         e.detourT -= dt;
         yaw += e.detour;
+      } else if (e.kind !== 'giant' && d.speed > 0 && dist > 3) {
+        // Weave from side to side while closing in, as if dodging bullets.
+        e.weave += dt * e.weaveF;
+        yaw += Math.sin(e.weave) * 1.0 * Math.min(1, (dist - 3) / 4);
       }
       // Never walk through the player: hold just short of contact range.
-      const speed = d.speed > 0 && dist < (e.kind === 'giant' ? 2 : 0.85) ? 0 : Math.abs(d.speed);
-      const dir = d.speed >= 0 ? 1 : -1;
+      const fwd = d.speed > 0 && dist < (e.kind === 'giant' ? 2 : 0.85) ? 0 : d.speed;
+      const side = d.strafe ?? 0;
+      const speed = Math.hypot(fwd, side);
       const ox = b.x;
       const oz = b.z;
       b.yaw = yaw;
       if (speed > 0.01) {
-        b.step(dt, { forward: dir, strafe: 0, sprint: false, crouch: false, jump: false, speed }, this.host.world);
+        b.step(dt, { forward: fwd / speed, strafe: side / speed, sprint: false, crouch: false, jump: false, speed }, this.host.world);
         if (this.host.isSafe(b.x, b.z)) {
           b.x = ox;
           b.z = oz;
@@ -308,7 +365,7 @@ export class EntitySystem {
       }
       // Contact attack, then it leaves (SPEC: escapable encounters).
       const vertical = Math.abs(b.y - p.y) < 1.6;
-      if (!this.aiStopped && e.kind !== 'bloater' && e.kind !== 'giant' && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
+      if (!this.aiStopped && e.kind !== 'bloater' && e.kind !== 'giant' && e.kind !== 'gunman' && e.kind !== 'witch' && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
         this.host.onPlayerHit(e.kind, ENTITIES[e.kind].damage);
         e.brain.mode = 'flee';
         e.brain.t = 0;
@@ -324,7 +381,7 @@ export class EntitySystem {
       // Render
       const [rx, rz] = this.host.toRender(b.x, b.z);
       e.mesh.position.set(rx, b.y, rz);
-      e.mesh.rotation.y = yaw;
+      e.mesh.rotation.y = e.kind === 'gunman' || e.kind === 'witch' ? face : yaw;
       e.flash = Math.max(0, e.flash - dt * 5);
       if (e.kind === 'bloater') {
         // Swells and flickers while the fuse burns.
@@ -337,6 +394,8 @@ export class EntitySystem {
       animateEntity(e.mesh, e.kind, e.phase, speed, e.flash, dt);
     }
     this.updateProjectiles(dt);
+    this.updateShots(dt);
+    this.updateStrikes(dt);
     this.updateFx(dt);
   }
 
@@ -523,6 +582,135 @@ export class EntitySystem {
     if (dist < BLOATER.radius && Math.abs(p.y - y) < 3) {
       const k = 1 - dist / BLOATER.radius;
       this.host.onPlayerHit('bloater', ENTITIES.bloater.damage * (0.25 + 0.75 * k));
+    }
+  }
+
+  /** Gunman: one revolver round toward the player's chest, with a little spread. */
+  private enemyFire(e: Entity, dist: number): void {
+    const b = e.body;
+    const p = this.host.player;
+    const rx = Math.cos(b.yaw);
+    const rz = -Math.sin(b.yaw);
+    const fx = -Math.sin(b.yaw);
+    const fz = -Math.cos(b.yaw);
+    const ox = b.x + fx * 0.45 + rx * 0.25;
+    const oy = b.y + 1.35;
+    const oz = b.z + fz * 0.45 + rz * 0.25;
+    let dx = p.x - ox;
+    let dy = p.y + 1.15 - oy;
+    let dz = p.z - oz;
+    const l = Math.hypot(dx, dy, dz) || 1;
+    const sp = 0.035;
+    dx = dx / l + (Math.random() - 0.5) * sp * 2;
+    dy = dy / l + (Math.random() - 0.5) * sp;
+    dz = dz / l + (Math.random() - 0.5) * sp * 2;
+    const n = Math.hypot(dx, dy, dz);
+    const mesh = new THREE.Mesh(this.shotGeo, new THREE.MeshBasicMaterial({ color: 0xffd080, transparent: true, opacity: 0.95 }));
+    this.host.fx.add(mesh);
+    this.shots.push({ x: ox, y: oy, z: oz, vx: (dx / n) * ENEMY_SHOT_SPEED, vy: (dy / n) * ENEMY_SHOT_SPEED, vz: (dz / n) * ENEMY_SHOT_SPEED, life: 1.5, mesh });
+    this.spark(ox, oy, oz, 0xffc060, 3, 0.08);
+    this.host.audio.entityVoice('shot', this.panTo(b.x, b.z), dist);
+  }
+
+  private updateShots(dt: number): void {
+    const p = this.host.player;
+    for (let i = this.shots.length - 1; i >= 0; i--) {
+      const s = this.shots[i];
+      s.life -= dt;
+      const len = Math.hypot(s.vx, s.vy, s.vz) * dt;
+      const dx = s.vx / ENEMY_SHOT_SPEED;
+      const dy = s.vy / ENEMY_SHOT_SPEED;
+      const dz = s.vz / ENEMY_SHOT_SPEED;
+      // Does this step pass through the player (a 0.35 m capsule)?
+      const tx = p.x - s.x;
+      const tz = p.z - s.z;
+      const tc = Math.max(0, Math.min(len, tx * dx + tz * dz));
+      const cx = s.x + dx * tc - p.x;
+      const cz = s.z + dz * tc - p.z;
+      const cy = s.y + dy * tc;
+      const hitPlayer = Math.hypot(cx, cz) < 0.35 && cy > p.y && cy < p.y + 1.85;
+      const wall = this.host.rayWorld(s.x, s.y, s.z, dx, dy, dz, len);
+      let done = s.life <= 0;
+      if (hitPlayer && (wall === null || wall > tc)) {
+        this.host.onRangedHit('gunman', ENTITIES.gunman.damage);
+        done = true;
+      } else if (wall !== null) {
+        this.spark(s.x + dx * wall, s.y + dy * wall, s.z + dz * wall, 0xffe0a0);
+        done = true;
+      }
+      if (done) {
+        (s.mesh.material as THREE.Material).dispose();
+        s.mesh.removeFromParent();
+        this.shots.splice(i, 1);
+        continue;
+      }
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.z += s.vz * dt;
+      const [rx, rz] = this.host.toRender(s.x, s.z);
+      s.mesh.position.set(rx, s.y, rz);
+      s.mesh.lookAt(rx + s.vx, s.y + s.vy, rz + s.vz);
+    }
+  }
+
+  /** Witch: mark the ground under the player; lightning falls there shortly after. */
+  private cast(e: Entity, dist: number): void {
+    const p = this.host.player;
+    const ring = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: 0x9ad8ff, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2;
+    this.host.fx.add(ring);
+    this.strikes.push({ x: p.x, y: p.y, z: p.z, t: WITCH.warn, ring, bolt: null });
+    e.flash = 0.6;
+    this.host.audio.entityVoice('zap', this.panTo(p.x, p.z), 0);
+    void dist;
+  }
+
+  private updateStrikes(dt: number): void {
+    const p = this.host.player;
+    for (let i = this.strikes.length - 1; i >= 0; i--) {
+      const s = this.strikes[i];
+      const before = s.t;
+      s.t -= dt;
+      const [rx, rz] = this.host.toRender(s.x, s.z);
+      s.ring.position.set(rx, s.y + 0.04, rz);
+      const ringMat = s.ring.material as THREE.MeshBasicMaterial;
+      if (s.t > 0) {
+        // Warning: the ring brightens and pulses faster as the strike nears.
+        const k = 1 - s.t / WITCH.warn;
+        ringMat.opacity = 0.35 + 0.5 * k * (0.6 + 0.4 * Math.sin(k * 40));
+        s.ring.scale.setScalar(WITCH.radius);
+      } else if (before > 0) {
+        // Strike.
+        const bolt = new THREE.Mesh(this.boltGeo, new THREE.MeshBasicMaterial({ color: 0xeaf6ff, transparent: true, opacity: 1, depthWrite: false }));
+        bolt.position.set(rx, s.y + 15, rz);
+        this.host.fx.add(bolt);
+        s.bolt = bolt;
+        this.spark(s.x, s.y + 0.5, s.z, 0xbfe6ff, 60, 0.35);
+        const d = Math.hypot(p.x - s.x, p.z - s.z);
+        this.host.audio.entityVoice('thunder', this.panTo(s.x, s.z), d);
+        if (d < WITCH.radius && Math.abs(p.y - s.y) < 3) this.host.onRangedHit('witch', ENTITIES.witch.damage);
+        for (const e of this.entities) {
+          // Lightning hurts anything standing in it (except the witch casting it).
+          if (e.kind !== 'witch' && e.brain.hp > 0 && Math.hypot(e.body.x - s.x, e.body.z - s.z) < WITCH.radius) hurt(e.brain, ENTITIES.witch.damage);
+        }
+      } else {
+        const f = Math.max(0, 1 + s.t / 0.35);
+        ringMat.opacity = 0.8 * f;
+        if (s.bolt) {
+          s.bolt.position.set(rx, s.y + 15, rz);
+          (s.bolt.material as THREE.MeshBasicMaterial).opacity = f * (0.6 + 0.4 * Math.random());
+          s.bolt.scale.x = s.bolt.scale.z = 0.6 + Math.random() * 0.8;
+        }
+        if (f <= 0) {
+          ringMat.dispose();
+          s.ring.removeFromParent();
+          if (s.bolt) {
+            (s.bolt.material as THREE.Material).dispose();
+            s.bolt.removeFromParent();
+          }
+          this.strikes.splice(i, 1);
+        }
+      }
     }
   }
 

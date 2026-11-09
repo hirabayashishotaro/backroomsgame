@@ -96,6 +96,44 @@ export function buildEntityMesh(kind: EntityKind): THREE.Group {
       }
       break;
     }
+    case 'gunman': {
+      // Long coat, wide-brimmed hat, a revolver in the right hand.
+      humanoid(g, m(0x4a3524), 1.85);
+      part(g, new THREE.SphereGeometry(0.152, 12, 10), m(0xc8a888), 0, 1.67, -0.01, 'face');
+      const hat = m(0x1c140e);
+      part(g, new THREE.CylinderGeometry(0.36, 0.36, 0.03, 20), hat, 0, 1.79, 0, 'brim');
+      part(g, new THREE.CylinderGeometry(0.15, 0.17, 0.17, 14), hat, 0, 1.88, 0, 'crown');
+      // Coat tails
+      part(g, new THREE.BoxGeometry(0.5, 0.5, 0.28), m(0x3e2c1e), 0, 0.7, 0.02, 'coat');
+      const gun = m(0x2a2a2c);
+      const arm = g.getObjectByName('armR')!;
+      // Arm held straight out toward the target (its lower end is the hand).
+      arm.position.set(0.3, 1.36, -0.3);
+      arm.rotation.x = 1.45;
+      const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.3, 0.09), gun);
+      barrel.position.set(0, -0.45, 0.03);
+      arm.add(barrel);
+      arm.userData.aim = true;
+      break;
+    }
+    case 'witch': {
+      // Dark robe, tall pointed hat, a staff with a glowing tip.
+      const robe = m(0x1e1428);
+      part(g, new THREE.ConeGeometry(0.42, 1.35, 16), robe, 0, 0.68, 0, 'robe');
+      part(g, new THREE.BoxGeometry(0.4, 0.4, 0.24), robe, 0, 1.3, 0, 'torso');
+      part(g, new THREE.BoxGeometry(0.1, 0.62, 0.12), robe, -0.27, 1.15, 0, 'armL');
+      part(g, new THREE.SphereGeometry(0.14, 12, 10), m(0xb8b0c0), 0, 1.62, -0.01, 'head');
+      const hat = m(0x120c18);
+      part(g, new THREE.CylinderGeometry(0.3, 0.3, 0.03, 18), hat, 0, 1.73, 0, 'brim');
+      const tip = part(g, new THREE.ConeGeometry(0.16, 0.55, 14), hat, 0, 2.02, 0.04, 'hat');
+      tip.rotation.x = 0.25;
+      part(g, new THREE.CylinderGeometry(0.025, 0.03, 1.7, 6), m(0x5a4632), 0.34, 0.95, -0.12, 'staff');
+      part(g, new THREE.SphereGeometry(0.08, 10, 8), m(0x9ad8ff), 0.34, 1.83, -0.12, 'orb');
+      const eye = m(0x9ad8ff);
+      part(g, new THREE.SphereGeometry(0.025, 6, 5), eye, -0.05, 1.64, -0.13);
+      part(g, new THREE.SphereGeometry(0.025, 6, 5), eye, 0.05, 1.64, -0.13);
+      break;
+    }
     case 'giant': {
       // A towering, stooped figure about 6.5 m tall.
       humanoid(g, m(0x3a3631), 1.8, 1);
@@ -143,7 +181,8 @@ export function animateEntity(g: THREE.Group, kind: EntityKind, phase: number, s
     if (c.name === 'legL' || c.name === 'legF') c.rotation.x = sw;
     if (c.name === 'legR' || c.name === 'legB') c.rotation.x = -sw;
     if (c.name === 'armL') c.rotation.x = -sw * 0.7;
-    if (c.name === 'armR') c.rotation.x = sw * 0.7;
+    if (c.name === 'armR' && !c.userData.aim) c.rotation.x = sw * 0.7;
+    if (c.name === 'orb') c.scale.setScalar(1 + Math.sin(phase * 2 + performance.now() * 0.006) * 0.25);
     if (kind === 'smiler' && c.name === 'grin') c.scale.setScalar(1 + Math.sin(phase * 0.3) * 0.05);
   }
   g.traverse((o) => {

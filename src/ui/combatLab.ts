@@ -63,7 +63,7 @@ const MODE_LABEL: Record<string, string> = {
   flee: '退散',
   stagger: 'ひるみ',
   fuse: '膨張中!',
-  attack: '踏みつけ準備',
+  attack: '攻撃態勢',
 };
 
 export class CombatLab {

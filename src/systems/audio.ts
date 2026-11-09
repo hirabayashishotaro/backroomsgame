@@ -241,7 +241,7 @@ export class AudioSystem {
   }
 
   /** Positional entity voice: growl, giggle, whisper "help", hum. */
-  entityVoice(kind: 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan', pan: number, dist: number): void {
+  entityVoice(kind: 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan' | 'shot' | 'zap' | 'thunder', pan: number, dist: number): void {
     const ctx = this.ctx;
     if (!ctx) return;
     const t = ctx.currentTime;
@@ -298,6 +298,25 @@ export class AudioSystem {
         const vv = Math.min(1, 30 / (dist + 6));
         this.tone(t, 'sine', 55, 24, 0.5, this.env(t, 0.7 * vv, 0.004, 0.5), p);
         this.noise(t, 0.3, 'lowpass', 220, 1, p, this.env(t, 0.5 * vv, 0.004, 0.3));
+        break;
+      }
+      case 'shot': {
+        // Distant revolver crack.
+        const vv = Math.min(1, 25 / (dist + 5));
+        this.noise(t, 0.25, 'bandpass', 1400, 0.8, p, this.env(t, 0.55 * vv, 0.002, 0.22));
+        this.tone(t, 'sine', 140, 50, 0.2, this.env(t, 0.45 * vv, 0.002, 0.2), p);
+        break;
+      }
+      case 'zap':
+        // Crackle as the spell is cast.
+        for (let i = 0; i < 6; i++) this.noise(t + i * 0.07, 0.05, 'highpass', 3000 + i * 300, 1, p, this.env(t + i * 0.07, 0.18, 0.003, 0.05));
+        this.tone(t, 'sawtooth', 220, 880, 0.9, this.env(t, 0.08, 0.6, 0.3), p);
+        break;
+      case 'thunder': {
+        const vv = Math.min(1, 25 / (dist + 3));
+        this.noise(t, 0.15, 'highpass', 2000, 0.5, p, this.env(t, 0.9 * vv, 0.001, 0.15));
+        this.noise(t + 0.03, 1.6, 'lowpass', 500, 0.7, p, this.env(t + 0.03, 0.8 * vv, 0.01, 1.5));
+        this.tone(t, 'sine', 70, 30, 1.2, this.env(t, 0.6 * vv, 0.005, 1.1), p);
         break;
       }
       case 'groan':

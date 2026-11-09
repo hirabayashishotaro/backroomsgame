@@ -76,6 +76,21 @@ describe('weapons', () => {
     }
   });
 
+  it('kunai: two per second while the button is held', () => {
+    expect(WEAPONS.kunai.auto).toBe(true);
+    expect(WEAPONS.kunai.interval).toBeCloseTo(0.5);
+    const a = new Arsenal();
+    a.gainWeapon('kunai', false);
+    let thrown = 0;
+    for (let t = 0; t < 2; t += 1 / 60) {
+      a.update(1 / 60);
+      const r = a.fire('kunai');
+      if (r && r !== 'empty') thrown++;
+    }
+    expect(thrown).toBeGreaterThanOrEqual(4);
+    expect(thrown).toBeLessThanOrEqual(5);
+  });
+
   it('magnum and kunai fly straight (no gravity)', () => {
     expect(WEAPONS.kunai.gravity).toBe(0);
     expect(WEAPONS.magnum.gravity ?? 0).toBe(0);

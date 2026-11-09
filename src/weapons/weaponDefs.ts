@@ -40,6 +40,8 @@ export interface WeaponDef {
   reach?: number;
   /** Max range for hitscan / projectile life (m). */
   range: number;
+  /** Keeps firing while the button is held. */
+  auto?: boolean;
 }
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
@@ -83,7 +85,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kind: 'thrown',
     mag: 0,
     ammo: 'kunai',
-    interval: 0.4,
+    interval: 0.5, // 2 per second
+    auto: true,
     reloadTime: 0,
     damage: 55,
     speed: 45,

@@ -1,5 +1,5 @@
 /** Entities (SPEC §7). Behaviour is original; Wiki descriptions are not copied. */
-export type EntityKind = 'smiler' | 'hound' | 'duller' | 'faceling' | 'skinstealer' | 'bloater' | 'giant';
+export type EntityKind = 'smiler' | 'hound' | 'duller' | 'faceling' | 'skinstealer' | 'bloater' | 'giant' | 'gunman' | 'witch';
 
 export interface EntityDef {
   kind: EntityKind;
@@ -95,6 +95,26 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
     tall: true,
     hint: '見上げるほど大きな人影。歩みは遅いが、足元に近づくと踏みつけてくる。地響きが聞こえたら距離を取れ。',
   },
+  gunman: {
+    kind: 'gunman',
+    name: 'ガンマン',
+    hp: 110 * HP_SCALE,
+    damage: 12,
+    walk: 3.0,
+    run: 4.8,
+    life: 120,
+    hint: 'つば広帽の人影。距離を保って横に動きながら、マグナムを6連射してくる。弾は見て避けられる。撃ち尽くした後の装填が狙い目。',
+  },
+  witch: {
+    kind: 'witch',
+    name: 'ウィッチャー',
+    hp: 90 * HP_SCALE,
+    damage: 35,
+    walk: 2.6,
+    run: 3.8,
+    life: 120,
+    hint: '杖を持つ黒衣の人影。遠くから、足元に光る輪を描き、そこへ雷を落とす。輪が見えたらすぐ外へ出ること。',
+  },
 };
 
-export const ALL_ENTITIES: EntityKind[] = ['smiler', 'hound', 'duller', 'faceling', 'skinstealer', 'bloater', 'giant'];
+export const ALL_ENTITIES: EntityKind[] = ['smiler', 'hound', 'duller', 'faceling', 'skinstealer', 'bloater', 'giant', 'gunman', 'witch'];

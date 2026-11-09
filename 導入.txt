@@ -73,7 +73,7 @@ GitHub のアカウントを持っていない人は「導入.md」を見てく�
   3. 下の4行を「1行ずつ」コピーして、PowerShell の画面で
      右クリック(=貼り付け)→ Enter キー、を繰り返す
 
-       cd $HOME\Desktop
+       cd ([Environment]::GetFolderPath("Desktop"))
 
        git clone https://github.com/hirabayashishotaro/backroomsgame.git
 
@@ -83,6 +83,8 @@ GitHub のアカウントを持っていない人は「導入.md」を見てく�
 
      ・2行目のあと、GitHub のログイン画面が出たらログインして許可する
      ・終わるとデスクトップに「backroomsgame」フォルダができます
+     ・1行目は OneDrive でデスクトップが移動しているパソコンでも
+       正しいデスクトップを開く書き方です
 
   4. PowerShell の画面は閉じてOK
 
@@ -150,6 +152,12 @@ GitHub のアカウントを持っていない人は「導入.md」を見てく�
 
   Q. PowerShell で「認識されません」と出る
   A. PowerShell を閉じて開き直す。だめならパソコンを再起動。
+
+  Q. cd で「パス … Desktop が存在しないため検出できません」と出る
+  A. 古い手順の「cd $HOME\Desktop」を使っています。OneDrive を使っている
+     パソコンではデスクトップの場所が違うためです。代わりに
+       cd ([Environment]::GetFolderPath("Desktop"))
+     を貼り付けて Enter を押し、続きの行に進んでください。
 
   Q. git clone で「already exists」と出る
   A. デスクトップに古い「backroomsgame」フォルダが残っています。

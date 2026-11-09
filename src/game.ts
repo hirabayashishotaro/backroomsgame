@@ -9,7 +9,7 @@ import type { ExitRule, GenContext, LevelDefinition, LightSampler, SpawnPoint } 
 import { ChunkManager } from './world/chunkManager';
 import { buildChunkMesh, disposeChunkMesh, LevelMaterials } from './world/chunkMesher';
 import { FloatingOrigin } from './world/floatingOrigin';
-import { rayBox, toWorldBox, type WBox } from './world/collision';
+import { rayBox, toWorldBox, type FloorRect, type WBox } from './world/collision';
 import { chunkKey, type ChunkData, type PropKind, type ZoneKind } from './world/chunkData';
 import { WorldDeltas } from './world/deltas';
 import { buildItemMesh, buildPropMesh, buildReturnAnchor, disposeObject } from './world/objectMeshes';
@@ -44,6 +44,7 @@ interface WorldProp {
 
 interface WorldZone {
   kind: ZoneKind;
+  name?: string;
   x0: number;
   z0: number;
   x1: number;
@@ -53,6 +54,7 @@ interface WorldZone {
 interface ChunkHandle {
   group: THREE.Group;
   boxes: WBox[];
+  floors: FloorRect[];
   items: Map<string, WorldItem>;
   props: WorldProp[];
   zones: WorldZone[];
@@ -135,6 +137,7 @@ export class Game {
   private zoneTime = 0;
   private pushTime = 0;
   private walkWarned = false;
+  private sinkTime = 0;
   private lastWarp = 0;
   private deadTimer = 0;
   private lastStep = 0;
@@ -264,6 +267,8 @@ export class Game {
     this.zoneKey = '';
     this.zoneTime = 0;
     this.pushTime = 0;
+    this.sinkTime = 0;
+    this.player.grounded = true;
     this.walkWarned = false;
     for (const a of this.anchors[this.level.id] ?? []) this.showAnchor(a);
     if (this.history[this.history.length - 1] !== this.level.id) this.history.push(this.level.id);
@@ -297,9 +302,10 @@ export class Game {
     return {
       group,
       boxes: data.solids.map((b) => Object.assign(toWorldBox(b, ox, oz), { thin: b.thin })),
+      floors: data.floors.map((f) => ({ x0: f.x0 + ox, z0: f.z0 + oz, x1: f.x1 + ox, z1: f.z1 + oz, y: f.y })),
       items,
       props,
-      zones: data.zones.map((z) => ({ kind: z.kind, x0: z.x0 + ox, z0: z.z0 + oz, x1: z.x1 + ox, z1: z.z1 + oz })),
+      zones: data.zones.map((z) => ({ kind: z.kind, name: z.name, x0: z.x0 + ox, z0: z.z0 + oz, x1: z.x1 + ox, z1: z.z1 + oz })),
       sampler,
       key,
     };
@@ -350,6 +356,13 @@ export class Game {
     return out;
   };
 
+  private floorsNear = (x: number, z: number): FloorRect[] => {
+    const c = this.chunkAt(x, z);
+    return c ? c.floors : [];
+  };
+
+  private world = { boxes: (x: number, z: number) => this.boxesNear(x, z), floors: (x: number, z: number) => this.floorsNear(x, z) };
+
   /** Horizontal ray against walls at chest height. */
   private rayWall = (x: number, z: number, dx: number, dz: number, max: number) => {
     let best: { t: number; nx: number; nz: number; box: WBox & { thin?: boolean } } | null = null;
@@ -370,10 +383,19 @@ export class Game {
     return best;
   }
 
-  private zoneAt(x: number, z: number): WorldZone | null {
+  private zoneAt(x: number, z: number, kind?: ZoneKind): WorldZone | null {
     const c = this.chunkAt(x, z);
     if (!c) return null;
-    for (const zn of c.zones) if (x >= zn.x0 && x <= zn.x1 && z >= zn.z0 && z <= zn.z1) return zn;
+    for (const zn of c.zones)
+      if ((!kind || zn.kind === kind) && x >= zn.x0 && x <= zn.x1 && z >= zn.z0 && z <= zn.z1) return zn;
+    return null;
+  }
+
+  /** Zones other than floor traps (rooms and set pieces). */
+  private roomZoneAt(x: number, z: number): WorldZone | null {
+    const c = this.chunkAt(x, z);
+    if (!c) return null;
+    for (const zn of c.zones) if (zn.kind !== 'thin-floor' && x >= zn.x0 && x <= zn.x1 && z >= zn.z0 && z <= zn.z1) return zn;
     return null;
   }
 
@@ -536,7 +558,11 @@ export class Game {
 
   private openProp(p: WorldProp): void {
     const rule = this.findExit('door', (r) => r.prop === p.kind);
-    if (!rule) return;
+    if (!rule) {
+      this.audio.click();
+      this.hud.message(t('msg.locked'));
+      return;
+    }
     this.audio.door();
     // Come back out standing in front of the door, facing away from it.
     const fx = Math.sin(p.rotY);
@@ -563,13 +589,37 @@ export class Game {
       }
     }
 
+    // floor: a patch that gives way, or falling into a pit.
+    const floorRule = this.findExit('floor');
+    const trap = this.player.grounded ? this.zoneAt(this.player.x, this.player.z, 'thin-floor') : null;
+    if (trap) {
+      this.sinkTime += dt;
+      if (this.sinkTime > 0.25 && this.sinkTime - dt <= 0.25) {
+        this.hud.message(t('msg.floorGives'), 2);
+        this.audio.humDip(1);
+      }
+      if (this.sinkTime > 1.1 && floorRule) {
+        this.takeExit(floorRule, `${Math.round(trap.x0 * 2)},${Math.round(trap.z0 * 2)}`, this.entryPoint);
+        return;
+      }
+    } else this.sinkTime = 0;
+    if (this.player.y < -4) {
+      if (floorRule) this.takeExit(floorRule, `fall:${Math.round(this.player.x / 8)},${Math.round(this.player.z / 8)}`, this.entryPoint);
+      else this.respawnAfterFall();
+      return;
+    }
+
     // special: staying in a zone (manila room).
-    const zone = this.zoneAt(this.player.x, this.player.z);
+    const zone = this.roomZoneAt(this.player.x, this.player.z);
     const zk = zone ? `${zone.kind}:${zone.x0},${zone.z0}` : '';
     if (zk !== this.zoneKey) {
       this.zoneKey = zk;
       this.zoneTime = 0;
       if (zone?.kind === 'manila') this.hud.message(t('zone.manila'), 4);
+      else if (zone?.kind === 'piece' && zone.name) {
+        const sp = this.level.setPieces.find((p) => p.id === zone.name);
+        if (sp) this.hud.message(sp.name, 3);
+      }
     }
     if (zone) {
       this.zoneTime += dt;
@@ -610,6 +660,16 @@ export class Game {
     this.inventory.loseHalf((n) => this.rng.int(0, n - 1));
     this.hud.showDeath(t('death.title'), t('death.' + cause));
     this.audio.humDip(3);
+  }
+
+  /** Fell out of the world in a level without a floor exit: back to the entry point. */
+  private respawnAfterFall(): void {
+    this.stats.damage(20);
+    this.player.vy = 0;
+    const s = this.entryPoint;
+    this.player.x = s.x;
+    this.player.y = s.y;
+    this.player.z = s.z;
   }
 
   private respawn(): void {
@@ -673,7 +733,18 @@ export class Game {
       const r = (this.input.isDown('right') ? 1 : 0) - (this.input.isDown('left') ? 1 : 0);
       moving = forward !== 0 || r !== 0;
       running = this.input.isDown('sprint') && this.stats.canRun && forward > 0;
-      this.player.step(dt, { forward, strafe: r, sprint: running, crouch: this.input.isDown('crouch') }, this.boxesNear);
+      this.player.step(
+        dt,
+        { forward, strafe: r, sprint: running, crouch: this.input.isDown('crouch'), jump: this.input.wasPressed('jump') },
+        this.world,
+      );
+      // Hard landings hurt.
+      if (this.player.landingSpeed < -11) {
+        this.stats.damage((-this.player.landingSpeed - 11) * 6);
+        this.audio.footstep(1.8, this.level.footstep);
+        this.hud.message(t('msg.hardLanding'), 1.5);
+      } else if (this.player.landingSpeed < -4) this.audio.footstep(1.2, this.level.footstep);
+      this.player.landingSpeed = 0;
     }
 
     if (this.started && this.deadTimer <= 0 && !this.transition) {
@@ -709,14 +780,16 @@ export class Game {
             ? t('prompt.return')
             : tg.prop.kind === 'glass-door'
               ? t('prompt.glass')
-              : t('prompt.door'),
+              : tg.prop.kind === 'locked-door'
+                ? t('prompt.locked')
+                : t('prompt.door'),
     );
 
     // Footsteps every half bob cycle.
     const stepIdx = Math.floor(this.player.bobPhase / Math.PI);
     if (stepIdx !== this.lastStep) {
       this.lastStep = stepIdx;
-      if (this.player.speed > 0.5)
+      if (this.player.speed > 0.5 && this.player.grounded)
         this.audio.footstep(this.player.speed > 4 ? 1.3 : this.player.speed < 2 ? 0.45 : 0.8, this.level.footstep);
     }
 
@@ -725,13 +798,19 @@ export class Game {
     const fl = (Math.sin(slot * 12.9898) * 43758.5453) % 1;
     this.mats.lightFlicker.color.setHex(this.level.palette.lightColor).multiplyScalar(Math.abs(fl) > 0.3 ? 1 : 0.4);
 
+    // Noclippable walls and floors breathe slowly so attentive players can spot them.
+    const pulse = 1 + Math.sin(this.time * 2.1) * 0.07;
+    this.mats.thinMats.forEach((m, i) => m.color.copy(this.mats.thinBase[i]).multiplyScalar(pulse));
+    // A floor patch that is giving way sinks under the player.
+    const sink = Math.min(0.5, this.sinkTime * 0.45);
+
     // Camera: low health sways the view; pushing a thin wall warps it.
     const sway = this.stats.health < 20 ? (20 - this.stats.health) * 0.0015 : 0;
     const warp = Math.min(1, this.pushTime / 2.5);
     const bob = Math.sin(this.player.bobPhase) * 0.035 * s.headBob;
     this.camera.position.set(
       this.origin.toRenderX(this.player.x),
-      this.player.y + this.player.eye + bob,
+      this.player.y + this.player.eye + bob - sink,
       this.origin.toRenderZ(this.player.z),
     );
     this.camera.rotation.set(
@@ -773,7 +852,11 @@ export class Game {
         chunk: `${Math.floor(this.player.x / S)}, ${Math.floor(this.player.z / S)}`,
         chunks: `${this.chunks.chunks.size} / max ${this.chunks.maxChunks} (queue ${this.chunks.pending})`,
         walked: `${this.player.distanceWalked.toFixed(0)} m`,
-        zone: this.zoneAt(this.player.x, this.player.z)?.kind ?? '-',
+        zone: (() => {
+          const z = this.roomZoneAt(this.player.x, this.player.z);
+          return z ? z.name ?? z.kind : '-';
+        })(),
+        y: `${this.player.y.toFixed(2)} ${this.player.grounded ? 'ground' : 'air'}`,
         history: this.history.slice(-6).join(' → '),
         draws: this.renderer.info.render.calls,
         geos: this.renderer.info.memory.geometries,

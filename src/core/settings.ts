@@ -8,6 +8,7 @@ export type Action =
   | 'right'
   | 'sprint'
   | 'crouch'
+  | 'jump'
   | 'interact'
   | 'use'
   | 'pause'
@@ -23,6 +24,7 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   right: ['KeyD'],
   sprint: ['ShiftLeft'],
   crouch: ['ControlLeft', 'KeyC'],
+  jump: ['Space'],
   interact: ['KeyE'],
   use: ['KeyQ', 'Mouse0'],
   pause: ['Escape'],

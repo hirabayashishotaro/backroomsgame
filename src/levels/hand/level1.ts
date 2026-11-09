@@ -2,6 +2,7 @@
 import { ALMOND_ONLY } from '../../items/lootTables';
 import { generateGrid, gridArrival, gridLightSampler, type GridParams } from '../gridLevel';
 import type { LevelDefinition } from '../levelDefinition';
+import { GRID_PIECES } from '../gridPieces';
 
 export const LEVEL1_PARAMS: GridParams = {
   cell: 8,
@@ -28,6 +29,9 @@ export const LEVEL1_PARAMS: GridParams = {
   ],
   thinP: 0.012,
   lootP: 0.05,
+  pieces: ['shelves', 'platforms', 'door-row', 'statue', 'pit-bridge'],
+  pieceRate: 0.5,
+  thinFloorP: 0.01,
 };
 
 export const level1: LevelDefinition = {
@@ -50,7 +54,7 @@ export const level1: LevelDefinition = {
   },
   generator: (ctx, cx, cz) => generateGrid(ctx, LEVEL1_PARAMS, cx, cz),
   lightSampler: (ctx, cx, cz) => gridLightSampler(ctx, LEVEL1_PARAMS, cx, cz),
-  setPieces: [],
+  setPieces: (LEVEL1_PARAMS.pieces ?? []).map((id) => ({ id, name: GRID_PIECES[id].name, desc: GRID_PIECES[id].desc })),
   lootTable: { perCell: LEVEL1_PARAMS.lootP, rules: ALMOND_ONLY },
   exits: [
     {
@@ -65,6 +69,14 @@ export const level1: LevelDefinition = {
     },
     { kind: 'door', prop: 'white-door', targets: [{ levelId: '4.3', weight: 1 }], discovery: '真っ白な扉。開けると、目が痛むほど白い廊下があった。' },
     { kind: 'wall', push: 2.5, targets: [{ levelId: '0', weight: 1 }], discovery: 'コンクリートの壁をすり抜けると、黄色い壁紙の匂いがした。' },
+    {
+      kind: 'floor',
+      targets: [
+        { levelId: '2', weight: 3 },
+        { levelId: '27', weight: 1 },
+      ],
+      discovery: 'コンクリートの床の色が違う場所で、足元が抜けた。',
+    },
     { kind: 'walk', distance: 2000, targets: [{ levelId: '2', weight: 1 }], discovery: '倉庫の奥へ奥へと歩くと、配管の音が聞こえてきた。' },
   ],
   drainMul: 0.9,

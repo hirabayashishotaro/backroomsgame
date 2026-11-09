@@ -15,6 +15,9 @@ export class LevelMaterials {
   readonly lightFlicker: THREE.MeshBasicMaterial;
   readonly lightOff: THREE.MeshBasicMaterial;
   readonly lightWarm: THREE.MeshBasicMaterial;
+  /** Materials of noclippable walls/floors; the game pulses their colour. */
+  thinMats: THREE.MeshBasicMaterial[] = [];
+  thinBase: THREE.Color[] = [];
 
   constructor(private ctx: GenContext) {
     const p = ctx.level.palette;
@@ -34,9 +37,32 @@ export class LevelMaterials {
     this.byKey.set('chalk-graffiti', mk('chalk-graffiti', true));
     // Thin (noclippable) walls: same wallpaper, very slightly paler.
     const thin = mk(p.wallTex);
-    (thin.mat as THREE.MeshBasicMaterial).color.setRGB(1.12, 1.1, 1.06);
+    (thin.mat as THREE.MeshBasicMaterial).color.setRGB(1.16, 1.1, 0.92);
     this.byKey.set('wall-thin', thin);
     this.byKey.set('pipe', mk('gen:metal:6a6560:77'));
+    this.byKey.set('stone', mk('gen:concrete:9a968c:79'));
+    this.byKey.set('dark', mk('gen:concrete:2a2826:80'));
+    this.byKey.set('wood-dark', mk('gen:wood:4a3420:81'));
+    this.byKey.set('tile-white', mk('gen:tile:dfe6e8:82'));
+    this.byKey.set('tile-blue', mk('gen:tile:5fa8c8:83'));
+    this.byKey.set('shelf', mk('gen:wood:7a5a36:84'));
+    this.byKey.set('metal', mk('gen:metal:8a8e92:85'));
+    this.byKey.set('fabric', mk('gen:carpet:5a3a3a:86'));
+    // Transparent and self-lit materials.
+    const clear = (color: number, opacity: number) => ({
+      mat: patchMaterial(new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide })),
+      metres: 1,
+    });
+    this.byKey.set('water', clear(0x4fb6d0, 0.55));
+    this.byKey.set('glass', clear(0x9fd8f0, 0.22));
+    this.byKey.set('glow', { mat: new THREE.MeshBasicMaterial({ color: 0xfff6e0 }), metres: 1 });
+    this.byKey.set('glow-blue', { mat: new THREE.MeshBasicMaterial({ color: 0x8fe0ff }), metres: 1 });
+    // Floor that gives way: the floor texture, slightly cooler and pulsing (animated by the game).
+    const thinFloor = mk(p.floorTex);
+    (thinFloor.mat as THREE.MeshBasicMaterial).color.setRGB(0.8, 0.9, 1.08);
+    this.byKey.set('floor-thin', thinFloor);
+    this.thinMats = [thin.mat as THREE.MeshBasicMaterial, thinFloor.mat as THREE.MeshBasicMaterial];
+    this.thinBase = this.thinMats.map((m) => m.color.clone());
     this.byKey.set('crate', mk('gen:wood:8a6a3e:78'));
     this.lightOn = new THREE.MeshBasicMaterial({ color: p.lightColor });
     this.lightFlicker = new THREE.MeshBasicMaterial({ color: p.lightColor });
@@ -136,6 +162,7 @@ const segs = (len: number, per = 1) => Math.max(1, Math.round(len / per));
 const fmod = (a: number, m: number) => ((a % m) + m) % m;
 
 function addBox(gb: GeoBuilder, b: Box, H: number, m: number, oxm: number, ozm: number): void {
+  const structural = b.mat.startsWith('wall') || b.mat === 'pillar';
   const w = b.maxX - b.minX;
   const h = b.maxY - b.minY;
   const d = b.maxZ - b.minZ;
@@ -150,9 +177,9 @@ function addBox(gb: GeoBuilder, b: Box, H: number, m: number, oxm: number, ozm: 
   gb.quad([b.minX, b.minY, b.maxZ], [w, 0, 0], [0, h, 0], [0, 0, 1], segs(w), sh, (x, y) => [ux(x), y / m]);
   // -Z face
   gb.quad([b.maxX, b.minY, b.minZ], [-w, 0, 0], [0, h, 0], [0, 0, -1], segs(w), sh, (x, y) => [-ux(x), y / m]);
-  if (b.maxY < H - 0.01)
+  if (!(structural && b.maxY >= H - 0.01))
     gb.quad([b.minX, b.maxY, b.minZ], [w, 0, 0], [0, 0, d], [0, 1, 0], segs(w), segs(d), (x, _y, z) => [ux(x), uz(z)]);
-  if (b.minY > 0.01)
+  if (b.minY > 0.01 || b.minY < -0.01)
     gb.quad([b.minX, b.minY, b.minZ], [w, 0, 0], [0, 0, d], [0, -1, 0], segs(w), segs(d), (x, _y, z) => [ux(x), uz(z)]);
 }
 
@@ -176,11 +203,19 @@ export function buildChunkMesh(data: ChunkData, mats: LevelMaterials, sampler: L
     return gb;
   };
 
-  if (data.floor) {
+  {
     const m = mats.get('floor').metres;
     const offx = fmod(ox, m);
     const offz = fmod(oz, m);
-    gbFor('floor').quad([0, 0, 0], [0, 0, S], [S, 0, 0], [0, 1, 0], S, S, (x, _y, z) => [(x + offx) / m, (z + offz) / m]);
+    for (const f of data.floors) {
+      const w = f.x1 - f.x0;
+      const d = f.z1 - f.z0;
+      if (w <= 0 || d <= 0) continue;
+      gbFor('floor').quad([f.x0, f.y, f.z0], [0, 0, d], [w, 0, 0], [0, 1, 0], segs(d), segs(w), (x, _y, z) => [
+        (x + offx) / m,
+        (z + offz) / m,
+      ]);
+    }
   }
   {
     const m = mats.get('ceiling').metres;

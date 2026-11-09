@@ -43,7 +43,7 @@ export interface ItemSpawn {
   rot: number;
 }
 
-export type PropKind = 'exit-door' | 'glass-door' | 'metal-door' | 'white-door' | 'plain-door' | 'hatch';
+export type PropKind = 'exit-door' | 'glass-door' | 'metal-door' | 'white-door' | 'plain-door' | 'locked-door' | 'hatch';
 
 export interface Prop {
   uid: string;
@@ -57,10 +57,23 @@ export interface Prop {
   color?: number;
 }
 
-export type ZoneKind = 'manila' | 'high-hall' | 'light-corridor' | 'chalk-room' | 'exit-door' | 'glass-door' | 'spawn';
+export type ZoneKind =
+  | 'manila'
+  | 'high-hall'
+  | 'light-corridor'
+  | 'chalk-room'
+  | 'exit-door'
+  | 'glass-door'
+  | 'spawn'
+  /** A floor patch that gives way (SPEC §5.2 floor). */
+  | 'thin-floor'
+  /** A named set piece in a grid level (journal / messages). */
+  | 'piece';
 
 export interface Zone {
   kind: ZoneKind;
+  /** Set piece id for kind 'piece'. */
+  name?: string;
   x0: number;
   z0: number;
   x1: number;
@@ -77,8 +90,8 @@ export interface ChunkData {
   /** Non-collidable rendered boxes (outlets, wall linings). */
   decor: Box[];
   lights: LightPanel[];
-  /** Has a floor plane at y=0. */
-  floor: boolean;
+  /** Walkable floor rectangles (usually one covering the chunk at y=0; pits are gaps). */
+  floors: CeilingRect[];
   ceilings: CeilingRect[];
   items: ItemSpawn[];
   props: Prop[];

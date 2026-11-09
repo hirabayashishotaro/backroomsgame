@@ -6,6 +6,7 @@ import { hashString, Rng } from '../../core/rng';
 import { ALMOND_ONLY } from '../../items/lootTables';
 import { generateGrid, gridArrival, gridLightSampler, type GridParams } from '../gridLevel';
 import type { ExitTarget, LevelDefinition } from '../levelDefinition';
+import { ALL_GRID_PIECES, GRID_PIECES } from '../gridPieces';
 
 const ADJ = ['沈黙の', '黄昏の', '湿った', '終わらない', '色褪せた', '眠れる', '忘れられた', '傾いた', '冷たい', '遠い', '濁った', '白い', '錆びた', '静かな', '薄暗い', '誰もいない', '反響する', '夜明けの'];
 const NOUN = ['貯水庫', '回廊', '待合室', '倉庫', '書庫', '階段室', '温室', '駐車場', '配電室', '客室', '広間', '地下道', '展示室', '洗濯室', '事務所', '更衣室', '水路', '講堂'];
@@ -62,6 +63,13 @@ function neighbours(id: string, rng: Rng): ExitTarget[] {
   return out;
 }
 
+function pickPieces(rng: Rng, n: number): string[] {
+  const pool = [...ALL_GRID_PIECES];
+  const out: string[] = [];
+  while (out.length < n && pool.length) out.push(pool.splice(rng.int(0, pool.length - 1), 1)[0]);
+  return out;
+}
+
 export function makeGeneratedLevel(id: string): LevelDefinition {
   const hit = cache.get(id);
   if (hit) return hit;
@@ -100,6 +108,10 @@ export function makeGeneratedLevel(id: string): LevelDefinition {
     doorKinds: [{ kind: 'plain-door', weight: 1, color: rng.pick([0x6b4a2c, 0x8a8f94, 0xb8b2a0, 0x3d5a6b, 0x7a2a22]) }],
     thinP: 0.012,
     lootP: 0.02,
+    // Each generated level gets its own mix of 4 set pieces (SPEC §4.3 セットピースプール).
+    pieces: pickPieces(rng, 4),
+    pieceRate: 0.55,
+    thinFloorP: 0.006,
   };
   const tex = (k: string, n: number) => `${k}:${(seed + n) % 9973}`;
   const name = rng.pick(ADJ) + rng.pick(NOUN);
@@ -123,11 +135,12 @@ export function makeGeneratedLevel(id: string): LevelDefinition {
     },
     generator: (ctx, cx, cz) => generateGrid(ctx, params, cx, cz),
     lightSampler: (ctx, cx, cz) => gridLightSampler(ctx, params, cx, cz),
-    setPieces: [],
+    setPieces: (params.pieces ?? []).map((pid) => ({ id: pid, name: GRID_PIECES[pid].name, desc: GRID_PIECES[pid].desc })),
     lootTable: { perCell: params.lootP, rules: ALMOND_ONLY },
     exits: [
       { kind: 'door', prop: 'plain-door', targets: neighbours(id, rng), discovery: 'ありふれた扉の向こうは、まったく別の場所だった。' },
       { kind: 'wall', push: 2.5, targets: [{ levelId: String(rng.int(5, 999)), weight: 1 }], discovery: '壁をすり抜けると、知らない場所にいた。' },
+      { kind: 'floor', targets: [{ levelId: String(rng.int(5, 999)), weight: 3 }, { levelId: '0', weight: 1 }], discovery: '床が抜けて、どこかへ落ちていった。' },
       { kind: 'walk', distance: 1200 + rng.int(0, 800), targets: neighbours(id, rng), discovery: '歩き続けるうちに、景色が別のものに変わっていた。' },
     ],
     drainMul: 1,

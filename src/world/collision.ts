@@ -21,12 +21,14 @@ export function resolveCylinder(
   r: number,
   h: number,
   boxes: Iterable<WBox>,
+  /** Boxes whose top is at most this far above the feet can be stepped onto. */
+  step = 0,
 ): { x: number; z: number } {
   const list = Array.isArray(boxes) ? (boxes as WBox[]) : [...boxes];
   for (let iter = 0; iter < 4; iter++) {
     let moved = false;
     for (const b of list) {
-      if (y + h <= b.minY || y >= b.maxY) continue;
+      if (y + h <= b.minY || y + step >= b.maxY) continue;
       const qx = Math.max(b.minX, Math.min(x, b.maxX));
       const qz = Math.max(b.minZ, Math.min(z, b.maxZ));
       const dx = x - qx;
@@ -112,4 +114,45 @@ export function rayBox(
   }
   if (nx === 0 && ny === 0 && nz === 0) return null; // origin inside the box
   return { t: tmin, nx, ny, nz };
+}
+
+/** Horizontal floor rectangle in world coordinates. */
+export interface FloorRect {
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
+  y: number;
+}
+
+/**
+ * Highest walkable surface under a circle at (x,z) whose height is at most
+ * `maxY` (feet + step height). Considers floor rectangles and box tops.
+ * Returns -Infinity when there is nothing underneath (a pit).
+ */
+export function groundHeight(x: number, z: number, r: number, maxY: number, floors: Iterable<FloorRect>, boxes: Iterable<WBox>): number {
+  let g = -Infinity;
+  for (const f of floors) {
+    if (f.y > maxY || f.y <= g) continue;
+    if (x >= f.x0 && x <= f.x1 && z >= f.z0 && z <= f.z1) g = f.y;
+  }
+  for (const b of boxes) {
+    if (b.maxY > maxY || b.maxY <= g) continue;
+    const qx = Math.max(b.minX, Math.min(x, b.maxX));
+    const qz = Math.max(b.minZ, Math.min(z, b.maxZ));
+    if ((x - qx) ** 2 + (z - qz) ** 2 < r * r) g = b.maxY;
+  }
+  return g;
+}
+
+/** Lowest box bottom above `y` overlapping the circle (head bump), or Infinity. */
+export function ceilingHeight(x: number, z: number, r: number, y: number, boxes: Iterable<WBox>): number {
+  let c = Infinity;
+  for (const b of boxes) {
+    if (b.minY < y || b.minY >= c) continue;
+    const qx = Math.max(b.minX, Math.min(x, b.maxX));
+    const qz = Math.max(b.minZ, Math.min(z, b.maxZ));
+    if ((x - qx) ** 2 + (z - qz) ** 2 < r * r) c = b.minY;
+  }
+  return c;
 }

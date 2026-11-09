@@ -37,6 +37,7 @@ const enum Salt {
   PieceDoor = 21,
   Thin = 22,
   Arrival = 23,
+  ThinFloor = 24,
 }
 
 export type EdgeKind = 0 | 1 | 2; // open | wall | wall with doorway
@@ -45,7 +46,7 @@ export type EdgeKind = 0 | 1 | 2; // open | wall | wall with doorway
 // Set pieces
 // ---------------------------------------------------------------------------
 
-export type PieceKind = Exclude<ZoneKind, 'spawn'>;
+export type PieceKind = Exclude<ZoneKind, 'spawn' | 'thin-floor' | 'piece'>;
 
 export interface Piece {
   kind: PieceKind;
@@ -348,6 +349,11 @@ function doorWall(p: Piece, ox: number, oz: number): { x: number; z: number; rot
   }
 }
 
+/** A floor patch that gives way (SPEC §5.2 floor), never inside set pieces. */
+export function isThinFloor(seed: number, gx: number, gz: number): boolean {
+  return !pieceAtCell(seed, gx, gz) && hash01(seed, Salt.ThinFloor, gx, gz) < 0.006;
+}
+
 export function isThinWall(seed: number, axis: number, gx: number, gz: number): boolean {
   return hash01(seed, Salt.Thin, axis, gx, gz) < 0.012;
 }
@@ -411,6 +417,13 @@ export function generateLevel0(ctx: GenContext, cx: number, cz: number): ChunkDa
               state: L.state,
             });
         } else lights.push({ x: lx + CELL / 2, y: L.y - 0.02, z: lz + CELL / 2, w: 0.6, d: 1.2, state: L.state });
+      }
+
+      if (isThinFloor(seed, gx, gz)) {
+        const fx = lx + CELL / 2;
+        const fz = lz + CELL / 2;
+        decor.push({ minX: fx - 0.9, maxX: fx + 0.9, minY: 0.002, maxY: 0.008, minZ: fz - 0.9, maxZ: fz + 0.9, mat: 'floor-thin' });
+        zones.push({ kind: 'thin-floor', x0: fx - 0.9, z0: fz - 0.9, x1: fx + 0.9, z1: fz + 0.9 });
       }
 
       // Loot (not inside set pieces; those get curated items below).
@@ -491,7 +504,7 @@ export function generateLevel0(ctx: GenContext, cx: number, cz: number): ChunkDa
     }
   }
 
-  return { levelId: ctx.level.id, cx, cz, size: S, solids, decor, lights, floor: true, ceilings, items, props, zones };
+  return { levelId: ctx.level.id, cx, cz, size: S, solids, decor, lights, floors: [{ x0: 0, z0: 0, x1: S, z1: S, y: 0 }], ceilings, items, props, zones };
 }
 
 /** Baked lighting from the ceiling panels around a chunk (cached grid lookup). */
@@ -558,7 +571,7 @@ export function level0Arrival(ctx: GenContext, entryHash: number): SpawnPoint {
   const range = 40; // cells
   let gx = Math.floor(hash01(seed, Salt.Arrival, entryHash, 1) * (range * 2 + 1)) - range;
   const gz = Math.floor(hash01(seed, Salt.Arrival, entryHash, 2) * (range * 2 + 1)) - range;
-  while (pieceAtCell(seed, gx, gz)) gx++;
+  while (pieceAtCell(seed, gx, gz) || isThinFloor(seed, gx, gz)) gx++;
   return {
     x: gx * CELL + CELL / 2,
     y: 0,
@@ -616,6 +629,14 @@ export const level0: LevelDefinition = {
         { levelId: '1', weight: 1 },
       ],
       discovery: '色の薄い壁に体を押しつけ続けたら、すり抜けた。',
+    },
+    {
+      kind: 'floor',
+      targets: [
+        { levelId: '27', weight: 9 },
+        { levelId: 'void', weight: 1 },
+      ],
+      discovery: '色の違う床に立っていたら、床が沈んで落ちていった。',
     },
     {
       kind: 'door',

@@ -69,7 +69,7 @@ describe('Level 0 set pieces', () => {
       for (let cz = -6; cz < 6; cz++) {
         const p = pieceForChunk(seed, cx, cz);
         const d = level0.generator(ctx, cx, cz);
-        expect(d.zones.length).toBe(p ? 1 : 0);
+        expect(d.zones.filter((z) => z.kind !== 'thin-floor').length).toBe(p ? 1 : 0);
         if (p && (p.kind === 'exit-door' || p.kind === 'glass-door')) expect(d.props.length).toBe(1);
       }
   });

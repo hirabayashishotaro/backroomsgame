@@ -206,7 +206,27 @@ export function buildChunkMesh(data: ChunkData, mats: LevelMaterials, sampler: L
     const mesh = new THREE.Mesh(g, panelMats[s]);
     group.add(mesh);
   }
+  primeUpload(group);
   return group;
+}
+
+/**
+ * three.js uploads geometry to the GPU the first time a mesh is drawn. If that
+ * happens when the camera turns towards an already-built chunk, the upload
+ * causes a hitch while looking around. Draw each new mesh once regardless of
+ * the frustum (in the frame it is built, under the chunk time budget), then
+ * restore normal culling.
+ */
+function primeUpload(group: THREE.Group): void {
+  group.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    m.frustumCulled = false;
+    m.onAfterRender = () => {
+      m.frustumCulled = true;
+      m.onAfterRender = () => {};
+    };
+  });
 }
 
 export function disposeChunkMesh(group: THREE.Group): void {

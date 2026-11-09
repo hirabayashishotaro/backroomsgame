@@ -27,3 +27,14 @@ describe('combat lab arena', () => {
     expect(L.generator(ctx, 3, 3).solids).toHaveLength(0);
   });
 });
+
+describe('arena spawn points', () => {
+  it('blocks pillars, cover and the outer walls; frees open floor', async () => {
+    const { arenaBlocked } = await import('../src/levels/hand/arena');
+    expect(arenaBlocked(11, 11)).toBe(true); // pillar
+    expect(arenaBlocked(0, -15)).toBe(true); // low cover
+    expect(arenaBlocked(30, 0)).toBe(true); // outside
+    expect(arenaBlocked(0, 0)).toBe(false);
+    expect(arenaBlocked(0, 22)).toBe(false);
+  });
+});

@@ -33,7 +33,7 @@ import { AMMO_MAX, AMMO_PICKUP, WEAPONS, type WeaponId } from './weapons/weaponD
 import { ViewModel } from './weapons/viewmodel';
 import { EntitySystem } from './entities/entitySystem';
 import { Director, entityTableFor } from './entities/director';
-import { ENTITIES, type EntityKind } from './entities/entityDefs';
+import { ALL_ENTITIES, ENTITIES, type EntityKind } from './entities/entityDefs';
 import { augmentLoot } from './items/weaponLoot';
 import { isWeapon } from './items/itemDefs';
 import { buildCorpse } from './world/objectMeshes';
@@ -45,7 +45,7 @@ import { PostFX } from './systems/postfx';
 import { readSlot, writeSlot, SAVE_VERSION, type SaveData } from './core/save';
 import { LevelSelect } from './ui/levelSelect';
 import { CombatLab } from './ui/combatLab';
-import { ARENA_HALF, ARENA_ID } from './levels/hand/arena';
+import { ARENA_HALF, ARENA_ID, arenaBlocked } from './levels/hand/arena';
 import { t } from './ui/i18n';
 
 interface WorldItem {
@@ -591,8 +591,36 @@ export class Game {
     this.ents.spawnAt(kind, x, 0, z);
   }
 
-  private updateLab(): void {
+  private labRefillT = 0;
+
+  /** Endless mode: keep N entities alive, topping up one at a time. */
+  private labEndless(dt: number): void {
+    const want = this.lab.options.endless;
+    if (want <= 0 || this.deadTimer > 0) return;
+    const alive = this.ents.entities.filter((e) => e.brain.hp > 0 && e.brain.mode !== 'flee' && e.brain.mode !== 'fade').length;
+    if (alive >= want) {
+      this.labRefillT = Math.min(this.labRefillT, 1);
+      return;
+    }
+    this.labRefillT -= dt;
+    if (this.labRefillT > 0) return;
+    this.labRefillT = 1.2;
+    const kind = this.lab.options.endlessKind ?? ALL_ENTITIES[Math.floor(this.rng.float() * ALL_ENTITIES.length)];
+    // Somewhere in the hall 12-30 m away, clear of pillars and walls.
+    for (let k = 0; k < 40; k++) {
+      const a = this.rng.float() * Math.PI * 2;
+      const d = 12 + this.rng.float() * 18;
+      const x = this.player.x + Math.cos(a) * d;
+      const z = this.player.z + Math.sin(a) * d;
+      if (arenaBlocked(x, z, kind === 'giant' ? 2 : 1)) continue;
+      this.ents.spawnAt(kind, x, 0, z);
+      return;
+    }
+  }
+
+  private updateLab(dt: number): void {
     const on = this.started && this.inArena;
+    if (on && !this.paused) this.labEndless(dt);
     this.ents.aiStopped = on && this.lab.options.aiStopped;
     if (on && this.lab.options.infiniteAmmo) for (const a of ['pistol', 'magnum', 'kunai'] as const) this.arsenal.reserve[a] = AMMO_MAX[a];
     this.lab.updateInfo(
@@ -1592,7 +1620,7 @@ export class Game {
     }
 
     if (this.started && this.inArena && this.lab.options.god) this.stats.health = 100;
-    this.updateLab();
+    this.updateLab(dt);
     if (this.started && this.deadTimer <= 0 && !this.transition) {
       const cause = this.stats.update(dt, {
         running: running && this.player.speed > 1,

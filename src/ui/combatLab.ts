@@ -12,6 +12,10 @@ export interface LabOptions {
   aiStopped: boolean;
   /** Spawn distance in front of the player (m). */
   distance: number;
+  /** Keep this many entities alive forever (0 = off). */
+  endless: number;
+  /** Which kind the endless mode spawns (null = random). */
+  endlessKind: EntityKind | null;
 }
 
 export interface LabCallbacks {
@@ -63,7 +67,7 @@ const MODE_LABEL: Record<string, string> = {
 };
 
 export class CombatLab {
-  readonly options: LabOptions = { god: true, infiniteAmmo: true, aiStopped: false, distance: 20 };
+  readonly options: LabOptions = { god: true, infiniteAmmo: true, aiStopped: false, distance: 20, endless: 3, endlessKind: null };
   private root: HTMLDivElement;
   private panel: HTMLDivElement;
   private info: HTMLDivElement;
@@ -124,6 +128,30 @@ export class CombatLab {
       });
       p.appendChild(row);
     }
+
+    this.heading(t('lab.endless'));
+    const erow = document.createElement('div');
+    erow.className = 'lab-row';
+    for (const n of [0, 1, 3, 5]) {
+      this.btn(erow, n === 0 ? 'OFF' : t('lab.endlessN', { n }), '', () => {
+        this.options.endless = n;
+        this.changed();
+      }, this.options.endless === n);
+    }
+    p.appendChild(erow);
+    const krow = document.createElement('div');
+    krow.className = 'lab-row';
+    krow.style.marginTop = '6px';
+    this.btn(krow, t('lab.random'), '', () => {
+      this.options.endlessKind = null;
+      this.changed();
+    }, this.options.endlessKind === null);
+    for (const kind of ALL_ENTITIES)
+      this.btn(krow, ENTITIES[kind].name, '', () => {
+        this.options.endlessKind = kind;
+        this.changed();
+      }, this.options.endlessKind === kind);
+    p.appendChild(krow);
 
     this.heading(t('lab.spawn'));
     const grid = document.createElement('div');
@@ -211,7 +239,9 @@ export class CombatLab {
       const name = ENTITIES[e.kind].name.padEnd(9, '　').slice(0, 9);
       lines.push(`${name} ${(MODE_LABEL[e.mode] ?? e.mode).padEnd(5, '　')} HP ${String(Math.max(0, Math.round(e.hp))).padStart(3)}/${e.maxHp}  ${e.dist.toFixed(1).padStart(5)}m  ${Math.round(e.alpha * 100)}%`);
     }
-    const opts = [this.options.god ? t('lab.god') : '', this.options.infiniteAmmo ? t('lab.ammo') : '', this.options.aiStopped ? t('lab.stop') : ''].filter(Boolean);
+    const opts = [
+      this.options.endless > 0 ? t('lab.endlessN', { n: this.options.endless }) + '(' + (this.options.endlessKind ? ENTITIES[this.options.endlessKind].name : t('lab.random')) + ')' : '',
+      this.options.god ? t('lab.god') : '', this.options.infiniteAmmo ? t('lab.ammo') : '', this.options.aiStopped ? t('lab.stop') : ''].filter(Boolean);
     if (opts.length) lines.push('[' + opts.join(' / ') + ']');
     const text = lines.join('\n');
     if (this.info.textContent !== text) this.info.textContent = text;

@@ -42,6 +42,13 @@ function layout(): { boxes: WBox[]; lights: Array<[number, number]> } {
 
 const LAYOUT = layout();
 
+/** True if (x, z) is inside or next to an obstacle of the hall (world coords). */
+export function arenaBlocked(x: number, z: number, margin = 1): boolean {
+  const A = ARENA_HALF - margin;
+  if (Math.abs(x) > A || Math.abs(z) > A) return true;
+  return LAYOUT.boxes.slice(4).some(([x0, , z0, x1, , z1]) => x > x0 - margin && x < x1 + margin && z > z0 - margin && z < z1 + margin);
+}
+
 export const levelArena: LevelDefinition = {
   id: ARENA_ID,
   title: 'TEST',

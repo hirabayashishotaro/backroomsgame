@@ -68,6 +68,7 @@ export function entityTableFor(levelId: string, opts: { dark: boolean; safe: boo
   const fixed: Record<string, EntityKind[]> = {
     '0': [],
     frontrooms: [],
+    arena: [],
     '1000': [],
     '1': ['hound', 'skinstealer', 'duller'],
     '2': ['hound', 'smiler', 'skinstealer'],

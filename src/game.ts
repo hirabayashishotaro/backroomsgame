@@ -29,7 +29,7 @@ import { Journal } from './systems/journal';
 import { JournalScreen } from './ui/journalScreen';
 import { DebugOverlay } from './ui/debugOverlay';
 import { Arsenal } from './weapons/weaponLogic';
-import { AMMO_PICKUP, WEAPONS, type WeaponId } from './weapons/weaponDefs';
+import { AMMO_MAX, AMMO_PICKUP, WEAPONS, type WeaponId } from './weapons/weaponDefs';
 import { ViewModel } from './weapons/viewmodel';
 import { EntitySystem } from './entities/entitySystem';
 import { Director, entityTableFor } from './entities/director';
@@ -44,6 +44,8 @@ import { SettingsScreen } from './ui/settingsScreen';
 import { PostFX } from './systems/postfx';
 import { readSlot, writeSlot, SAVE_VERSION, type SaveData } from './core/save';
 import { LevelSelect } from './ui/levelSelect';
+import { CombatLab } from './ui/combatLab';
+import { ARENA_HALF, ARENA_ID } from './levels/hand/arena';
 import { t } from './ui/i18n';
 
 interface WorldItem {
@@ -165,6 +167,7 @@ export class Game {
   private screens: Screens;
   private settingsScreen: SettingsScreen;
   private levelSelect: LevelSelect;
+  private lab: CombatLab;
   private post = new PostFX();
   /** Save slot of the current run (null = not saving, e.g. developer jump from the title). */
   private slot: number | null = null;
@@ -282,6 +285,15 @@ export class Game {
     }
 
     this.levelSelect = new LevelSelect(container, (id) => this.devJump(id));
+    this.lab = new CombatLab(container, {
+      inArena: () => this.started && this.level.id === ARENA_ID,
+      enterArena: () => this.enterArena(),
+      spawn: (kind) => this.labSpawn(kind),
+      clearEntities: () => this.ents.clear(),
+      refillWeapons: () => this.labRefill(),
+      resume: () => this.start(),
+      optionsChanged: () => {},
+    });
     this.journalScreen = new JournalScreen(container, this.journal);
     this.settingsScreen = new SettingsScreen(container, this.settings, this.input, (st) => this.applySettings(st));
     this.screens = new Screens(container, {
@@ -291,6 +303,7 @@ export class Game {
       onToTitle: () => this.toTitle(),
       onSettings: () => this.settingsScreen.show(() => this.screens.refresh()),
       onLevelSelect: () => this.levelSelect.show(),
+      onCombatLab: () => this.lab.show(),
       onJournal: () => this.journalScreen.show(() => {}),
       onQuit: () => {
         this.saveNow();
@@ -403,7 +416,7 @@ export class Game {
 
   /** Write the current run to its slot (autosave). */
   saveNow(showMessage = false): void {
-    if (this.slot === null || !this.started || this.deadTimer > 0 || this.transition) return;
+    if (this.slot === null || this.inArena || !this.started || this.deadTimer > 0 || this.transition) return;
     writeSlot(this.slot, this.snapshot());
     this.autosaveTimer = 0;
     if (showMessage) this.hud.message(t('menu.saved'), 1.5);
@@ -490,6 +503,7 @@ export class Game {
   /** Journal: note arriving in the current level, and celebrate milestones (SPEC §12). */
   private recordVisit(): void {
     const L = this.level;
+    if (L.id === ARENA_ID) return;
     const isNew = this.journal.visit({ id: L.id, title: L.title, name: L.subtitle ?? L.name, threat: L.threatClass, kind: L.kindLabel ?? '' });
     if (!isNew) return;
     const m = this.journal.milestone();
@@ -536,6 +550,63 @@ export class Game {
     this.entryPoint = { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw };
     this.titleShown = false;
     this.start();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Developer mode 2: combat lab
+  // ---------------------------------------------------------------------------
+
+  private get inArena(): boolean {
+    return this.level.id === ARENA_ID;
+  }
+
+  private enterArena(): void {
+    this.devJump(ARENA_ID);
+    this.ents.clear();
+    this.labRefill();
+  }
+
+  /** Every weapon with a full magazine and full reserves; hold the pistol. */
+  private labRefill(): void {
+    for (const id of ['pistol', 'magnum', 'kunai', 'axe'] as const) {
+      if (!this.inventory.has(id)) {
+        if (!this.inventory.add(id)) continue;
+        this.arsenal.gainWeapon(id, false);
+      }
+      const def = WEAPONS[id];
+      if (def.mag > 0) this.arsenal.mags[id] = def.mag;
+    }
+    for (const a of ['pistol', 'magnum', 'kunai'] as const) this.arsenal.reserve[a] = AMMO_MAX[a];
+    this.arsenal.cancelReload();
+    const i = this.inventory.slots.indexOf('pistol');
+    if (i >= 0) this.inventory.select(i);
+  }
+
+  /** Spawn an entity the chosen distance ahead (kept inside the hall). */
+  private labSpawn(kind: EntityKind): void {
+    const d = this.lab.options.distance;
+    const lim = ARENA_HALF - 1.5;
+    const x = Math.max(-lim, Math.min(lim, this.player.x + this.player.dirX * d));
+    const z = Math.max(-lim, Math.min(lim, this.player.z + this.player.dirZ * d));
+    this.ents.spawnAt(kind, x, 0, z);
+  }
+
+  private updateLab(): void {
+    const on = this.started && this.inArena;
+    this.ents.aiStopped = on && this.lab.options.aiStopped;
+    if (on && this.lab.options.infiniteAmmo) for (const a of ['pistol', 'magnum', 'kunai'] as const) this.arsenal.reserve[a] = AMMO_MAX[a];
+    this.lab.updateInfo(
+      on
+        ? this.ents.entities.map((e) => ({
+            kind: e.kind,
+            mode: e.brain.mode,
+            hp: e.brain.hp,
+            maxHp: ENTITIES[e.kind].hp,
+            dist: Math.hypot(e.body.x - this.player.x, e.body.z - this.player.z),
+            alpha: e.brain.alpha,
+          }))
+        : null,
+    );
   }
 
   private showLevelTitle(): void {
@@ -991,6 +1062,7 @@ export class Game {
   }
 
   private isSafeSpot(x: number, z: number): boolean {
+    if (this.inArena) return false;
     for (const a of this.anchors[this.level.id] ?? []) if (Math.hypot(a.x - x, a.z - z) < 5) return true;
     return false;
   }
@@ -1519,6 +1591,8 @@ export class Game {
       this.player.landingSpeed = 0;
     }
 
+    if (this.started && this.inArena && this.lab.options.god) this.stats.health = 100;
+    this.updateLab();
     if (this.started && this.deadTimer <= 0 && !this.transition) {
       const cause = this.stats.update(dt, {
         running: running && this.player.speed > 1,

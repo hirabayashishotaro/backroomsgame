@@ -106,6 +106,8 @@ export class EntitySystem {
   readonly entities: Entity[] = [];
   readonly projectiles: Projectile[] = [];
   readonly kunai: LooseKunai[] = [];
+  /** Developer combat lab: entities stand still and never attack. */
+  aiStopped = false;
   private sparks: Spark[] = [];
   private prevPX = 0;
   private prevPZ = 0;
@@ -214,7 +216,11 @@ export class EntitySystem {
         e.seen = true;
         this.host.onSeen(e.kind);
       }
-      const d = think(e.brain, { dist, watched, los, playerRunning: running, playerCrouching: crouching, playerRetreat: retreat }, dt);
+      const stop = this.aiStopped && e.brain.hp > 0;
+      const d = stop
+        ? { speed: 0, gone: false }
+        : think(e.brain, { dist, watched, los, playerRunning: running, playerCrouching: crouching, playerRetreat: retreat }, dt);
+      if (stop) e.brain.alpha = Math.min(1, e.brain.alpha + dt);
       if (d.gone || dist > 110) {
         disposeEntityMesh(e.mesh);
         this.entities.splice(i, 1);
@@ -257,7 +263,7 @@ export class EntitySystem {
       }
       // Contact attack, then it leaves (SPEC: escapable encounters).
       const vertical = Math.abs(b.y - p.y) < 1.6;
-      if (dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
+      if (!this.aiStopped && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
         this.host.onPlayerHit(e.kind, ENTITIES[e.kind].damage);
         e.brain.mode = 'flee';
         e.brain.t = 0;

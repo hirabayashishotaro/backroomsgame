@@ -187,10 +187,13 @@ export function corridorOpenSide(p: Piece): number {
   return shorts[p.door % 2];
 }
 
-function edge(seed: number, salt: Salt, gx: number, gz: number): EdgeKind {
+function edge(seed: number, salt: Salt, gx: number, gz: number, epoch = 0): EdgeKind {
   const r = regionType(seed, gx, gz);
   const p = r === 'maze' ? 0.55 : r === 'open' ? 0.08 : 0.32;
-  const h = hash01(seed, salt, gx, gz);
+  // Non-Euclidean drift (SPEC §3.4): later epochs reshuffle the walls of newly
+  // generated chunks. Every edge is still built by exactly one chunk, so chunk
+  // borders always agree; region types (density) stay the same.
+  const h = epoch ? hash01(seed, salt, gx, gz, epoch) : hash01(seed, salt, gx, gz);
   if (h >= p) return 0;
   const doorP = r === 'maze' ? 0.45 : 0.3;
   return h < p * doorP ? 2 : 1;
@@ -205,22 +208,22 @@ export function regionType(seed: number, gx: number, gz: number): 'maze' | 'norm
 }
 
 /** Edge on the line x = gx*CELL, spanning cell row gz (west edge of cell gx,gz). */
-export function wallX(seed: number, gx: number, gz: number): EdgeKind {
+export function wallX(seed: number, gx: number, gz: number, epoch = 0): EdgeKind {
   const p = pieceForChunk(seed, chunkOfCell(gx), chunkOfCell(gz));
   if (p) {
     const o = pieceEdge(p, 'x', gx, gz);
     if (o !== undefined) return o;
   }
-  return edge(seed, Salt.WallX, gx, gz);
+  return edge(seed, Salt.WallX, gx, gz, epoch);
 }
 /** Edge on the line z = gz*CELL, spanning cell column gx (north edge of cell gx,gz). */
-export function wallZ(seed: number, gx: number, gz: number): EdgeKind {
+export function wallZ(seed: number, gx: number, gz: number, epoch = 0): EdgeKind {
   const p = pieceForChunk(seed, chunkOfCell(gx), chunkOfCell(gz));
   if (p) {
     const o = pieceEdge(p, 'z', gx, gz);
     if (o !== undefined) return o;
   }
-  return edge(seed, Salt.WallZ, gx, gz);
+  return edge(seed, Salt.WallZ, gx, gz, epoch);
 }
 
 function pieceAtCell(seed: number, gx: number, gz: number): Piece | null {
@@ -381,8 +384,8 @@ export function generateLevel0(ctx: GenContext, cx: number, cz: number): ChunkDa
       const gz = gz0 + j;
       const lx = i * CELL;
       const lz = j * CELL;
-      const wx = wallX(seed, gx, gz);
-      const wz = wallZ(seed, gx, gz);
+      const wx = wallX(seed, gx, gz, ctx.epoch ?? 0);
+      const wz = wallZ(seed, gx, gz, ctx.epoch ?? 0);
       // Thin walls (noclip, SPEC §5.2) only in the plain maze, never on set pieces.
       const thinX = !piece && wx === 1 && isThinWall(seed, 0, gx, gz);
       const thinZ = !piece && wz === 1 && isThinWall(seed, 1, gx, gz);

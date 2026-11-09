@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { Rng } from '../core/rng';
 import { drawAlmondLabel } from './icons';
+import { texMetres } from '../world/materialTable';
 
 export interface ProcTexture {
   texture: THREE.Texture;
@@ -739,6 +740,8 @@ export function getTexture(key: string): ProcTexture {
       const [, hex, win] = key.split(':');
       t = doorTexture(hex, win === '1');
     } else t = (FACTORIES[key] ?? FACTORIES.white)();
+    // One source of truth for UV scale (the geometry builder uses the same table).
+    t.metres = texMetres(key);
     cache.set(key, t);
   }
   return t;

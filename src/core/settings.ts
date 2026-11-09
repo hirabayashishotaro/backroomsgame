@@ -123,6 +123,7 @@ export interface Settings {
   showHud: boolean;
   hudScale: number;
   language: 'ja';
+  nonEuclidean: boolean;
   worldSeed: string;
   autosaveMinutes: number; // 0 = off
 }
@@ -173,6 +174,7 @@ export const SETTINGS_SCHEMA: Field[] = [
   { key: 'subtitles', type: 'bool', def: false, tab: 'game', label: '字幕(環境音・声の文字化)' },
   { key: 'showHud', type: 'bool', def: true, tab: 'game', label: 'HUD を表示' },
   { key: 'hudScale', type: 'range', min: 0.7, max: 1.5, step: 0.05, def: 1, tab: 'game', label: 'HUD の大きさ', fmt: pct },
+  { key: 'nonEuclidean', type: 'bool', def: true, tab: 'game', label: '非ユークリッドな迷路(Level 0)', note: '遠くまで歩くと、来た道の形が変わっていく' },
   { key: 'language', type: 'select', options: [['ja', '日本語']], def: 'ja', tab: 'game', label: '言語', note: '英語は今後対応予定' },
   { key: 'worldSeed', type: 'text', def: '', tab: 'game', label: 'ワールドシード', note: '空欄ならランダム。次のニューゲームから反映' },
   { key: 'autosaveMinutes', type: 'select', options: [[0, 'オフ'], [1, '1分'], [2, '2分'], [5, '5分'], [10, '10分']], def: 2, tab: 'game', label: 'オートセーブ間隔', note: 'レベル移動時は常に保存' },

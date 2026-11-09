@@ -26,7 +26,7 @@ const gp = (o: Partial<GridParams> & Pick<GridParams, 'cell' | 'cellsPerChunk' |
   doorP: 0.03,
   doorKinds: [{ kind: 'plain-door', weight: 1, color: 0x8a8f94 }],
   thinP: 0.012,
-  lootP: 0.02,
+  lootP: 0.0013 * o.cell * o.cell,
   pieceRate: 0.6,
   thinFloorP: 0.005,
   ...o,

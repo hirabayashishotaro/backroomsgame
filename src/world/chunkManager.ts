@@ -12,6 +12,14 @@ export interface LoadedChunk<H> {
   handle: H;
 }
 
+export interface AsyncChunkSource<H> {
+  /** Start generating a chunk elsewhere (worker). */
+  request: (cx: number, cz: number) => Promise<unknown>;
+  /** Turn a finished result into chunk data + handle (main thread). */
+  build: (result: unknown) => { data: ChunkData; handle: H };
+  maxInFlight: number;
+}
+
 export interface ChunkManagerOptions<H> {
   chunkSize: number;
   radius: number;
@@ -20,6 +28,8 @@ export interface ChunkManagerOptions<H> {
   build: (data: ChunkData) => H;
   dispose: (handle: H, data: ChunkData) => void;
   now?: () => number;
+  /** Optional off-thread generation; loadAllSync still uses the sync path. */
+  async?: AsyncChunkSource<H>;
 }
 
 export class ChunkManager<H> {
@@ -27,6 +37,10 @@ export class ChunkManager<H> {
   private queue: Array<{ cx: number; cz: number; key: string }> = [];
   private queued = new Set<string>();
   private lastCenter = '';
+  private inFlight = new Set<string>();
+  private generation = 0;
+  private ccx = 0;
+  private ccz = 0;
   private opts: ChunkManagerOptions<H>;
   private now: () => number;
 
@@ -50,7 +64,7 @@ export class ChunkManager<H> {
   }
 
   get pending(): number {
-    return this.queue.length;
+    return this.queue.length + this.inFlight.size;
   }
 
   chunkCoord(v: number): number {
@@ -65,6 +79,8 @@ export class ChunkManager<H> {
   update(px: number, pz: number, dirX = 0, dirZ = 0): void {
     const ccx = this.chunkCoord(px);
     const ccz = this.chunkCoord(pz);
+    this.ccx = ccx;
+    this.ccz = ccz;
     const center = ccx + ',' + ccz + ',' + this.opts.radius;
     if (center !== this.lastCenter) {
       this.lastCenter = center;
@@ -87,6 +103,8 @@ export class ChunkManager<H> {
     this.chunks.clear();
     this.queue = [];
     this.queued.clear();
+    this.inFlight.clear();
+    this.generation++;
     this.lastCenter = '';
   }
 
@@ -117,7 +135,7 @@ export class ChunkManager<H> {
         const cx = ccx + dx;
         const cz = ccz + dz;
         const key = chunkKey(cx, cz);
-        if (this.chunks.has(key)) continue;
+        if (this.chunks.has(key) || this.inFlight.has(key)) continue;
         const mx = (cx + 0.5) * size - px;
         const mz = (cz + 0.5) * size - pz;
         const dist = Math.hypot(mx, mz);
@@ -130,6 +148,33 @@ export class ChunkManager<H> {
   }
 
   private processQueue(): void {
+    const a = this.opts.async;
+    if (a) {
+      while (this.queue.length && this.inFlight.size < a.maxInFlight) {
+        const item = this.queue.shift()!;
+        this.queued.delete(item.key);
+        if (this.chunks.has(item.key) || this.inFlight.has(item.key)) continue;
+        this.inFlight.add(item.key);
+        const gen = this.generation;
+        a.request(item.cx, item.cz).then(
+          (r) => {
+            if (gen !== this.generation) return; // level changed meanwhile
+            this.inFlight.delete(item.key);
+            const keep = this.opts.radius + 1;
+            if (this.chunks.has(item.key) || Math.abs(item.cx - this.ccx) > keep || Math.abs(item.cz - this.ccz) > keep) return;
+            const { data, handle } = a.build(r);
+            this.chunks.set(item.key, { data, handle });
+          },
+          () => {
+            if (gen !== this.generation) return;
+            // Worker failed: fall back to generating here.
+            this.inFlight.delete(item.key);
+            this.load(item.cx, item.cz);
+          },
+        );
+      }
+      return;
+    }
     const start = this.now();
     let done = 0;
     while (this.queue.length) {

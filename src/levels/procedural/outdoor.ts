@@ -463,10 +463,10 @@ export function generateWalkways(ctx: GenContext, p: WalkwayParams, cx: number, 
         box(o.solids, mx + r - 0.3, h, mz + r - 0.3, mx + r - 0.15, h + 2.4, mz + r - 0.15, 'metal');
         box(o.decor, mx + r - 0.4, h + 2.4, mz + r - 0.4, mx + r - 0.05, h + 2.7, mz + r - 0.05, 'glow');
         zoneName(p.docks ? 'lamp' : 'lamp-post');
-      } else if (roll < p.lampP + p.doorP && big) {
+      } else if (big && hash01(seed, 707, gx, gz) < p.doorP) {
         o.props.push({ uid: `w${i},${j}`, kind: 'plain-door', x: mx, y: h, z: mz, rotY: 0, color: 0x5a5a6a });
         zoneName(p.docks ? 'doors' : 'lone-door');
-      } else if (roll < p.lampP + p.doorP + p.lootP) {
+      } else if (hash01(seed, 708, gx, gz) < p.lootP) {
         o.items.push({ uid: `${i},${j}`, id: 'almond_water', x: mx + 0.6, y: h, z: mz - 0.6, rot: roll * 30 });
         if (!p.docks) zoneName('lost-bottle');
       }
@@ -567,6 +567,7 @@ export function generateRoads(ctx: GenContext, p: RoadParams, cx: number, cz: nu
     box(o.solids, 23, 18.4, 0, 29, 19, S, 'road-z');
     box(o.solids, 25, -30, 15, 27, 18.4, 17, 'stone');
   }
+  if (hash01(seed, 807, cx, cz) < 0.45) o.items.push({ uid: 'j', id: 'almond_water', x: 13 + hash01(seed, 808, cx, cz) * 6, y: 0, z: 12, rot: 0 });
   const piece = roadPiece(seed, p, cx, cz);
   if (piece === 'toll') {
     for (const bx of [12.5, 16, 19.5]) {

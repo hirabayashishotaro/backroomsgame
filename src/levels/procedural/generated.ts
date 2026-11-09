@@ -232,7 +232,7 @@ function makeGridGenerated(id: string, openSky: SkyKind | null): LevelDefinition
     doorP: 0.05,
     doorKinds: [{ kind: 'plain-door', weight: 1, color: rng.pick([0x6b4a2c, 0x8a8f94, 0xb8b2a0, 0x3d5a6b, 0x7a2a22]) }],
     thinP: 0.012,
-    lootP: 0.02,
+    lootP: 0.0013 * cell * cell,
     // Each generated level gets its own mix of 4 set pieces (SPEC §4.3 セットピースプール).
     pieces: pickPieces(rng, 4),
     pieceRate: 0.55,

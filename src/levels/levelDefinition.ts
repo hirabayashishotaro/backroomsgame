@@ -33,6 +33,12 @@ export interface GenContext {
   worldSeed: number;
   levelSeed: number;
   level: LevelDefinition;
+  /**
+   * Non-Euclidean epoch (SPEC §3.4): levels that support it reshuffle the
+   * interior of chunks generated after the player has walked far enough.
+   * Chunk borders never depend on it, so neighbours always match.
+   */
+  epoch?: number;
 }
 
 export type ChunkGenerator = (ctx: GenContext, cx: number, cz: number) => ChunkData;

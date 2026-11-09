@@ -7,7 +7,9 @@ import { hashString, Rng } from './core/rng';
 import { entryHash, makeGenContext, parseWorldSeed, resolveExitTarget, resolveLevel } from './levels/registry';
 import type { ExitRule, GenContext, LevelDefinition, LightSampler, SpawnPoint } from './levels/levelDefinition';
 import { ChunkManager } from './world/chunkManager';
-import { buildChunkMesh, disposeChunkMesh, LevelMaterials } from './world/chunkMesher';
+import { arraysToGroup, buildChunkMesh, disposeChunkMesh, LevelMaterials } from './world/chunkMesher';
+import { ChunkWorkerPool, type ChunkResult } from './world/chunkWorkerPool';
+import type { ChunkArrays } from './world/chunkGeometry';
 import { FloatingOrigin } from './world/floatingOrigin';
 import { rayBox, toWorldBox, type FloorRect, type WBox } from './world/collision';
 import { chunkKey, type ChunkData, type PropKind, type ZoneKind } from './world/chunkData';
@@ -155,6 +157,7 @@ export class Game {
   private hud: Hud;
   private halluc: Hallucinations;
   private sky = new SkyDome();
+  private pool = new URLSearchParams(location.search).get('noworker') === '1' ? null : ChunkWorkerPool.create();
   private debug: DebugOverlay | null = null;
   private worldSeed: number;
   private rng: Rng;
@@ -469,6 +472,17 @@ export class Game {
       generate: (cx, cz) => this.level.generator(ctx, cx, cz),
       build: (data) => this.buildChunk(data),
       dispose: (h) => disposeChunkMesh(h.group),
+      // Off-thread generation + geometry (Phase 10); the first chunks still load synchronously.
+      async: this.pool
+        ? {
+            maxInFlight: this.pool.size * 2,
+            request: (cx, cz) => this.pool!.request({ levelId: this.level.id, worldSeed: this.worldSeed, epoch: this.ctx.epoch ?? 0, cx, cz }),
+            build: (r) => {
+              const res = r as ChunkResult;
+              return { data: res.data, handle: this.buildChunk(res.data, res.arrays) };
+            },
+          }
+        : undefined,
     });
 
     const s = at ?? this.level.spawn;
@@ -492,10 +506,10 @@ export class Game {
     if (this.started) this.audio.setAmbience(this.level.ambience);
   }
 
-  private buildChunk(data: ChunkData): ChunkHandle {
+  private buildChunk(data: ChunkData, arrays?: ChunkArrays): ChunkHandle {
     const ctx = this.ctx;
     const sampler = this.level.lightSampler(ctx, data.cx, data.cz);
-    const group = buildChunkMesh(data, this.mats, sampler);
+    const group = arrays ? arraysToGroup(data, arrays, this.mats) : buildChunkMesh(data, this.mats, sampler);
     const ox = data.cx * data.size;
     const oz = data.cz * data.size;
     const key = chunkKey(data.cx, data.cz);
@@ -1054,6 +1068,9 @@ export class Game {
       this.updateExits(realDt, moving, forward);
     }
 
+    // Level 0 slowly rearranges itself behind you (SPEC §3.4): chunks generated
+    // after every ~350m of walking use a new epoch.
+    if (this.level.id === '0') this.ctx.epoch = s.nonEuclidean ? Math.floor(this.player.distanceWalked / 350) : 0;
     this.chunks.update(this.player.x, this.player.z, this.player.dirX, this.player.dirZ);
     if (this.origin.update(this.player.x, this.player.z)) {
       for (const c of this.chunks.chunks.values()) this.placeChunk(c.handle.group);

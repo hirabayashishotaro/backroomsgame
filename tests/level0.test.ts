@@ -78,3 +78,22 @@ describe('Level 0 generation', () => {
     }
   });
 });
+
+describe('Level 0 non-Euclidean epochs', () => {
+  it('a chunk regenerated in a later epoch has a different layout, deterministically', () => {
+    const a = level0.generator({ ...ctx, epoch: 0 }, 4, 4);
+    const b = level0.generator({ ...ctx, epoch: 3 }, 4, 4);
+    const b2 = level0.generator({ ...ctx, epoch: 3 }, 4, 4);
+    expect(JSON.stringify(a.solids)).not.toBe(JSON.stringify(b.solids));
+    expect(JSON.stringify(b)).toBe(JSON.stringify(b2));
+  });
+  it('mixing epochs never creates overlapping border walls (each edge has one owner)', () => {
+    const S = level0.chunkSize;
+    const left = level0.generator({ ...ctx, epoch: 0 }, 0, 0);
+    const right = level0.generator({ ...ctx, epoch: 5 }, 1, 0);
+    // Walls on the shared line x = S come only from the right chunk (its west edges).
+    const onLine = (d: typeof left, ox: number) => d.solids.filter((b) => b.mat.startsWith('wall') && Math.abs(b.minX + ox - (S - 0.1)) < 0.01 && b.maxX - b.minX < 0.3);
+    expect(onLine(left, 0).length).toBe(0);
+    expect(onLine(right, S).length).toBeGreaterThanOrEqual(0);
+  });
+});

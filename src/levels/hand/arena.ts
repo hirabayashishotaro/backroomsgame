@@ -9,7 +9,7 @@ import type { LevelDefinition } from '../levelDefinition';
 export const ARENA_ID = 'arena';
 /** Half size of the hall (m) and its height. */
 export const ARENA_HALF = 26;
-const H = 5;
+const H = 9;
 const S = 32;
 const T = 0.4;
 

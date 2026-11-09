@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { PlayerController, type WorldQuery } from '../player/controller';
 import { groundHeight, rayBox, type WBox } from '../world/collision';
 import { ENTITIES, type EntityKind } from './entityDefs';
-import { hurt, newBrain, think, type BrainState } from './brain';
+import { BLOATER, GIANT, hurt, newBrain, think, type BrainState } from './brain';
 import { animateEntity, buildEntityMesh, disposeEntityMesh, setEntityAlpha } from './models';
 import { stepProjectile } from '../weapons/weaponLogic';
 import { falloffFactor, type WeaponDef } from '../weapons/weaponDefs';
@@ -42,6 +42,11 @@ interface Entity {
   stuck: number;
   detour: number;
   detourT: number;
+  /** Footstep counter (giant). */
+  lastStep: number;
+  /** Consecutive detours (longer each time, same side) and time moving freely. */
+  tries: number;
+  freeT: number;
 }
 
 interface Projectile {
@@ -67,6 +72,8 @@ export interface LooseKunai {
 interface Spark {
   mesh: THREE.Mesh;
   t: number;
+  life: number;
+  size: number;
   x: number;
   y: number;
   z: number;
@@ -94,7 +101,18 @@ const HITBOXES: Record<EntityKind, Array<{ f: number; y0: number; y1: number; r:
     { f: 0, y0: 0, y1: 1.63, r: 0.28, head: false },
     { f: 0, y0: 1.63, y1: 2.0, r: 0.17, head: true },
   ],
+  bloater: [
+    { f: 0, y0: 0.1, y1: 1.45, r: 0.55, head: false },
+    { f: 0, y0: 1.45, y1: 1.85, r: 0.2, head: true },
+  ],
+  giant: [
+    { f: 0, y0: 0, y1: 5.3, r: 0.95, head: false },
+    { f: 0, y0: 5.3, y1: 6.5, r: 0.5, head: true },
+  ],
 };
+
+/** Eye-level height used for line of sight. */
+const CHEST: Partial<Record<EntityKind, number>> = { giant: 4.2, bloater: 1.0, hound: 0.8 };
 
 export interface RayHit {
   t: number;
@@ -150,7 +168,9 @@ export class EntitySystem {
       let g = groundHeight(x, z, 0.3, p.y + 2.5, floors, boxes);
       if (terr !== null && terr <= p.y + 2.5 && terr > g) g = terr;
       if (!Number.isFinite(g) || Math.abs(g - p.y) > 3) continue;
-      if (boxes.some((b) => b.maxY > g + 0.3 && b.minY < g + 1.9 && x > b.minX - 0.5 && x < b.maxX + 0.5 && z > b.minZ - 0.5 && z < b.maxZ + 0.5)) continue;
+      const top = kind === 'giant' ? 7 : 1.9;
+      const pad = kind === 'giant' ? 1.3 : 0.5;
+      if (boxes.some((b) => b.maxY > g + 0.3 && b.minY < g + top && x > b.minX - pad && x < b.maxX + pad && z > b.minZ - pad && z < b.maxZ + pad)) continue;
       if (this.host.isSafe(x, z)) continue;
       // Out of sight: behind the player or hidden by a wall.
       const dx = x - p.x;
@@ -176,7 +196,7 @@ export class EntitySystem {
     const mesh = buildEntityMesh(kind);
     setEntityAlpha(mesh, 0);
     this.host.fx.add(mesh);
-    this.entities.push({ kind, brain: newBrain(kind), body, mesh, phase: 0, flash: 0, seen: false, voiceT: 2, stuck: 0, detour: 0, detourT: 0 });
+    this.entities.push({ kind, brain: newBrain(kind), body, mesh, phase: 0, flash: 0, seen: false, voiceT: 2, stuck: 0, detour: 0, detourT: 0, lastStep: 0, tries: 0, freeT: 0 });
   }
 
   // ---------------------------------------------------------------- update --
@@ -202,7 +222,7 @@ export class EntitySystem {
       const dz = p.z - b.z;
       const dist = Math.hypot(dx, dz) || 0.001;
       // Perception
-      const chestY = b.y + 1.3;
+      const chestY = b.y + (CHEST[e.kind] ?? 1.3);
       const tx = b.x - p.x;
       const ty = chestY - ey;
       const tz = b.z - p.z;
@@ -217,10 +237,22 @@ export class EntitySystem {
         this.host.onSeen(e.kind);
       }
       const stop = this.aiStopped && e.brain.hp > 0;
+      const prevMode = e.brain.mode;
       const d = stop
         ? { speed: 0, gone: false }
         : think(e.brain, { dist, watched, los, playerRunning: running, playerCrouching: crouching, playerRetreat: retreat }, dt);
       if (stop) e.brain.alpha = Math.min(1, e.brain.alpha + dt);
+      if (d.explode) {
+        this.explode(b.x, b.y, b.z, dist);
+        disposeEntityMesh(e.mesh);
+        this.entities.splice(i, 1);
+        continue;
+      }
+      if (d.stomp) this.stomp(e, dist);
+      if (e.brain.mode !== prevMode) {
+        if (e.kind === 'bloater' && e.brain.mode === 'fuse') this.host.audio.entityVoice('hiss', this.panTo(b.x, b.z), dist);
+        if (e.kind === 'giant' && e.brain.mode === 'attack') this.host.audio.entityVoice('groan', this.panTo(b.x, b.z), dist);
+      }
       if (d.gone || dist > 110) {
         disposeEntityMesh(e.mesh);
         this.entities.splice(i, 1);
@@ -233,7 +265,7 @@ export class EntitySystem {
         yaw += e.detour;
       }
       // Never walk through the player: hold just short of contact range.
-      const speed = d.speed > 0 && dist < 0.85 ? 0 : Math.abs(d.speed);
+      const speed = d.speed > 0 && dist < (e.kind === 'giant' ? 2 : 0.85) ? 0 : Math.abs(d.speed);
       const dir = d.speed >= 0 ? 1 : -1;
       const ox = b.x;
       const oz = b.z;
@@ -245,15 +277,28 @@ export class EntitySystem {
           b.z = oz;
         }
         const moved = Math.hypot(b.x - ox, b.z - oz);
-        if (moved < speed * dt * 0.3) e.stuck += dt;
-        else e.stuck = Math.max(0, e.stuck - dt);
-        if (e.stuck > 0.4 && e.detourT <= 0) {
-          e.detour = (Math.random() < 0.5 ? -1 : 1) * (0.9 + Math.random() * 0.7);
-          e.detourT = 0.9;
-          e.stuck = 0;
-          if (b.grounded) b.vy = 5; // hop over small obstacles
+        if (moved < speed * dt * 0.3) {
+          e.stuck += dt;
+          e.freeT = 0;
+        } else {
+          e.stuck = Math.max(0, e.stuck - dt);
+          e.freeT += dt;
+          if (e.freeT > 2.5) e.tries = 0;
         }
-        e.phase += moved * 3;
+        if (e.stuck > 0.3 && e.detourT <= 0) {
+          // Go around: keep to the same side and walk further each time it is still blocked.
+          const side = e.tries > 0 ? Math.sign(e.detour) : Math.random() < 0.5 ? -1 : 1;
+          e.detour = side * (1.1 + Math.random() * 0.4);
+          e.detourT = Math.min(3.5, 0.8 + 0.7 * e.tries);
+          e.tries++;
+          e.stuck = 0;
+          if (b.grounded) b.vy = 6; // hop over low obstacles
+        }
+        e.phase += moved * (e.kind === 'giant' ? 1.1 : 3);
+        if (e.kind === 'giant' && Math.floor(e.phase / Math.PI) !== e.lastStep) {
+          e.lastStep = Math.floor(e.phase / Math.PI);
+          this.host.audio.entityVoice('stomp', this.panTo(b.x, b.z), dist);
+        }
       } else b.step(dt, { forward: 0, strafe: 0, sprint: false, crouch: false, jump: false }, this.host.world);
       if (b.y < p.y - 30) {
         // fell out of the world
@@ -263,7 +308,7 @@ export class EntitySystem {
       }
       // Contact attack, then it leaves (SPEC: escapable encounters).
       const vertical = Math.abs(b.y - p.y) < 1.6;
-      if (!this.aiStopped && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
+      if (!this.aiStopped && e.kind !== 'bloater' && e.kind !== 'giant' && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
         this.host.onPlayerHit(e.kind, ENTITIES[e.kind].damage);
         e.brain.mode = 'flee';
         e.brain.t = 0;
@@ -272,8 +317,8 @@ export class EntitySystem {
       e.voiceT -= dt;
       if (e.voiceT <= 0 && e.brain.alpha > 0.3) {
         const pan = this.panTo(b.x, b.z);
-        const kind = e.kind === 'hound' ? 'growl' : e.kind === 'smiler' ? 'giggle' : e.kind === 'skinstealer' ? 'help' : e.kind === 'duller' ? 'hum' : 'step';
-        this.host.audio.entityVoice(kind, pan, dist);
+        const kind = e.kind === 'hound' ? 'growl' : e.kind === 'smiler' ? 'giggle' : e.kind === 'skinstealer' ? 'help' : e.kind === 'duller' ? 'hum' : e.kind === 'giant' ? 'groan' : 'step';
+        if (e.kind !== 'bloater') this.host.audio.entityVoice(kind, pan, dist);
         e.voiceT = e.brain.mode === 'chase' ? 1.6 + Math.random() : 4 + Math.random() * 5;
       }
       // Render
@@ -281,6 +326,13 @@ export class EntitySystem {
       e.mesh.position.set(rx, b.y, rz);
       e.mesh.rotation.y = yaw;
       e.flash = Math.max(0, e.flash - dt * 5);
+      if (e.kind === 'bloater') {
+        // Swells and flickers while the fuse burns.
+        const k = e.brain.mode === 'fuse' ? Math.min(1, e.brain.t / BLOATER.fuse) : 0;
+        e.mesh.scale.setScalar(1 + 0.4 * k * k);
+        if (k > 0 && Math.sin(e.brain.t * (8 + 30 * k)) > 0) e.flash = Math.max(e.flash, 0.8);
+      }
+      if (e.kind === 'giant') e.mesh.rotation.x = e.brain.mode === 'attack' ? -0.12 * Math.min(1, e.brain.t / GIANT.windup) : 0;
       setEntityAlpha(e.mesh, e.brain.alpha);
       animateEntity(e.mesh, e.kind, e.phase, speed, e.flash, dt);
     }
@@ -396,7 +448,9 @@ export class EntitySystem {
           done = true;
         }
       }
-      if (!done && (pr.travelled > pr.def.range || pr.y < this.host.player.y - 60)) {
+      // A thrown kunai past its range starts to drop (and stays collectable).
+      if (!done && pr.def.kind === 'thrown' && pr.travelled > pr.def.range) pr.g = 9.8;
+      if (!done && ((pr.def.kind !== 'thrown' && pr.travelled > pr.def.range) || pr.y < this.host.player.y - 60)) {
         pr.mesh.removeFromParent();
         done = true;
       }
@@ -453,10 +507,34 @@ export class EntitySystem {
     return n;
   }
 
-  private spark(x: number, y: number, z: number, color: number): void {
-    const mesh = new THREE.Mesh(this.sparkGeo, new THREE.MeshBasicMaterial({ color, transparent: true }));
+  private spark(x: number, y: number, z: number, color: number, size = 1, life = 0.25): void {
+    const mesh = new THREE.Mesh(this.sparkGeo, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false }));
     this.host.fx.add(mesh);
-    this.sparks.push({ mesh, t: 0.25, x, y, z });
+    this.sparks.push({ mesh, t: life, life, size, x, y, z });
+  }
+
+  /** Bloater burst: damage falls off with distance; nothing beyond the blast radius. */
+  private explode(x: number, y: number, z: number, dist: number): void {
+    this.spark(x, y + 1, z, 0xffb050, 55, 0.45);
+    this.spark(x, y + 1, z, 0xfff0c0, 25, 0.25);
+    for (let k = 0; k < 14; k++) this.spark(x + (Math.random() - 0.5) * 3, y + 0.3 + Math.random() * 2.2, z + (Math.random() - 0.5) * 3, 0x6a5a40, 4, 0.7);
+    this.host.audio.entityVoice('boom', this.panTo(x, z), dist);
+    const p = this.host.player;
+    if (dist < BLOATER.radius && Math.abs(p.y - y) < 3) {
+      const k = 1 - dist / BLOATER.radius;
+      this.host.onPlayerHit('bloater', ENTITIES.bloater.damage * (0.25 + 0.75 * k));
+    }
+  }
+
+  /** Giant stomp: a shockwave around its feet. */
+  private stomp(e: Entity, dist: number): void {
+    const b = e.body;
+    const fx = -Math.sin(b.yaw);
+    const fz = -Math.cos(b.yaw);
+    this.spark(b.x + fx * 1.2, b.y + 0.2, b.z + fz * 1.2, 0x9a9080, 40, 0.4);
+    this.host.audio.entityVoice('stomp', this.panTo(b.x, b.z), Math.max(0, dist - 10));
+    const p = this.host.player;
+    if (dist < GIANT.reach + 1.2 && Math.abs(p.y - b.y) < 3) this.host.onPlayerHit('giant', ENTITIES.giant.damage);
   }
 
   private updateFx(dt: number): void {
@@ -465,8 +543,9 @@ export class EntitySystem {
       s.t -= dt;
       const [rx, rz] = this.host.toRender(s.x, s.z);
       s.mesh.position.set(rx, s.y, rz);
-      (s.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, s.t * 4);
-      s.mesh.scale.setScalar(1 + (0.25 - s.t) * 6);
+      const f = Math.max(0, s.t / s.life);
+      (s.mesh.material as THREE.MeshBasicMaterial).opacity = f;
+      s.mesh.scale.setScalar(s.size * (1 + (1 - f) * 1.5));
       if (s.t <= 0) {
         (s.mesh.material as THREE.Material).dispose();
         s.mesh.removeFromParent();

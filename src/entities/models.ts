@@ -75,6 +75,44 @@ export function buildEntityMesh(kind: EntityKind): THREE.Group {
       part(g, new THREE.SphereGeometry(0.165, 12, 10), m(0xd8b8a0), 0, 1.8, -0.01, 'face');
       break;
     }
+    case 'bloater': {
+      // A swollen, sack-like body on stubby legs, glowing seams.
+      const skin = m(0xb3ab8a);
+      const sack = part(g, new THREE.SphereGeometry(0.58, 16, 12), skin, 0, 0.92, 0, 'torso');
+      sack.scale.set(1, 1.15, 0.92);
+      part(g, new THREE.BoxGeometry(0.16, 0.42, 0.18), skin, -0.2, 0.21, 0, 'legL');
+      part(g, new THREE.BoxGeometry(0.16, 0.42, 0.18), skin, 0.2, 0.21, 0, 'legR');
+      part(g, new THREE.BoxGeometry(0.1, 0.55, 0.12), skin, -0.62, 0.95, 0, 'armL');
+      part(g, new THREE.BoxGeometry(0.1, 0.55, 0.12), skin, 0.62, 0.95, 0, 'armR');
+      part(g, new THREE.SphereGeometry(0.17, 10, 8), skin, 0, 1.65, -0.05, 'head');
+      const seam = m(0xff8a2a);
+      for (const [y, ry, w] of [
+        [1.15, 0.3, 0.7],
+        [0.8, -0.5, 0.8],
+        [0.55, 0.9, 0.5],
+      ]) {
+        const c = part(g, new THREE.BoxGeometry(w, 0.035, 0.02), seam, 0, y, -0.52, 'seam');
+        c.rotation.z = ry;
+      }
+      break;
+    }
+    case 'giant': {
+      // A towering, stooped figure about 6.5 m tall.
+      humanoid(g, m(0x3a3631), 1.8, 1);
+      const k = 6.5 / 1.8;
+      for (const c of g.children) {
+        c.position.multiplyScalar(k);
+        c.scale.setScalar(k);
+        if (c.name === 'armL' || c.name === 'armR') {
+          c.scale.y = k * 1.35;
+          c.position.y -= 0.5;
+        }
+      }
+      const eye = m(0xd8e0ff);
+      part(g, new THREE.SphereGeometry(0.07, 8, 6), eye, -0.17, 5.92, -0.5);
+      part(g, new THREE.SphereGeometry(0.07, 8, 6), eye, 0.17, 5.92, -0.5);
+      break;
+    }
   }
   g.traverse((o) => ((o as THREE.Mesh).isMesh ? (o.userData.keep = false) : undefined));
   swapInGLB(g, 'entity_' + kind);

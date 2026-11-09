@@ -164,6 +164,8 @@
   "omen.duller": "(視界の隅で、灰色の何かが立っている気がする)",
   "omen.faceling": "(誰かに見られている)",
   "omen.skinstealer": "(遠くで誰かが「助けて」と言った)",
+  "omen.bloater": "(どこかで、湿った袋が擦れるような音がした)",
+  "omen.giant": "(地面がかすかに揺れた)",
   "entity.seen": "記録に追加: {name}",
   "entity.killed": "{name} を倒した",
   "msg.caught": "{name} に襲われた!"

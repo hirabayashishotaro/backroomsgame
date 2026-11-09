@@ -241,7 +241,7 @@ export class AudioSystem {
   }
 
   /** Positional entity voice: growl, giggle, whisper "help", hum. */
-  entityVoice(kind: 'growl' | 'giggle' | 'help' | 'hum' | 'step', pan: number, dist: number): void {
+  entityVoice(kind: 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan', pan: number, dist: number): void {
     const ctx = this.ctx;
     if (!ctx) return;
     const t = ctx.currentTime;
@@ -282,6 +282,27 @@ export class AudioSystem {
         break;
       case 'step':
         this.noise(t, 0.08, 'lowpass', 300, 1, p, this.env(t, 0.25 * v, 0.004, 0.08));
+        break;
+      case 'hiss':
+        // Rising hiss of something about to burst.
+        this.noise(t, 1.4, 'bandpass', 3200, 2, p, this.env(t, 0.35 * v, 1.1, 0.3));
+        this.tone(t, 'sine', 180, 520, 1.4, this.env(t, 0.12 * v, 1.2, 0.2), p);
+        break;
+      case 'boom': {
+        const vv = Math.min(1, 20 / (dist + 4));
+        this.noise(t, 1.2, 'lowpass', 900, 0.7, p, this.env(t, 0.9 * vv, 0.003, 1.1));
+        this.tone(t, 'sine', 90, 28, 0.9, this.env(t, 0.8 * vv, 0.003, 0.9), p);
+        break;
+      }
+      case 'stomp': {
+        const vv = Math.min(1, 30 / (dist + 6));
+        this.tone(t, 'sine', 55, 24, 0.5, this.env(t, 0.7 * vv, 0.004, 0.5), p);
+        this.noise(t, 0.3, 'lowpass', 220, 1, p, this.env(t, 0.5 * vv, 0.004, 0.3));
+        break;
+      }
+      case 'groan':
+        this.tone(t, 'sawtooth', 48, 40, 2.2, this.env(t, 0.22 * Math.min(1, 30 / (dist + 6)), 0.5, 1.6), p);
+        this.tone(t, 'sine', 72, 60, 2.2, this.env(t, 0.2 * Math.min(1, 30 / (dist + 6)), 0.5, 1.6), p);
         break;
     }
   }

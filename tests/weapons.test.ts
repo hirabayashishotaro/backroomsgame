@@ -76,7 +76,12 @@ describe('weapons', () => {
     }
   });
 
-  it('projectiles fly straight (magnum) or arc (kunai)', () => {
+  it('magnum and kunai fly straight (no gravity)', () => {
+    expect(WEAPONS.kunai.gravity).toBe(0);
+    expect(WEAPONS.magnum.gravity ?? 0).toBe(0);
+  });
+
+  it('projectiles fly straight without gravity and arc with it', () => {
     const m = { x: 0, y: 1, z: 0, vx: 180, vy: 0, vz: 0 };
     for (let i = 0; i < 60; i++) stepProjectile(m, 0, 1 / 60);
     expect(m.x).toBeCloseTo(180);

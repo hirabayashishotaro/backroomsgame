@@ -1,5 +1,5 @@
 /** Entities (SPEC §7). Behaviour is original; Wiki descriptions are not copied. */
-export type EntityKind = 'smiler' | 'hound' | 'duller' | 'faceling' | 'skinstealer';
+export type EntityKind = 'smiler' | 'hound' | 'duller' | 'faceling' | 'skinstealer' | 'bloater' | 'giant';
 
 export interface EntityDef {
   kind: EntityKind;
@@ -15,13 +15,18 @@ export interface EntityDef {
   hint: string;
   /** Prefers dark places. */
   dark?: boolean;
+  /** Needs open sky or a very high ceiling. */
+  tall?: boolean;
 }
+
+/** Entity health multiplier (user request: entities were too weak). */
+export const HP_SCALE = 5;
 
 export const ENTITIES: Record<EntityKind, EntityDef> = {
   smiler: {
     kind: 'smiler',
     name: 'スマイラー',
-    hp: 90,
+    hp: 90 * HP_SCALE,
     damage: 30,
     walk: 1.2,
     run: 6.6,
@@ -32,7 +37,7 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
   hound: {
     kind: 'hound',
     name: 'ハウンド',
-    hp: 70,
+    hp: 70 * HP_SCALE,
     damage: 20,
     walk: 2.2,
     run: 7.0,
@@ -42,7 +47,7 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
   duller: {
     kind: 'duller',
     name: 'ダラー',
-    hp: 120,
+    hp: 120 * HP_SCALE,
     damage: 25,
     walk: 2.0,
     run: 2.6,
@@ -52,7 +57,7 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
   faceling: {
     kind: 'faceling',
     name: 'フェイスリング',
-    hp: 100,
+    hp: 100 * HP_SCALE,
     damage: 25,
     walk: 3.6,
     run: 4.4,
@@ -62,13 +67,34 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
   skinstealer: {
     kind: 'skinstealer',
     name: 'スキンスティーラー',
-    hp: 150,
+    hp: 150 * HP_SCALE,
     damage: 35,
     walk: 1.6,
     run: 7.4,
     life: 90,
     hint: '「助けて」と言いながら近づく人。足音がしない。近づかれる前に見分けること。',
   },
+  bloater: {
+    kind: 'bloater',
+    name: 'フクレ',
+    hp: 40 * HP_SCALE,
+    damage: 60,
+    walk: 2.4,
+    run: 3.4,
+    life: 90,
+    hint: '膨れた袋のような人影。音もなく寄ってきて、すぐそばで膨らみ、破裂する。シューという音がしたら離れること。',
+  },
+  giant: {
+    kind: 'giant',
+    name: 'ダイダラ',
+    hp: 600 * HP_SCALE,
+    damage: 40,
+    walk: 1.5,
+    run: 3.2,
+    life: 160,
+    tall: true,
+    hint: '見上げるほど大きな人影。歩みは遅いが、足元に近づくと踏みつけてくる。地響きが聞こえたら距離を取れ。',
+  },
 };
 
-export const ALL_ENTITIES: EntityKind[] = ['smiler', 'hound', 'duller', 'faceling', 'skinstealer'];
+export const ALL_ENTITIES: EntityKind[] = ['smiler', 'hound', 'duller', 'faceling', 'skinstealer', 'bloater', 'giant'];

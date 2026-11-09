@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hurt, newBrain, think, type Perception } from '../src/entities/brain';
+import { BLOATER, hurt, newBrain, think, type Perception } from '../src/entities/brain';
 import { Director, entityTableFor } from '../src/entities/director';
 
 const P = (o: Partial<Perception> = {}): Perception => ({ dist: 20, watched: false, los: true, playerRunning: false, playerCrouching: false, playerRetreat: 0, ...o });
@@ -45,11 +45,44 @@ describe('entity behaviour', () => {
     expect(s.mode).toBe('chase');
   });
 
-  it('damage kills and makes hounds stagger', () => {
+  it('damage kills; only heavy hits make hounds stagger', () => {
     const h = newBrain('hound');
     expect(hurt(h, 30)).toBe(false);
+    expect(h.mode).toBe('chase');
+    expect(hurt(h, 60)).toBe(false);
     expect(h.mode).toBe('stagger');
-    expect(hurt(h, 100)).toBe(true);
+    expect(hurt(h, 5000)).toBe(true);
+  });
+
+  it('entities are tough: five times the original health', () => {
+    expect(newBrain('hound').hp).toBe(350);
+    expect(newBrain('skinstealer').hp).toBe(750);
+    expect(newBrain('giant').hp).toBeGreaterThanOrEqual(2000);
+  });
+
+  it('bloater lights its fuse up close, bursts after the fuse, and backing off cancels it', () => {
+    const a = newBrain('bloater');
+    run(a, P({ dist: 10 }), 0.5);
+    expect(a.mode).toBe('stalk');
+    let d = think(a, P({ dist: BLOATER.trigger - 0.5 }), 0.05);
+    expect(a.mode).toBe('fuse');
+    for (let t = 0; t < BLOATER.fuse + 0.2 && !d.gone; t += 0.05) d = think(a, P({ dist: 2 }), 0.05);
+    expect(d.explode).toBe(true);
+    const b = newBrain('bloater');
+    think(b, P({ dist: 2 }), 0.05);
+    expect(b.mode).toBe('fuse');
+    d = think(b, P({ dist: BLOATER.cancel + 1 }), 0.05);
+    expect(b.mode).toBe('stalk');
+    expect(d.explode).toBeFalsy();
+  });
+
+  it('giant walks in, winds up and stomps with a cooldown', () => {
+    const g = newBrain('giant');
+    expect(think(g, P({ dist: 20 }), 0.05).speed).toBeGreaterThan(0);
+    let stomps = 0;
+    for (let t = 0; t < 6; t += 0.05) if (think(g, P({ dist: 2.5 }), 0.05).stomp) stomps++;
+    expect(stomps).toBeGreaterThanOrEqual(1);
+    expect(stomps).toBeLessThanOrEqual(3);
   });
 
   it('entities give up and fade after their lifetime', () => {
@@ -74,9 +107,13 @@ describe('director', () => {
       expect(events[i].startsWith('omen')).toBe(true);
       expect(events[i + 1]?.startsWith('spawn') ?? true).toBe(true);
     }
-    // spawns are at least ~90 s apart
+    // frequent, but never back to back: spawns are 12-32 s apart, the first within ~20 s
     const spawns = events.filter((e) => e.startsWith('spawn')).map((e) => Number(e.split('@')[1]));
-    for (let i = 1; i < spawns.length; i++) expect(spawns[i] - spawns[i - 1]).toBeGreaterThan(80);
+    expect(spawns[0]).toBeLessThan(25);
+    for (let i = 1; i < spawns.length; i++) {
+      expect(spawns[i] - spawns[i - 1]).toBeGreaterThan(10);
+      expect(spawns[i] - spawns[i - 1]).toBeLessThan(40);
+    }
   });
 
   it('never spawns in Level 0, safe levels or while at the limit', () => {
@@ -90,11 +127,15 @@ describe('director', () => {
     for (let t = 0; t < 600; t++) expect(e.update(1, ['hound'], 0, tune, true)).toBeNull();
   });
 
-  it('generated levels get 0-3 entity kinds, deterministically', () => {
+  it('generated levels get 1-3 entity kinds, deterministically; giants only in open levels', () => {
     for (let n = 3; n < 60; n++) {
       const a = entityTableFor(String(n), { dark: true, safe: false });
       expect(a).toEqual(entityTableFor(String(n), { dark: true, safe: false }));
+      expect(a.length).toBeGreaterThanOrEqual(1);
       expect(a.length).toBeLessThanOrEqual(3);
+      expect(a).not.toContain('giant');
     }
+    const open = Array.from({ length: 200 }, (_, n) => entityTableFor(String(n + 3), { dark: false, safe: false, open: true }));
+    expect(open.some((t) => t.includes('giant'))).toBe(true);
   });
 });

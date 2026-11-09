@@ -714,7 +714,7 @@ export class Game {
     this.player.grounded = true;
     this.walkWarned = false;
     for (const a of this.anchors[this.level.id] ?? []) this.showAnchor(a);
-    this.entityTable = entityTableFor(this.level.id, { dark: this.level.palette.ambient < 0.12, safe: this.level.id === 'frontrooms' });
+    this.entityTable = entityTableFor(this.level.id, { dark: this.level.palette.ambient < 0.12, safe: this.level.id === 'frontrooms', open: this.level.environment === 'open-sky' || this.level.ceilingHeight >= 9 });
     this.director?.reset(this.entityTable.length > 0);
     if (this.history[this.history.length - 1] !== this.level.id) this.history.push(this.level.id);
     if (this.started) this.audio.setAmbience(this.level.ambience);
@@ -1197,14 +1197,14 @@ export class Game {
   }
 
   private updateEntities(dt: number): void {
-    const tune = { rate: DIFFICULTY[this.settings.difficulty].entity, maxActive: this.settings.difficulty === 'hard' ? 2 : 1 };
+    const tune = { rate: DIFFICULTY[this.settings.difficulty].entity, maxActive: this.settings.difficulty === 'hard' ? 4 : this.settings.difficulty === 'easy' ? 2 : 3 };
     const safe = this.isSafeSpot(this.player.x, this.player.z) || !!this.transition;
     const ev = this.director.update(dt, this.entityTable, this.ents.active, tune, safe);
     if (ev?.type === 'omen') {
       // Always a warning first (SPEC §7.1): a sound, flickering lights, the hum faltering.
       this.flickerT = 3;
       this.audio.humDip(2.5);
-      const voice = ev.kind === 'hound' ? 'growl' : ev.kind === 'smiler' ? 'giggle' : ev.kind === 'skinstealer' ? 'help' : 'hum';
+      const voice = ev.kind === 'hound' ? 'growl' : ev.kind === 'smiler' ? 'giggle' : ev.kind === 'skinstealer' ? 'help' : ev.kind === 'giant' ? 'stomp' : 'hum';
       this.audio.entityVoice(voice, (this.rng.float() - 0.5) * 2, 40);
       this.hud.subtitle(t('omen.' + ev.kind), 3.5);
     } else if (ev?.type === 'spawn') {

@@ -86,13 +86,14 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     interval: 0.4,
     reloadTime: 0,
     damage: 55,
-    speed: 38,
-    gravity: 9.8,
+    speed: 45,
+    // Flies straight (user request); past its range it drops so it can be collected.
+    gravity: 0,
     hipSpread: 0.006,
     adsSpread: 0,
     adsZoom: 0.85,
     headMultiplier: 2.5,
-    range: 120,
+    range: 70,
   },
   axe: {
     id: 'axe',

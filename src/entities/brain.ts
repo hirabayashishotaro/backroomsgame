@@ -4,7 +4,7 @@
  */
 import { ENTITIES, type EntityKind } from './entityDefs';
 
-export type Mode = 'idle' | 'stalk' | 'chase' | 'frozen' | 'fade' | 'flee' | 'stagger';
+export type Mode = 'idle' | 'stalk' | 'chase' | 'frozen' | 'fade' | 'flee' | 'stagger' | 'fuse' | 'attack';
 
 export interface Perception {
   dist: number;
@@ -41,7 +41,16 @@ export interface Decision {
   speed: number;
   /** True when the entity should be removed. */
   gone: boolean;
+  /** Bloater: burst now (area damage around it). */
+  explode?: boolean;
+  /** Giant: stomp now (area damage around it). */
+  stomp?: boolean;
 }
+
+/** Bloater: distance that starts the fuse, fuse time, distance that cancels it, blast radius. */
+export const BLOATER = { trigger: 2.8, fuse: 1.5, cancel: 6.5, radius: 5.5 };
+/** Giant: stomp reach, wind-up and cooldown (s). */
+export const GIANT = { reach: 3.8, windup: 0.9, cooldown: 2.4 };
 
 /** Advance the brain by dt. */
 export function think(b: BrainState, p: Perception, dt: number): Decision {
@@ -112,6 +121,41 @@ export function think(b: BrainState, p: Perception, dt: number): Decision {
       if (b.mode === 'chase') return { speed: def.run, gone: false };
       return { speed: p.dist > 3 ? def.walk : 0, gone: false };
     }
+    case 'bloater': {
+      // Creeps up silently; next to you it swells and bursts. Back off to stop the fuse.
+      if (b.mode === 'fuse') {
+        if (p.dist > BLOATER.cancel) {
+          set(b, 'stalk');
+          return { speed: def.walk, gone: false };
+        }
+        if (b.t >= BLOATER.fuse) return { speed: 0, gone: true, explode: true };
+        return { speed: 0, gone: false };
+      }
+      if (p.dist < BLOATER.trigger) {
+        set(b, 'fuse');
+        return { speed: 0, gone: false };
+      }
+      if (b.mode !== 'stalk') set(b, 'stalk');
+      return { speed: p.dist < 15 ? def.run : def.walk, gone: false };
+    }
+    case 'giant': {
+      // Slow, relentless; stomps when you are at its feet.
+      if (b.mode === 'attack') {
+        if (b.t >= GIANT.windup) {
+          set(b, 'chase');
+          b.watch = GIANT.cooldown;
+          return { speed: 0, gone: false, stomp: true };
+        }
+        return { speed: 0, gone: false };
+      }
+      b.watch = Math.max(0, b.watch - dt);
+      if (p.dist < GIANT.reach && b.watch <= 0) {
+        set(b, 'attack');
+        return { speed: 0, gone: false };
+      }
+      if (b.mode !== 'chase') set(b, 'chase');
+      return { speed: p.dist < 2 ? 0 : p.dist < 30 ? def.run : def.walk, gone: false };
+    }
   }
 }
 
@@ -127,10 +171,11 @@ export function hurt(b: BrainState, dmg: number): boolean {
     b.mode = 'flee';
     return true;
   }
-  if (b.kind === 'hound' || b.kind === 'skinstealer') {
+  // Only heavy hits (magnum, kunai, axe) make them stagger, so pistol fire cannot stun-lock.
+  if ((b.kind === 'hound' || b.kind === 'skinstealer') && dmg >= 50) {
     b.mode = 'stagger';
     b.t = 0;
-  } else if (b.kind === 'smiler' || b.kind === 'duller' || b.kind === 'faceling') {
+  } else if (b.kind !== 'bloater' && b.kind !== 'giant' && b.mode !== 'stagger') {
     // Shooting it wakes it up.
     if (b.mode !== 'chase') {
       b.mode = 'chase';

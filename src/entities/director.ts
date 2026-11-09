@@ -27,13 +27,14 @@ export class Director {
 
   /** New level: a calm period before anything can happen. */
   reset(levelHasEntities: boolean): void {
-    this.cooldown = levelHasEntities ? 55 + this.rng.float() * 40 : Infinity;
+    this.cooldown = levelHasEntities ? 8 + this.rng.float() * 10 : Infinity;
     this.omen = null;
   }
 
   /** Called after an encounter ends (attack, death, fade). */
   encounterOver(t: DirectorTuning): void {
-    this.cooldown = (90 + this.rng.float() * 150) / Math.max(0.2, t.rate);
+    // Frequent encounters (user request): a new one every ~12-32 s.
+    this.cooldown = (12 + this.rng.float() * 20) / Math.max(0.2, t.rate);
   }
 
   /** Advance. `table` = entities allowed in this level; `active` = currently alive. */
@@ -53,25 +54,25 @@ export class Director {
     this.cooldown -= dt;
     if (this.cooldown > 0) return null;
     const kind = table[this.rng.int(0, table.length - 1)];
-    this.omen = { left: 4 + this.rng.float() * 3, kind };
+    this.omen = { left: 2.5 + this.rng.float() * 2, kind };
     return { type: 'omen', kind };
   }
 
   /** Called if a spawn could not be placed: try again shortly. */
   retrySoon(): void {
-    this.cooldown = 8;
+    this.cooldown = 3;
   }
 }
 
 /** Which entities appear in a level (SPEC §7.1: Level 0 has none, per the Wiki). */
-export function entityTableFor(levelId: string, opts: { dark: boolean; safe: boolean }): EntityKind[] {
+export function entityTableFor(levelId: string, opts: { dark: boolean; safe: boolean; open?: boolean }): EntityKind[] {
   const fixed: Record<string, EntityKind[]> = {
     '0': [],
     frontrooms: [],
     arena: [],
     '1000': [],
-    '1': ['hound', 'skinstealer', 'duller'],
-    '2': ['hound', 'smiler', 'skinstealer'],
+    '1': ['hound', 'skinstealer', 'duller', 'bloater'],
+    '2': ['hound', 'smiler', 'skinstealer', 'bloater'],
     '27': ['smiler', 'hound'],
     '139': ['faceling', 'smiler'],
     '14': ['smiler', 'faceling'],
@@ -81,7 +82,10 @@ export function entityTableFor(levelId: string, opts: { dark: boolean; safe: boo
     u3: ['duller'],
     '808': [],
     '313': ['smiler'],
-    '512': ['skinstealer', 'faceling', 'duller'],
+    '512': ['skinstealer', 'faceling', 'duller', 'bloater'],
+    '900': ['giant', 'bloater'],
+    '303': ['giant', 'hound'],
+    '666': ['giant', 'bloater'],
     '77': ['hound', 'smiler'],
     '120': ['smiler', 'hound'],
     void: ['smiler'],
@@ -90,10 +94,11 @@ export function entityTableFor(levelId: string, opts: { dark: boolean; safe: boo
   };
   if (levelId in fixed) return fixed[levelId];
   if (opts.safe) return [];
-  // Generated and other levels: 1-3 kinds from the id; smilers only where it is dark.
+  // Generated and other levels: 1-3 kinds from the id; smilers only where it is dark,
+  // giants only under open sky or very high ceilings.
   const rng = new Rng(hashString('entities:' + levelId));
-  const pool = ALL_ENTITIES.filter((k) => k !== 'smiler' || opts.dark);
-  const n = rng.int(0, 3);
+  const pool = ALL_ENTITIES.filter((k) => (k !== 'smiler' || opts.dark) && (k !== 'giant' || opts.open));
+  const n = rng.int(1, 3);
   const out: EntityKind[] = [];
   while (out.length < n && pool.length) out.push(pool.splice(rng.int(0, pool.length - 1), 1)[0]);
   return out;

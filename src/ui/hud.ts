@@ -26,7 +26,8 @@ const CSS = `
 .hud-prompt { position: absolute; left: 50%; top: 55%; transform: translateX(-50%); font-size: 15px;
   background: rgba(0,0,0,0.45); padding: 4px 12px; border-radius: 4px; }
 .hud-cross { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
-.hud-cross i { position: absolute; background: var(--xc, #fff); box-shadow: 0 0 2px rgba(0,0,0,0.9); }
+.hud-cross i { position: absolute; background: var(--xc, #fff); box-shadow: 0 0 0 1px rgba(0,0,0,0.7), 0 0 3px rgba(0,0,0,0.8); }
+.hud-cross .ring { background: none; border: 1.5px solid var(--xc, #fff); border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(0,0,0,0.55); }
 .hud-cross .dot { width: 3px; height: 3px; left: -1.5px; top: -1.5px; border-radius: 50%; }
 .hud-hit { position: absolute; left: 50%; top: 50%; width: 0; height: 0; opacity: 0; transition: opacity 0.12s; }
 .hud-hit i { position: absolute; width: 10px; height: 2px; background: #fff; box-shadow: 0 0 2px #000; }
@@ -144,8 +145,9 @@ export class Hud {
     this.hint = this.div('hud-hint');
     this.hint.textContent = t('hud.hint');
     this.cross = this.div('hud-cross');
-    for (let i = 0; i < 5; i++) this.cross.appendChild(document.createElement('i'));
-    (this.cross.lastChild as HTMLElement).className = 'dot';
+    for (let i = 0; i < 6; i++) this.cross.appendChild(document.createElement('i'));
+    (this.cross.children[4] as HTMLElement).className = 'dot';
+    (this.cross.children[5] as HTMLElement).className = 'ring';
     this.hit = this.div('hud-hit');
     for (let i = 0; i < 4; i++) {
       const l = document.createElement('i');
@@ -198,16 +200,28 @@ export class Hud {
     this.cross.style.display = visible ? '' : 'none';
     if (!visible) return;
     this.cross.style.setProperty('--xc', { white: '#ffffff', green: '#5cff7a', yellow: '#ffe25c', cyan: '#5cf0ff', red: '#ff5c5c' }[color] ?? '#fff');
-    const len = 7 * size;
+    // Aiming down sights: the reticle stays fully visible, gets a ring and a dot.
+    const len = 7 * size * (1 - ads * 0.25);
     const th = Math.max(1.5, 2 * size);
     const g = gapPx + 3 * size;
     const lines = this.cross.children;
-    const set = (el: Element, x: number, y: number, w: number, h: number) => Object.assign((el as HTMLElement).style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`, opacity: String(1 - ads * 0.85) });
+    const set = (el: Element, x: number, y: number, w: number, h: number, op = 1) =>
+      Object.assign((el as HTMLElement).style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`, opacity: String(op) });
     set(lines[0], -th / 2, -g - len, th, len);
     set(lines[1], -th / 2, g, th, len);
     set(lines[2], -g - len, -th / 2, len, th);
     set(lines[3], g, -th / 2, len, th);
-    (lines[4] as HTMLElement).style.display = dot ? '' : 'none';
+    const dotOn = dot || ads > 0.3;
+    const ds = 3 + ads * 1.5 * size;
+    (lines[4] as HTMLElement).style.display = dotOn ? '' : 'none';
+    if (dotOn) set(lines[4], -ds / 2, -ds / 2, ds, ds);
+    const ring = lines[5] as HTMLElement;
+    ring.style.display = ads > 0.05 ? '' : 'none';
+    if (ads > 0.05) {
+      const rr = g + len + 4 * size;
+      set(ring, -rr, -rr, rr * 2, rr * 2, Math.min(1, ads * 1.4));
+      ring.style.boxSizing = 'border-box';
+    }
   }
 
   /** Hit marker: white = body, red = head, larger = kill. */

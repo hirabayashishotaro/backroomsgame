@@ -58,6 +58,8 @@ const MODE_LABEL: Record<string, string> = {
   fade: '消えかけ',
   flee: '退散',
   stagger: 'ひるみ',
+  fuse: '膨張中!',
+  attack: '踏みつけ準備',
 };
 
 export class CombatLab {

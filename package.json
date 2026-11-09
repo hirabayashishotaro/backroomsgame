@@ -1,0 +1,28 @@
+{
+  "name": "backrooms-endless",
+  "private": true,
+  "version": "0.1.0",
+  "description": "THE BACKROOMS: ENDLESS - procedural first-person exploration horror",
+  "type": "module",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "build:electron": "node scripts/build-electron.mjs",
+    "dist": "npm run build && npm run build:electron && electron-builder --win portable nsis"
+  },
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "menu.subtitle": "ノークリップした先は、終わりのない黄色の迷路だった。",
+  "menu.start": "クリックして開始",
+  "menu.resume": "再開",
+  "menu.controls": "WASD: 移動 / マウス: 視点 / Shift: 走る / Ctrl・C: しゃがむ / Esc: ポーズ",
+  "settings.sensX": "マウス感度 X",
+  "settings.sensY": "マウス感度 Y",
+  "settings.invertY": "Y軸反転",
+  "settings.fov": "視野角 (FOV)",
+  "settings.renderDistance": "描画距離 (チャンク)",
+  "settings.master": "マスター音量",
+  "settings.hum": "ハム音の強さ",
+  "settings.headBob": "視点の揺れ",
+  "settings.fullscreen": "フルスクリーン"
+}

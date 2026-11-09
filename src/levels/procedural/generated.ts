@@ -9,6 +9,8 @@ import type { ExitRule, ExitTarget, LevelDefinition } from '../levelDefinition';
 import type { SkyKind } from '../../systems/skyPresets';
 import { makeGardenLevel, makeRoadLevel, makeTatamiLevel, makeWalkwayLevel, type WorldOpts } from '../worlds';
 import { SKY_PRESETS } from '../../systems/skyPresets';
+import * as W from '../worlds2';
+import type { ShapeOpts } from '../worlds2';
 import { ALL_GRID_PIECES, GRID_PIECES } from '../gridPieces';
 
 const ADJ = ['沈黙の', '黄昏の', '湿った', '終わらない', '色褪せた', '眠れる', '忘れられた', '傾いた', '冷たい', '遠い', '濁った', '白い', '錆びた', '静かな', '薄暗い', '誰もいない', '反響する', '夜明けの'];
@@ -77,7 +79,33 @@ function pickPieces(rng: Rng, n: number): string[] {
   return out;
 }
 
-export type Grammar = 'grid' | 'ruins' | 'garden' | 'aero' | 'walkways' | 'narrow' | 'roads' | 'tatami';
+export type Grammar =
+  | 'grid'
+  | 'ruins'
+  | 'garden'
+  | 'aero'
+  | 'walkways'
+  | 'narrow'
+  | 'roads'
+  | 'tatami'
+  | 'spiral'
+  | 'tunnel'
+  | 'chaos'
+  | 'mountain'
+  | 'volcano'
+  | 'temple'
+  | 'island'
+  | 'cave'
+  | 'mansion'
+  | 'swamp'
+  | 'books'
+  | 'gullet'
+  | 'colossus'
+  | 'glassvoid'
+  | 'rooftops'
+  | 'endisles'
+  | 'pooltower'
+  | 'hospital';
 
 const GRAMMARS: Array<[Grammar, number, SkyKind[]]> = [
   ['grid', 24, []],
@@ -88,9 +116,45 @@ const GRAMMARS: Array<[Grammar, number, SkyKind[]]> = [
   ['narrow', 7, ['void', 'night']],
   ['roads', 7, ['dawn', 'day', 'dusk', 'night']],
   ['tatami', 8, ['night', 'dusk']],
+  ['spiral', 6, []],
+  ['tunnel', 6, []],
+  ['chaos', 4, []],
+  ['mountain', 6, ['day', 'dawn', 'overcast']],
+  ['volcano', 4, []],
+  ['temple', 3, []],
+  ['island', 3, []],
+  ['cave', 6, []],
+  ['mansion', 5, []],
+  ['swamp', 5, []],
+  ['books', 4, []],
+  ['gullet', 3, []],
+  ['colossus', 3, ['dusk', 'void', 'day', 'night']],
+  ['glassvoid', 3, []],
+  ['rooftops', 4, []],
+  ['endisles', 4, []],
+  ['pooltower', 4, []],
+  ['hospital', 5, []],
 ];
 
 export const GRAMMAR_LABEL: Record<Grammar, string> = {
+  spiral: '螺旋階段(縦)',
+  tunnel: 'トンネル(一本道)',
+  chaos: 'カオス',
+  mountain: '雪山(斜め)',
+  volcano: '火山',
+  temple: '神殿(ひと部屋)',
+  island: '孤島',
+  cave: '洞窟(縦横)',
+  mansion: 'マンション(縦)',
+  swamp: 'キノコの湿地',
+  books: '本の浮島',
+  gullet: '食道(下へ)',
+  colossus: '巨像',
+  glassvoid: '透明な虚無',
+  rooftops: '夜の屋上',
+  endisles: '虚空の浮島',
+  pooltower: '重なるプール(縦)',
+  hospital: '夜の病院',
   grid: '屋内迷路',
   ruins: '空の下の廃墟',
   garden: '庭園',
@@ -104,6 +168,24 @@ export const GRAMMAR_LABEL: Record<Grammar, string> = {
 export const SKY_LABEL: Record<SkyKind, string> = { day: '昼', dusk: '夕暮れ', night: '夜空', dawn: '夜明け', void: '虚無', overcast: '曇り' };
 
 const WORLD_NOUN: Partial<Record<Grammar, string[]>> = {
+  spiral: ['螺旋階段', '階段室', '吹き抜け'],
+  tunnel: ['トンネル', '地下道', '坑道'],
+  chaos: ['継ぎ目', '断片', '崩落'],
+  mountain: ['雪山', '尾根', '氷河'],
+  volcano: ['火口', '溶岩原', 'カルデラ'],
+  temple: ['神殿', '聖堂', '拝殿'],
+  island: ['孤島', '小島', '砂州'],
+  cave: ['洞窟', '鍾乳洞', '地底湖'],
+  mansion: ['マンション', '集合住宅', 'ホテル'],
+  swamp: ['湿地', '菌の森', '沼地'],
+  books: ['書架', '図書館', '書庫'],
+  gullet: ['食道', '肉の縦穴', '喉'],
+  colossus: ['巨像', '石像', '記念碑'],
+  glassvoid: ['虚無', '空白', '無'],
+  rooftops: ['屋上', '摩天楼', '夜景'],
+  endisles: ['浮島', '果て', '虚空'],
+  pooltower: ['プール', '浴場', '水槽'],
+  hospital: ['病院', '病棟', '療養所'],
   ruins: ['廃墟', '中庭', '遺構', '回廊跡'],
   garden: ['庭園', '植物園', '花園', '中庭'],
   aero: ['広場', 'テラス', 'アトリウム', '未来都市'],
@@ -138,6 +220,9 @@ export function genomeOf(id: string): { grammar: Grammar; sky: SkyKind | null } 
   return { grammar, sky };
 }
 
+const VERTICAL_GRAMMARS = new Set<Grammar>(['spiral', 'cave', 'mansion', 'gullet', 'pooltower']);
+const GATE_GRAMMARS = new Set<Grammar>(['garden', 'aero', 'roads', 'mountain', 'volcano', 'temple', 'island', 'colossus', 'glassvoid', 'endisles']);
+
 function genericExits(id: string, rng: Rng, grammar: Grammar): ExitRule[] {
   const exits: ExitRule[] = [
     { kind: 'door', prop: 'plain-door', targets: neighbours(id, rng), discovery: 'ありふれた扉の向こうは、まったく別の場所だった。' },
@@ -151,9 +236,11 @@ function genericExits(id: string, rng: Rng, grammar: Grammar): ExitRule[] {
     },
     { kind: 'walk', distance: 1200 + rng.int(0, 800), targets: neighbours(id, rng), discovery: '歩き続けるうちに、景色が別のものに変わっていた。' },
   ];
-  if (grammar === 'grid' || grammar === 'ruins' || grammar === 'tatami')
+  if (grammar === 'grid' || grammar === 'ruins' || grammar === 'tatami' || grammar === 'tunnel' || grammar === 'hospital' || grammar === 'temple' || grammar === 'chaos')
     exits.push({ kind: 'wall', push: 2.5, targets: [{ levelId: String(rng.int(5, 999)), weight: 1 }], discovery: '壁をすり抜けると、知らない場所にいた。' });
-  if (grammar === 'garden' || grammar === 'aero' || grammar === 'roads')
+  if (VERTICAL_GRAMMARS.has(grammar))
+    exits.push({ kind: 'depth', depth: 60 + rng.int(0, 60), targets: neighbours(id, rng), discovery: '上へ(下へ)進み続けると、別の場所に出た。' });
+  if (GATE_GRAMMARS.has(grammar))
     exits.push({
       kind: 'special',
       zone: 'gate',
@@ -181,18 +268,43 @@ export function makeGeneratedLevel(id: string): LevelDefinition {
       title: 'Level ' + id,
       name,
       threat: (grammar === 'narrow' ? 3 : rng.int(0, 2)) as 0 | 1 | 2 | 3,
-      sky: sky!,
+      sky: sky ?? 'night',
       exits: genericExits(id, rng, grammar),
-      kindLabel: `${GRAMMAR_LABEL[grammar]}・${SKY_LABEL[sky!]}`,
+      kindLabel: sky ? `${GRAMMAR_LABEL[grammar]}・${SKY_LABEL[sky]}` : GRAMMAR_LABEL[grammar],
     };
     if (grammar === 'garden') def = makeGardenLevel(o, 'garden', rng);
     else if (grammar === 'aero') def = makeGardenLevel(o, 'aero', rng);
     else if (grammar === 'walkways') def = makeWalkwayLevel(o, rng);
-    else if (grammar === 'narrow') {
-      def = makeWalkwayLevel(o, rng, true);
-    } else if (grammar === 'roads') def = makeRoadLevel(o, rng);
-    else def = makeTatamiLevel(o, rng);
+    else if (grammar === 'narrow') def = makeWalkwayLevel(o, rng, true);
+    else if (grammar === 'roads') def = makeRoadLevel(o, rng);
+    else if (grammar === 'tatami') def = makeTatamiLevel(o, rng);
+    else {
+      const so: ShapeOpts = { ...o, threat: o.threat as ShapeOpts['threat'], sky: sky ?? undefined };
+      const make: Record<string, () => LevelDefinition> = {
+        spiral: () => W.makeSpiral(so, rng),
+        tunnel: () => W.makeTunnel(so, rng),
+        chaos: () => W.makeChaos(so, rng),
+        mountain: () => W.makeMountain(so, rng),
+        volcano: () => W.makeVolcano(so),
+        temple: () => W.makeTemple(so),
+        island: () => W.makeIsland(so),
+        cave: () => W.makeCave(so),
+        mansion: () => W.makeMansion(so, rng),
+        swamp: () => W.makeSwamp(so, rng),
+        books: () => W.makeBooks(so),
+        gullet: () => W.makeGullet(so),
+        colossus: () => W.makeColossus(so, sky ?? 'dusk'),
+        glassvoid: () => W.makeGlassVoid(so),
+        rooftops: () => W.makeRooftops(so),
+        endisles: () => W.makeEnd(so),
+        pooltower: () => W.makePoolTower(so),
+        hospital: () => W.makeHospital(so),
+      };
+      def = make[grammar]();
+    }
   }
+  // A few levels are broken: their names come out garbled (bug levels).
+  if (grammar === 'chaos' || hashString('glitch:' + id) % 100 < 6) def = { ...def, glitch: true };
   cache.set(id, def);
   return def;
 }

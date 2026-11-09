@@ -53,6 +53,20 @@ const CSS = `
   background: radial-gradient(ellipse at center, rgba(120,0,0,0) 50%, rgba(120,0,0,0.55) 100%); opacity: 0; }
 `;
 
+/** Mojibake: replace a fraction of characters with garbled ones and stack combining marks. */
+const MOJI = '縺繧譁蟄怜喧縺代€ｱ鬮倥＠縺ｯ繝ｬ繝吶Ν蜷榊燕驕主悉竊鍋ｴ逍ｲ譛ｪ遏･□■◆¿ÿØ¤§¶';
+const MARKS = ['\u0336', '\u0337', '\u0338', '\u0334', '\u0315', '\u0322', '\u0327', '\u0361', '\u0489'];
+export function garble(s: string, amount: number): string {
+  let out = '';
+  for (const ch of s) {
+    const r = Math.random();
+    if (r < amount * 0.6) out += MOJI[Math.floor(Math.random() * MOJI.length)];
+    else out += ch;
+    if (Math.random() < amount * 0.5) out += MARKS[Math.floor(Math.random() * MARKS.length)];
+  }
+  return out;
+}
+
 export class Hud {
   readonly root: HTMLDivElement;
   private healthBar: HTMLElement;
@@ -192,18 +206,21 @@ export class Hud {
     } else this.prompt.style.display = 'none';
   }
 
-  /** Big level title that fades in, holds, then slowly fades out. */
-  showTitle(level: string, name: string, threat: number): void {
+  /** Big level title that fades in, holds, then slowly fades out. Bug levels garble it. */
+  showTitle(level: string, name: string, threat: number, glitch = false): void {
     this.title.innerHTML = '';
     const a = this.div('lv');
-    a.textContent = level;
     const b = this.div('nm');
-    b.textContent = name;
     const c = this.div('cls');
-    c.textContent = t('title.threat', { n: threat });
     this.title.append(a, b, c);
     this.titleTime = 0;
+    this.glitchText = glitch ? [level, name, t('title.threat', { n: threat })] : null;
+    a.textContent = glitch ? garble(level, 0.5) : level;
+    b.textContent = glitch ? garble(name, 0.6) : name;
+    c.textContent = glitch ? garble(t('title.threat', { n: threat }), 0.8) : t('title.threat', { n: threat });
   }
+  private glitchText: string[] | null = null;
+  private glitchTick = 0;
 
   /** Large banner using the title-card style (journal milestones etc.). */
   showBanner(big: string, sub: string): void {
@@ -267,6 +284,20 @@ export class Hud {
       if (this.msgTimer <= 0) this.msg.style.opacity = '0';
     }
 
+    // Garbled titles keep re-garbling while they are visible.
+    if (this.glitchText && this.titleTime >= 0) {
+      this.glitchTick += dt;
+      if (this.glitchTick > 0.12) {
+        this.glitchTick = 0;
+        const els = this.title.children;
+        this.glitchText.forEach((txt, i) => ((els[i] as HTMLElement).textContent = garble(txt, 0.35 + Math.random() * 0.5)));
+        this.title.style.filter = Math.random() < 0.3 ? `hue-rotate(${Math.floor(Math.random() * 360)}deg)` : '';
+        this.title.style.translate = `${(Math.random() - 0.5) * 12}px ${(Math.random() - 0.5) * 6}px`;
+      }
+    } else if (this.title.style.filter) {
+      this.title.style.filter = '';
+      this.title.style.translate = '';
+    }
     // Title card: 0.8s fade in, 2.2s hold, 3s fade out.
     if (this.titleTime >= 0) {
       this.titleTime += dt;

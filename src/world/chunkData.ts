@@ -70,7 +70,11 @@ export type ZoneKind =
   /** A named set piece in a grid level (journal / messages). */
   | 'piece'
   /** Stepping in here leads elsewhere (waterfall, stone circle, gantry light). */
-  | 'gate';
+  | 'gate'
+  /** Landing in water: no fall damage. */
+  | 'water'
+  /** Lava: burns and sends you back to the last safe spot. */
+  | 'lava';
 
 export interface Zone {
   kind: ZoneKind;
@@ -86,6 +90,8 @@ export interface ChunkData {
   levelId: string;
   cx: number;
   cz: number;
+  /** Vertical slab index (vertical levels only; 0 or undefined for flat levels). */
+  cy?: number;
   size: number;
   /** Collidable, rendered boxes (walls, pillars). */
   solids: Box[];
@@ -100,6 +106,7 @@ export interface ChunkData {
   zones: Zone[];
 }
 
-export function chunkKey(cx: number, cz: number): string {
-  return cx + ',' + cz;
+/** Chunk key; flat levels keep the 2D form so older saves still match. */
+export function chunkKey(cx: number, cz: number, cy = 0): string {
+  return cy ? cx + ',' + cz + ',' + cy : cx + ',' + cz;
 }

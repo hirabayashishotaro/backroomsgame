@@ -572,6 +572,64 @@ Object.assign(GRID_PIECES, {
   },
 } as Record<string, GridPieceDef>);
 
+// Hospital pieces (Level 186).
+Object.assign(GRID_PIECES, {
+  ward: {
+    id: 'ward',
+    name: '病室',
+    desc: 'カーテンで仕切られたベッドが並ぶ。どのベッドも、さっきまで誰かが寝ていたように乱れている。',
+    metres: [12, 9],
+    ceiling: (H: number) => H,
+    border: 'walled',
+    build(c: PieceCtx) {
+      const n = Math.max(2, Math.floor((c.w - 1) / 2.6));
+      for (let k = 0; k < n; k++) {
+        const x = c.x0 + 1 + k * 2.6;
+        for (const z of [c.z0 + 0.6, c.z1 - 2.6]) {
+          box(c.out.solids, x, 0, z, x + 1.0, 0.65, z + 2, 'tile-white');
+          box(c.out.decor, x, 0.65, z, x + 1.0, 0.72, z + 2, 'fabric');
+          box(c.out.decor, x + 1.3, 0, z, x + 1.32, 2.1, z + 2, 'shoji');
+          box(c.out.solids, x + 1.05, 0, z + 0.2, x + 1.12, 1.8, z + 0.27, 'metal');
+        }
+      }
+      panelGrid(c, 4, 0.9);
+      item(c, c.x0 + 1.5, 0, czOf(c));
+    },
+  },
+  surgery: {
+    id: 'surgery',
+    name: '手術室',
+    desc: '無影灯の下に手術台がひとつ。器具はきれいに並べられたままだ。',
+    metres: [8, 8],
+    ceiling: (H: number) => H,
+    border: 'walled',
+    build(c: PieceCtx) {
+      const mx = cxOf(c);
+      const mz = czOf(c);
+      box(c.out.solids, mx - 0.5, 0, mz - 1.1, mx + 0.5, 0.9, mz + 1.1, 'metal');
+      box(c.out.decor, mx - 0.45, 0.9, mz - 1.05, mx + 0.45, 0.95, mz + 1.05, 'tile-blue');
+      box(c.out.decor, mx - 0.6, c.H - 0.5, mz - 0.6, mx + 0.6, c.H - 0.3, mz + 0.6, 'glow');
+      c.out.lights.push({ x: mx, y: c.H - 0.6, z: mz, I: 3 });
+      box(c.out.solids, mx + 1.2, 0, mz - 0.4, mx + 1.8, 0.95, mz + 0.4, 'metal');
+    },
+  },
+  'nurse-station': {
+    id: 'nurse-station',
+    name: 'ナースステーション',
+    desc: '夜勤の灯りだけがついたナースステーション。モニターには何も映っていない。',
+    metres: [10, 8],
+    ceiling: (H: number) => H,
+    border: 'open',
+    build(c: PieceCtx) {
+      box(c.out.solids, c.x0 + 1, 0, c.z0 + 2, c.x1 - 1, 1.1, c.z0 + 2.7, 'hospital-wall');
+      box(c.out.solids, c.x1 - 1.7, 0, c.z0 + 2.7, c.x1 - 1, 1.1, c.z1 - 2, 'hospital-wall');
+      for (let k = 0; k < 3; k++) box(c.out.decor, c.x0 + 1.5 + k * 1.2, 1.1, c.z0 + 2.1, c.x0 + 2.3 + k * 1.2, 1.6, c.z0 + 2.2, 'gem-green');
+      c.out.lights.push({ x: cxOf(c), y: 2, z: c.z0 + 3, I: 1.6 });
+      item(c, c.x0 + 2, 1.1, c.z0 + 2.35);
+    },
+  },
+} as Record<string, GridPieceDef>);
+
 /** Generic pool used by generated grid levels (excludes the U2-specific open-air pieces). */
 export const ALL_GRID_PIECES = Object.keys(GRID_PIECES).filter((k) => !GRID_PIECES[k].open);
 

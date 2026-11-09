@@ -88,7 +88,8 @@ class GeoBuilder {
   }
 }
 
-const segs = (len: number, per = 1) => Math.max(1, Math.round(len / per));
+let detail = 1;
+const segs = (len: number, per = 1) => Math.max(1, Math.min(32, Math.round(len / (per * detail))));
 const fmod = (a: number, m: number) => ((a % m) + m) % m;
 
 function addBox(gb: GeoBuilder, b: Box, H: number, m: number, oxm: number, ozm: number): void {
@@ -109,7 +110,8 @@ function addBox(gb: GeoBuilder, b: Box, H: number, m: number, oxm: number, ozm: 
     gb.quad([b.minX, b.minY, b.minZ], [w, 0, 0], [0, 0, d], [0, -1, 0], segs(w), segs(d), (x, _y, z) => [ux(x), uz(z)]);
 }
 
-export function buildChunkArrays(data: ChunkData, palette: Palette, H: number, sampler: LightSampler): ChunkArrays {
+export function buildChunkArrays(data: ChunkData, palette: Palette, H: number, sampler: LightSampler, meshDetail = 1): ChunkArrays {
+  detail = meshDetail;
   const table = materialTable(palette);
   const S = data.size;
   const ox = data.cx * S;

@@ -73,6 +73,18 @@ interface ChunkHandle {
   key: string;
 }
 
+/** Something drifting ashore on the eternal island: a door on a raft or a wormhole. */
+interface Drifter {
+  kind: 'door' | 'wormhole';
+  angle: number;
+  age: number;
+  x: number;
+  z: number;
+  mesh: THREE.Object3D;
+  prop?: WorldProp;
+  n: number;
+}
+
 /** A glowing doorway back to where the player came from (SPEC §5.4.4). */
 interface Anchor {
   x: number;
@@ -157,6 +169,9 @@ export class Game {
   private hud: Hud;
   private halluc: Hallucinations;
   private sky = new SkyDome();
+  private drifters: Drifter[] = [];
+  private drifterClock = 30;
+  private drifterCount = 0;
   private pool = new URLSearchParams(location.search).get('noworker') === '1' ? null : ChunkWorkerPool.create();
   private debug: DebugOverlay | null = null;
   private worldSeed: number;
@@ -173,6 +188,8 @@ export class Game {
   private pushTime = 0;
   private walkWarned = false;
   private sinkTime = 0;
+  private safeTimer = 0;
+  private lastSafe: SpawnPoint = { x: 0, y: 0, z: 0, yaw: 0 };
   private gateTime = 0;
   private lastWarp = 0;
   private deadTimer = 0;
@@ -346,6 +363,56 @@ export class Game {
     this.onArrive();
   }
 
+  /** Island drifters (Level 808): spawn, drift in, wait, drift away. */
+  private updateDrifters(dt: number): void {
+    const cfg = this.level.drifters;
+    if (!cfg) return;
+    this.drifterClock -= dt;
+    if (this.drifterClock <= 0) {
+      this.drifterClock = 40;
+      const n = this.drifterCount++;
+      const kind: Drifter['kind'] = n % 2 === 0 ? 'door' : 'wormhole';
+      const angle = this.rng.float() * Math.PI * 2;
+      const g = new THREE.Group();
+      if (kind === 'door') {
+        const raft = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.3, 2.4), new THREE.MeshBasicMaterial({ color: 0x5a4028 }));
+        raft.position.y = 0.1;
+        g.add(raft, buildPropMesh({ uid: 'drift', kind: 'plain-door', x: 0, y: 0.25, z: 0, rotY: 0, color: 0x8a6a4a }, 1));
+      } else {
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.14, 8, 24), new THREE.MeshBasicMaterial({ color: 0xc87aff }));
+        const disc = new THREE.Mesh(new THREE.CircleGeometry(1.0, 24), new THREE.MeshBasicMaterial({ color: 0x1a0830, side: THREE.DoubleSide }));
+        ring.position.y = disc.position.y = 1.3;
+        g.add(ring, disc);
+      }
+      this.fxRoot.add(g);
+      this.drifters.push({ kind, angle, age: 0, x: 0, z: 0, mesh: g, n });
+      this.hud.message(t('msg.drifter'), 3);
+    }
+    for (let i = this.drifters.length - 1; i >= 0; i--) {
+      const d = this.drifters[i];
+      d.age += dt;
+      // 0-18s drift in, 18-55s wait near the shore, 55-73s drift away
+      const far = 70;
+      const near = cfg.radius;
+      const r = d.age < 18 ? far + (near - far) * (d.age / 18) : d.age < 55 ? near : near + (far - near) * ((d.age - 55) / 18);
+      const a = d.angle + Math.sin(d.age * 0.3) * 0.02;
+      d.x = Math.cos(a) * r;
+      d.z = Math.sin(a) * r;
+      d.mesh.position.set(this.origin.toRenderX(d.x), Math.sin(d.age * 1.4) * 0.08, this.origin.toRenderZ(d.z));
+      d.mesh.rotation.y = -a + Math.PI / 2;
+      if (d.kind === 'wormhole') d.mesh.children[0].rotation.z += dt;
+      d.prop = d.kind === 'door' ? { uid: 'drift' + d.n, kind: 'plain-door', x: d.x, y: 0.25, z: d.z, rotY: -a + Math.PI / 2, key: 'drift' } : undefined;
+      if (d.kind === 'wormhole' && Math.hypot(this.player.x - d.x, this.player.z - d.z) < 1.4 && !this.transition) {
+        const rule = this.findExit('special', (r) => r.zone === 'gate');
+        if (rule) this.takeExit(rule, 'wormhole' + d.n, { ...this.entryPoint }, '#fff');
+      }
+      if (d.age > 73) {
+        disposeObject(d.mesh);
+        this.drifters.splice(i, 1);
+      }
+    }
+  }
+
   /** Escape-mode bookkeeping and the ending trigger. */
   private onArrive(): void {
     const idx = ESCAPE_ROUTE.indexOf(this.level.id);
@@ -403,8 +470,9 @@ export class Game {
   /** Developer level select: start (or jump) directly into a level. */
   private devJump(id: string): void {
     if (!this.started && this.slot === null) this.resetRun(this.worldSeed);
-    this.enterLevel(id, resolveLevel(id).arrival(makeGenContext(this.worldSeed, resolveLevel(id)), 1));
-    this.player.yaw = this.pickOpenYaw(this.player.yaw);
+    const L = resolveLevel(id);
+    this.enterLevel(id, L.arrival(makeGenContext(this.worldSeed, L), 1));
+    if (L.topology !== 'closed') this.player.yaw = this.pickOpenYaw(this.player.yaw);
     this.entryPoint = { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw };
     this.titleShown = false;
     this.start();
@@ -412,7 +480,7 @@ export class Game {
 
   private showLevelTitle(): void {
     this.titleShown = true;
-    this.hud.showTitle(this.level.title, this.level.subtitle ?? this.level.name, this.level.threatClass);
+    this.hud.showTitle(this.level.title, this.level.subtitle ?? this.level.name, this.level.threatClass, !!this.level.glitch);
   }
 
   private setFullscreen(on: boolean): void {
@@ -427,7 +495,7 @@ export class Game {
     if (persist) saveSettings(s);
     this.camera.fov = s.fov;
     this.camera.updateProjectionMatrix();
-    if (this.chunks && this.chunks.radius !== s.renderDistance) this.chunks.radius = s.renderDistance;
+    if (this.chunks && this.chunks.radius !== this.horizontalRadius()) this.chunks.radius = this.horizontalRadius();
     this.audio.applySettings(s);
     this.hud.setVisible(s.showHud);
     this.hud.setScale(s.hudScale);
@@ -446,11 +514,20 @@ export class Game {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
+  /** Horizontal load radius: vertical levels are narrow, so they load fewer columns. */
+  private horizontalRadius(): number {
+    const v = this.level?.vertical;
+    return v ? Math.min(this.settings.renderDistance, v.hRadius) : this.settings.renderDistance;
+  }
+
   /** Load a level and place the player (default spawn, or `at`). */
   enterLevel(id: string, at?: SpawnPoint): void {
     if (this.chunks) this.chunks.clear();
     this.mats?.dispose();
     this.halluc.clear();
+    for (const d of this.drifters) disposeObject(d.mesh);
+    this.drifters = [];
+    this.drifterClock = 25;
     for (const a of Object.values(this.anchors).flat()) if (a.mesh) disposeObject(a.mesh), (a.mesh = undefined);
     this.level = resolveLevel(id);
     this.ctx = makeGenContext(this.worldSeed, this.level);
@@ -467,16 +544,18 @@ export class Game {
     const ctx = this.ctx;
     this.chunks = new ChunkManager<ChunkHandle>({
       chunkSize: this.level.chunkSize,
-      radius: this.settings.renderDistance,
+      radius: this.horizontalRadius(),
       budgetMs: 4,
-      generate: (cx, cz) => this.level.generator(ctx, cx, cz),
+      vRadius: this.level.vertical?.radius ?? 0,
+      slab: this.level.vertical?.slab,
+      generate: (cx, cz, cy) => this.level.generator(ctx, cx, cz, cy),
       build: (data) => this.buildChunk(data),
       dispose: (h) => disposeChunkMesh(h.group),
       // Off-thread generation + geometry (Phase 10); the first chunks still load synchronously.
       async: this.pool
         ? {
             maxInFlight: this.pool.size * 2,
-            request: (cx, cz) => this.pool!.request({ levelId: this.level.id, worldSeed: this.worldSeed, epoch: this.ctx.epoch ?? 0, cx, cz }),
+            request: (cx, cz, cy) => this.pool!.request({ levelId: this.level.id, worldSeed: this.worldSeed, epoch: this.ctx.epoch ?? 0, cx, cz, cy }),
             build: (r) => {
               const res = r as ChunkResult;
               return { data: res.data, handle: this.buildChunk(res.data, res.arrays) };
@@ -492,9 +571,10 @@ export class Game {
     this.player.vy = 0;
     this.player.distanceWalked = 0;
     this.origin.update(s.x, s.z);
-    this.chunks.loadAllSync(s.x, s.z, 1);
+    this.chunks.loadAllSync(s.x, s.z, 1, s.y);
     this.player.yaw = at ? s.yaw : this.pickOpenYaw(s.yaw);
     this.entryPoint = { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw };
+    this.lastSafe = { ...this.entryPoint };
     this.zoneKey = '';
     this.zoneTime = 0;
     this.pushTime = 0;
@@ -508,11 +588,11 @@ export class Game {
 
   private buildChunk(data: ChunkData, arrays?: ChunkArrays): ChunkHandle {
     const ctx = this.ctx;
-    const sampler = this.level.lightSampler(ctx, data.cx, data.cz);
+    const sampler = this.level.lightSampler(ctx, data.cx, data.cz, data.cy ?? 0);
     const group = arrays ? arraysToGroup(data, arrays, this.mats) : buildChunkMesh(data, this.mats, sampler);
     const ox = data.cx * data.size;
     const oz = data.cz * data.size;
-    const key = chunkKey(data.cx, data.cz);
+    const key = chunkKey(data.cx, data.cz, data.cy ?? 0);
     const delta = this.deltas.get(this.level.id, key);
     const items = new Map<string, WorldItem>();
     for (const it of data.items) {
@@ -567,29 +647,35 @@ export class Game {
   // World queries
   // ---------------------------------------------------------------------------
 
-  private chunkAt(x: number, z: number): ChunkHandle | undefined {
+  /** The chunk containing a point (vertical levels pick the slab by height). */
+  private chunkAt(x: number, z: number, y = this.player.y): ChunkHandle | undefined {
     const S = this.level.chunkSize;
-    return this.chunks.get(Math.floor(x / S), Math.floor(z / S))?.handle;
+    const cy = this.chunks.slabCoord(y);
+    return this.chunks.get(Math.floor(x / S), Math.floor(z / S), cy)?.handle;
+  }
+
+  /** All loaded chunks of the column containing (x, z). */
+  private columnAt(x: number, z: number): ChunkHandle[] {
+    const S = this.level.chunkSize;
+    return this.chunks.column(Math.floor(x / S), Math.floor(z / S)).map((c) => c.handle);
   }
 
   private boxesNear = (x: number, z: number, r = 1): Array<WBox & { thin?: boolean }> => {
     const S = this.level.chunkSize;
     const out: Array<WBox & { thin?: boolean }> = [];
     for (let cx = Math.floor((x - r) / S); cx <= Math.floor((x + r) / S); cx++)
-      for (let cz = Math.floor((z - r) / S); cz <= Math.floor((z + r) / S); cz++) {
-        const c = this.chunks.get(cx, cz);
-        if (!c) continue;
-        for (const b of c.handle.boxes) {
-          if (b.maxX < x - r || b.minX > x + r || b.maxZ < z - r || b.minZ > z + r) continue;
-          out.push(b);
-        }
-      }
+      for (let cz = Math.floor((z - r) / S); cz <= Math.floor((z + r) / S); cz++)
+        for (const c of this.chunks.column(cx, cz))
+          for (const b of c.handle.boxes) {
+            if (b.maxX < x - r || b.minX > x + r || b.maxZ < z - r || b.minZ > z + r) continue;
+            out.push(b);
+          }
     return out;
   };
 
   private floorsNear = (x: number, z: number): FloorRect[] => {
-    const c = this.chunkAt(x, z);
-    return c ? c.floors : [];
+    const col = this.columnAt(x, z);
+    return col.length === 1 ? col[0].floors : col.flatMap((c) => c.floors);
   };
 
   private world = { boxes: (x: number, z: number) => this.boxesNear(x, z), floors: (x: number, z: number) => this.floorsNear(x, z) };
@@ -661,9 +747,8 @@ export class Game {
     const px = this.player.x;
     const pz = this.player.z;
     for (let cx = Math.floor((px - 3) / S); cx <= Math.floor((px + 3) / S); cx++)
-      for (let cz = Math.floor((pz - 3) / S); cz <= Math.floor((pz + 3) / S); cz++) {
-        const c = this.chunks.get(cx, cz);
-        if (!c) continue;
+      for (let cz = Math.floor((pz - 3) / S); cz <= Math.floor((pz + 3) / S); cz++)
+        for (const c of this.chunks.column(cx, cz)) {
         for (const it of c.handle.items.values()) {
           const sc = this.aimScore(it.x, it.y + 0.12, it.z, 2.4, 0.95);
           if (sc > bestScore) (bestScore = sc), (best = { type: 'item', item: it });
@@ -676,6 +761,11 @@ export class Game {
           if (sc > bestScore) (bestScore = sc), (best = { type: 'prop', prop: p });
         }
       }
+    for (const d of this.drifters) {
+      if (!d.prop) continue;
+      const sc = this.aimScore(d.prop.x, 1.3, d.prop.z, 3.2, 0.75);
+      if (sc > bestScore) (bestScore = sc), (best = { type: 'prop', prop: d.prop });
+    }
     for (const a of this.anchors[this.level.id] ?? []) {
       const sc = this.aimScore(a.x, a.y + 1.1, a.z, 2.8, 0.8);
       if (sc > bestScore) (bestScore = sc), (best = { type: 'anchor', anchor: a });
@@ -692,7 +782,7 @@ export class Game {
       this.hud.message(t('msg.full'));
       return;
     }
-    const c = this.chunkAt(it.x, it.z);
+    const c = this.chunkAt(it.x, it.z, it.y);
     if (c) {
       this.deltas.take(this.level.id, c.key, it.uid);
       c.items.delete(it.uid);
@@ -761,7 +851,7 @@ export class Game {
     const ctx = makeGenContext(this.worldSeed, next);
     const at = tr.at ?? next.arrival(ctx, tr.entry ?? 0);
     this.enterLevel(tr.levelId, at);
-    if (!tr.at) this.player.yaw = this.pickOpenYaw(at.yaw);
+    if (!tr.at && next.topology !== 'closed') this.player.yaw = this.pickOpenYaw(at.yaw);
     this.entryPoint = { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw };
     if (tr.back) this.placeAnchor(tr.back);
     this.transition = null;
@@ -824,6 +914,33 @@ export class Game {
     if (this.transition) return;
     const here: SpawnPoint = { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw + Math.PI };
 
+    // depth: climbing or descending far enough (vertical worlds).
+    const depthRule = this.findExit('depth');
+    if (depthRule?.depth && Math.abs(this.player.y - this.entryPoint.y) > depthRule.depth) {
+      this.takeExit(depthRule, `${Math.round(this.player.y / 20)}`, here);
+      return;
+    }
+
+    // lava: burns and puts you back on the last safe ground.
+    const lava = this.level.lava;
+    if (lava && this.player.y < lava.y + 0.15) {
+      this.stats.damage(lava.damage);
+      this.hud.message(t('msg.lava'), 2);
+      this.audio.noiseScratch();
+      this.player.x = this.lastSafe.x;
+      this.player.y = this.lastSafe.y;
+      this.player.z = this.lastSafe.z;
+      this.player.vy = 0;
+      return;
+    }
+    if (this.player.grounded && (!lava || this.player.y > lava.y + 0.3)) {
+      this.safeTimer += dt;
+      if (this.safeTimer > 0.4) {
+        this.safeTimer = 0;
+        this.lastSafe = { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw };
+      }
+    }
+
     // walk: very long walks drift into the next level.
     const walk = this.findExit('walk');
     if (walk?.distance) {
@@ -852,7 +969,8 @@ export class Game {
         return;
       }
     } else this.sinkTime = 0;
-    if (this.player.y < (this.level.fall?.killY ?? -4)) {
+    const killY = this.level.fall?.killY ?? (this.level.vertical || this.level.topology === 'diagonal' ? -Infinity : -4);
+    if (this.player.y < killY) {
       if (floorRule) this.takeExit(floorRule, `fall:${Math.round(this.player.x / 8)},${Math.round(this.player.z / 8)}`, this.entryPoint);
       else this.respawnAfterFall();
       return;
@@ -944,7 +1062,7 @@ export class Game {
     this.player.yaw = s.yaw;
     this.stats.respawn();
     this.halluc.clear();
-    this.chunks.loadAllSync(s.x, s.z, 1);
+    this.chunks.loadAllSync(s.x, s.z, 1, s.y);
     this.hud.hideDeath();
   }
 
@@ -1049,7 +1167,12 @@ export class Game {
       const crouch = s.crouchToggle ? this.crouchLatched : this.input.isDown('crouch');
       running = sprintHeld && this.stats.canRun && forward > 0;
       this.player.step(dt, { forward, strafe: r, sprint: running, crouch, jump: this.input.wasPressed('jump') }, this.world);
-      // Hard landings hurt.
+      // Hard landings hurt (water breaks the fall).
+      const inWater = this.player.landingSpeed < -4 && this.zoneAt(this.player.x, this.player.z, 'water');
+      if (inWater) {
+        this.audio.drink();
+        this.player.landingSpeed = 0;
+      }
       if (this.player.landingSpeed < -11) {
         this.stats.damage((-this.player.landingSpeed - 11) * 6);
         this.audio.footstep(1.8, this.level.footstep);
@@ -1066,12 +1189,13 @@ export class Game {
       });
       if (cause) this.die(cause);
       this.updateExits(realDt, moving, forward);
+      this.updateDrifters(realDt);
     }
 
     // Level 0 slowly rearranges itself behind you (SPEC §3.4): chunks generated
     // after every ~350m of walking use a new epoch.
     if (this.level.id === '0') this.ctx.epoch = s.nonEuclidean ? Math.floor(this.player.distanceWalked / 350) : 0;
-    this.chunks.update(this.player.x, this.player.z, this.player.dirX, this.player.dirZ);
+    this.chunks.update(this.player.x, this.player.z, this.player.dirX, this.player.dirZ, this.player.y);
     if (this.origin.update(this.player.x, this.player.z)) {
       for (const c of this.chunks.chunks.values()) this.placeChunk(c.handle.group);
     }

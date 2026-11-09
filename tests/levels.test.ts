@@ -16,9 +16,12 @@ function arrivalIsFree(level: LevelDefinition, h: number): boolean {
   const cz = Math.floor(a.z / S);
   const boxes = [];
   const floors = [];
+  const slab = level.vertical?.slab;
+  const cys = slab ? [Math.floor(a.y / slab) - 1, Math.floor(a.y / slab), Math.floor(a.y / slab) + 1] : [0];
+  for (const cy of cys)
   for (let dx = -1; dx <= 1; dx++)
     for (let dz = -1; dz <= 1; dz++) {
-      const d = level.generator(ctx, cx + dx, cz + dz);
+      const d = level.generator(ctx, cx + dx, cz + dz, cy);
       const ox = (cx + dx) * S;
       const oz = (cz + dz) * S;
       for (const b of d.solids) boxes.push({ ...b, minX: b.minX + ox, maxX: b.maxX + ox, minZ: b.minZ + oz, maxZ: b.maxZ + oz });
@@ -159,5 +162,72 @@ describe('levels', () => {
       ))
         expect(L.exits.some((e) => e.kind === 'door' && e.prop === kind), `${id} ${kind}`).toBe(true);
     }
+  });
+});
+
+describe('shaped worlds (user request)', () => {
+  const explicit = ['111', '222', '303', '666', '1000', '808', '120', '512', '77', '451', '313', '900', 'null', '212', '9999', '37.2', '186', 'chaos'];
+
+  it('all explicit shaped levels exist with their topology', () => {
+    const topo: Record<string, string | undefined> = {};
+    for (const id of explicit) topo[id] = resolveLevel(id).topology;
+    expect(topo['111']).toBe('vertical');
+    expect(topo['313']).toBe('vertical');
+    expect(topo['512']).toBe('vertical');
+    expect(topo['120']).toBe('vertical');
+    expect(topo['37.2']).toBe('vertical');
+    expect(topo['222']).toBe('linear');
+    expect(topo['303']).toBe('diagonal');
+    expect(topo['1000']).toBe('closed');
+    expect(topo['808']).toBe('closed');
+    expect(topo['900']).toBe('closed');
+    expect(topo['chaos']).toBe('chaos');
+  });
+
+  it('vertical levels really extend vertically (content far above and below)', () => {
+    for (const id of ['111', '313', '512', '120', '37.2']) {
+      const L = resolveLevel(id);
+      const ctx = makeGenContext(SEED, L);
+      const hi = L.generator(ctx, 0, 0, 25);
+      const lo = L.generator(ctx, 0, 0, -25);
+      expect(hi.solids.length + hi.floors.length, id).toBeGreaterThan(0);
+      expect(lo.solids.length + lo.floors.length, id).toBeGreaterThan(0);
+      expect(Math.min(...lo.solids.map((b) => b.minY), ...lo.floors.map((f) => f.y)), id).toBeLessThan(-50);
+    }
+  });
+
+  it('the mountain climbs: the path gets higher along +x', () => {
+    const L = resolveLevel('303');
+    const ctx = makeGenContext(SEED, L);
+    const top = (cx: number) => Math.max(...L.generator(ctx, cx, 0).solids.map((b) => b.maxY));
+    expect(top(20)).toBeGreaterThan(top(0) + 60);
+  });
+
+  it('the tunnel never branches (nothing outside its corridor)', () => {
+    const L = resolveLevel('222');
+    const ctx = makeGenContext(SEED, L);
+    expect(L.generator(ctx, 3, 1).solids.length).toBe(0);
+    expect(L.generator(ctx, 3, -1).solids.length).toBe(0);
+  });
+
+  it('the temple is a single room: no content outside chunk (0,0)', () => {
+    const L = resolveLevel('1000');
+    const ctx = makeGenContext(SEED, L);
+    expect(L.generator(ctx, 1, 0).solids.length).toBe(0);
+    expect(L.generator(ctx, 0, 0).props.length).toBe(12);
+  });
+
+  it('chaos and some random levels are glitched (garbled names)', () => {
+    expect(resolveLevel('chaos').glitch).toBe(true);
+    let glitched = 0;
+    for (let n = 3; n < 400; n++) if (resolveLevel(String(n)).glitch) glitched++;
+    expect(glitched).toBeGreaterThan(5);
+    expect(glitched).toBeLessThan(80);
+  });
+
+  it('random generation now uses at least 20 kinds of worlds', () => {
+    const g = new Set<string>();
+    for (let n = 3; n < 1000; n++) g.add(genomeOf(String(n)).grammar);
+    expect(g.size).toBeGreaterThanOrEqual(20);
   });
 });

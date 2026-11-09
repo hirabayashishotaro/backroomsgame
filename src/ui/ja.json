@@ -120,5 +120,8 @@
   "mode.escapeSub": "Level 0 → 1 → 2 → 3 → 4 と進み、現実への出口を目指す。どの出口も次のレベルにつながる",
   "escape.objective": "脱出: {route} (現在 {now})",
   "escape.end": "長い夢から覚めたような気がする。",
-  "credits.roll": "THE BACKROOMS: ENDLESS\n\n\n\nあなたは帰ってきた。\n\n\n\n企画\nプレイヤー\n\n実装\nClaude Code\n\n\n世界観\nInspired by the Backrooms Wiki community\n(backrooms.fandom.com)\n\n\n画像・音はすべて\nプログラムで生成されています\n\n\n\nありがとうございました\n\n\n\n……本当に、帰ってきたのだろうか?"
+  "credits.roll": "THE BACKROOMS: ENDLESS\n\n\n\nあなたは帰ってきた。\n\n\n\n企画\nプレイヤー\n\n実装\nClaude Code\n\n\n世界観\nInspired by the Backrooms Wiki community\n(backrooms.fandom.com)\n\n\n画像・音はすべて\nプログラムで生成されています\n\n\n\nありがとうございました\n\n\n\n……本当に、帰ってきたのだろうか?",
+  "msg.lava": "熱い!溶岩に触れてしまった",
+  "prompt.wormhole": "ワームホールに飛び込む",
+  "msg.drifter": "何かが島に流れ着いてくる……"
 }

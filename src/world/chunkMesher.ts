@@ -73,7 +73,7 @@ export class LevelMaterials {
 /** Build meshes for a chunk on the main thread (sync path). */
 export function buildChunkMesh(data: ChunkData, mats: LevelMaterials, sampler: LightSampler): THREE.Group {
   const level = mats.context.level;
-  return arraysToGroup(data, buildChunkArrays(data, level.palette, level.ceilingHeight, sampler), mats);
+  return arraysToGroup(data, buildChunkArrays(data, level.palette, level.ceilingHeight, sampler, level.meshDetail), mats);
 }
 
 /** Wrap prebuilt arrays (possibly from the worker) into a group of meshes. */

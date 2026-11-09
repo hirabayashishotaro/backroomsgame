@@ -415,6 +415,171 @@ function genTexture(type: string, hex: string, seed: number): ProcTexture {
       stains(ctx, rng, S, 6, '90,45,15');
       return finish(c, 1);
     }
+    case 'snow': {
+      noiseFill(ctx, rng, S, 10);
+      for (let i = 0; i < 500; i++) {
+        ctx.fillStyle = `rgba(${rng.chance(0.5) ? '255,255,255' : '190,210,235'},${rng.range(0.2, 0.5)})`;
+        ctx.fillRect(rng.float() * S, rng.float() * S, rng.range(1, 3), rng.range(1, 3));
+      }
+      return finish(c, 2);
+    }
+    case 'rock': {
+      noiseFill(ctx, rng, S, 40);
+      for (let i = 0; i < 60; i++) {
+        ctx.strokeStyle = `rgba(0,0,0,${rng.range(0.15, 0.4)})`;
+        ctx.lineWidth = rng.range(1, 3);
+        ctx.beginPath();
+        let x = rng.float() * S;
+        let y = rng.float() * S;
+        ctx.moveTo(x, y);
+        for (let k = 0; k < 4; k++) ctx.lineTo((x += rng.range(-20, 20)), (y += rng.range(-20, 20)));
+        ctx.stroke();
+      }
+      stains(ctx, rng, S, 6, '0,0,0');
+      return finish(c, 2);
+    }
+    case 'lava': {
+      for (let i = 0; i < 70; i++) {
+        const x = rng.float() * S;
+        const y = rng.float() * S;
+        const r = rng.range(10, 50);
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, 'rgba(255,230,120,0.9)');
+        g.addColorStop(0.5, 'rgba(255,110,20,0.6)');
+        g.addColorStop(1, 'rgba(120,10,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+      ctx.strokeStyle = 'rgba(40,5,0,0.6)';
+      ctx.lineWidth = 3;
+      for (let i = 0; i < 25; i++) {
+        ctx.beginPath();
+        let x = rng.float() * S;
+        let y = rng.float() * S;
+        ctx.moveTo(x, y);
+        for (let k = 0; k < 5; k++) ctx.lineTo((x += rng.range(-25, 25)), (y += rng.range(-25, 25)));
+        ctx.stroke();
+      }
+      return finish(c, 4);
+    }
+    case 'sand': {
+      noiseFill(ctx, rng, S, 24);
+      speckle(ctx, rng, S, 900, '#7a6a48', 1);
+      return finish(c, 2);
+    }
+    case 'flesh': {
+      for (let i = 0; i < 160; i++) {
+        const x = rng.float() * S;
+        const y = rng.float() * S;
+        const r = rng.range(8, 30);
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, `rgba(${rng.chance(0.5) ? '230,140,150' : '150,40,60'},0.45)`);
+        g.addColorStop(1, 'rgba(120,30,50,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+      ctx.strokeStyle = 'rgba(90,20,40,0.35)';
+      for (let i = 0; i < 30; i++) {
+        ctx.lineWidth = rng.range(1, 3);
+        ctx.beginPath();
+        ctx.moveTo(rng.float() * S, rng.float() * S);
+        ctx.bezierCurveTo(rng.float() * S, rng.float() * S, rng.float() * S, rng.float() * S, rng.float() * S, rng.float() * S);
+        ctx.stroke();
+      }
+      // wet highlights
+      speckle(ctx, rng, S, 200, '#ffd0d8', 2);
+      return finish(c, 2);
+    }
+    case 'bronze': {
+      noiseFill(ctx, rng, S, 18);
+      stains(ctx, rng, S, 12, '40,110,90'); // verdigris
+      return finish(c, 4);
+    }
+    case 'marble': {
+      noiseFill(ctx, rng, S, 8);
+      for (let i = 0; i < 14; i++) {
+        ctx.strokeStyle = `rgba(150,150,160,${rng.range(0.15, 0.35)})`;
+        ctx.lineWidth = rng.range(0.5, 2);
+        ctx.beginPath();
+        ctx.moveTo(rng.float() * S, 0);
+        ctx.bezierCurveTo(rng.float() * S, S * 0.3, rng.float() * S, S * 0.6, rng.float() * S, S);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(120,120,120,0.25)';
+      ctx.strokeRect(1, 1, S - 2, S - 2);
+      return finish(c, 2);
+    }
+    case 'windows': {
+      // A night facade: grid of windows, some lit warm, some cold, most dark.
+      ctx.fillStyle = rgb(hex, 0.6);
+      ctx.fillRect(0, 0, S, S);
+      const cols = 8;
+      const rows = 8;
+      for (let i = 0; i < cols; i++)
+        for (let j = 0; j < rows; j++) {
+          const lit = rng.float();
+          ctx.fillStyle = lit < 0.25 ? '#ffd890' : lit < 0.33 ? '#cfe6ff' : '#1a1c22';
+          ctx.fillRect(i * (S / cols) + 6, j * (S / rows) + 7, S / cols - 12, S / rows - 14);
+        }
+      return finish(c, 8);
+    }
+    case 'pages': {
+      ctx.fillStyle = '#efe6cc';
+      ctx.fillRect(0, 0, S, S);
+      for (let y = 0; y < S; y += 3) {
+        ctx.fillStyle = `rgba(120,100,70,${rng.range(0.05, 0.2)})`;
+        ctx.fillRect(0, y, S, 1);
+      }
+      return finish(c, 1);
+    }
+    case 'book': {
+      noiseFill(ctx, rng, S, 12);
+      ctx.strokeStyle = 'rgba(230,200,120,0.7)';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(20, 20, S - 40, S - 40);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(34, 34, S - 68, S - 68);
+      ctx.fillStyle = 'rgba(230,200,120,0.6)';
+      ctx.beginPath();
+      ctx.arc(S / 2, S / 2, 26, 0, Math.PI * 2);
+      ctx.fill();
+      return finish(c, 4);
+    }
+    case 'endstone': {
+      noiseFill(ctx, rng, S, 22);
+      speckle(ctx, rng, S, 700, '#8a8660', 2);
+      stains(ctx, rng, S, 8, '120,110,70');
+      return finish(c, 2);
+    }
+    case 'obsidian': {
+      noiseFill(ctx, rng, S, 14);
+      for (let i = 0; i < 40; i++) {
+        ctx.fillStyle = `rgba(120,60,180,${rng.range(0.1, 0.3)})`;
+        ctx.fillRect(rng.float() * S, rng.float() * S, rng.range(4, 20), rng.range(2, 6));
+      }
+      return finish(c, 2);
+    }
+    case 'moss': {
+      noiseFill(ctx, rng, S, 36);
+      for (let i = 0; i < 800; i++) {
+        ctx.fillStyle = rgb(hex, rng.range(0.6, 1.5));
+        ctx.fillRect(rng.float() * S, rng.float() * S, 2, 2);
+      }
+      return finish(c, 2);
+    }
+    case 'cap': {
+      // Giant mushroom cap: soft gradient with pale glowing spots (not a red/white toadstool).
+      for (let i = 0; i < 40; i++) {
+        const x = rng.float() * S;
+        const y = rng.float() * S;
+        const r = rng.range(6, 18);
+        ctx.fillStyle = `rgba(255,255,255,${rng.range(0.12, 0.3)})`;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return finish(c, 4);
+    }
     default:
       noiseFill(ctx, rng, S, 18);
       return finish(c, 2);

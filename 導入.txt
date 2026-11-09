@@ -73,7 +73,7 @@ GitHub のアカウントを持っていない人は「導入.md」を見てく�
   3. 下の4行を「1行ずつ」コピーして、PowerShell の画面で
      右クリック(=貼り付け)→ Enter キー、を繰り返す
 
-       cd ([Environment]::GetFolderPath("Desktop"))
+       cd $HOME
 
        git clone https://github.com/hirabayashishotaro/backroomsgame.git
 
@@ -82,16 +82,20 @@ GitHub のアカウントを持っていない人は「導入.md」を見てく�
        git checkout claude/quirky-brown-jxx4aj
 
      ・2行目のあと、GitHub のログイン画面が出たらログインして許可する
-     ・終わるとデスクトップに「backroomsgame」フォルダができます
-     ・1行目は OneDrive でデスクトップが移動しているパソコンでも
-       正しいデスクトップを開く書き方です
+     ・2行目が終わって「PS C:\Users\(名前)>」が出てから3行目を貼る
+       (途中で次の行を貼ると、質問への答えとして入力されてしまいます)
+     ・終わると C:\Users\(あなたの名前)\backroomsgame フォルダができます
+     ・デスクトップには置きません。OneDrive を使っているパソコンでは
+       デスクトップが同期されていて、git がうまく動かないためです
 
   4. PowerShell の画面は閉じてOK
 
 
 【ステップ3】遊ぶ(毎回これだけ)
 
-  1. デスクトップの「backroomsgame」フォルダを開く
+  1. エクスプローラー(黄色いフォルダのアイコン)を開き、上のアドレス欄に
+       %USERPROFILE%\backroomsgame
+     と入力して Enter →「backroomsgame」フォルダが開く
   2. 中にある「起動.bat」をダブルクリック
   3. 黒い画面が開き、自動で
        最新版の取得 → 部品の準備 → ゲームの起動
@@ -154,13 +158,19 @@ GitHub のアカウントを持っていない人は「導入.md」を見てく�
   A. PowerShell を閉じて開き直す。だめならパソコンを再起動。
 
   Q. cd で「パス … Desktop が存在しないため検出できません」と出る
-  A. 古い手順の「cd $HOME\Desktop」を使っています。OneDrive を使っている
-     パソコンではデスクトップの場所が違うためです。代わりに
-       cd ([Environment]::GetFolderPath("Desktop"))
-     を貼り付けて Enter を押し、続きの行に進んでください。
+  A. 古い手順です。今の手順の「cd $HOME」を使ってください。
+
+  Q. git clone で「Deletion of directory ... failed. Should I try again? (y/n)」
+     が何度も出る
+  A. OneDrive のデスクトップなど、同期されているフォルダに置こうとしています。
+     n を押して Enter(止まらなければ Ctrl + C)。PowerShell を閉じて開き直し、
+     ステップ2を「cd $HOME」からやり直してください。
+     デスクトップに途中までできた「backroomsgame」フォルダは削除してOK。
+     また、git clone で「Repository not found」と出る場合は、
+     リポジトリが非公開でアクセスできません(持ち主に公開してもらう)。
 
   Q. git clone で「already exists」と出る
-  A. デスクトップに古い「backroomsgame」フォルダが残っています。
+  A. 古い「backroomsgame」フォルダが残っています。
      そのフォルダを削除してから、もう一度実行してください。
 
   Q. 画面が真っ黒・「起動できませんでした」と出る

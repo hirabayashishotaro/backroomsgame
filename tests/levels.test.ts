@@ -238,3 +238,21 @@ describe('shaped worlds (user request)', () => {
     expect(g.size).toBeGreaterThanOrEqual(20);
   });
 });
+
+describe('exits lead to generated levels too', () => {
+  it('about a third of door/wall/floor exits go to generated levels, deterministically', () => {
+    for (const id of ['0', '1', '37', '512', '808']) {
+      const L = resolveLevel(id);
+      const rule = L.exits.find((e) => e.kind === 'door') ?? L.exits[0];
+      let gen = 0;
+      const N = 300;
+      for (let k = 0; k < N; k++) {
+        const to = resolveExitTarget(SEED, id, rule, 'k' + k);
+        expect(resolveExitTarget(SEED, id, rule, 'k' + k)).toBe(to);
+        if (!rule.targets.some((t) => t.levelId === to)) gen++;
+      }
+      expect(gen / N, id).toBeGreaterThan(0.2);
+      expect(gen / N, id).toBeLessThan(0.55);
+    }
+  });
+});

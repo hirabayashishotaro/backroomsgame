@@ -23,6 +23,7 @@ import { ITEMS, type ItemId } from './items/itemDefs';
 import { AudioSystem } from './systems/audio';
 import { Hallucinations } from './systems/hallucination';
 import { SkyDome } from './systems/sky';
+import { waterTime } from './systems/water';
 import { ESCAPE_ROUTE } from './escapeRoute';
 import { Journal } from './systems/journal';
 import { JournalScreen } from './ui/journalScreen';
@@ -1342,6 +1343,7 @@ export class Game {
 
     this.hud.update(realDt, this.stats);
     if (this.level.sky) this.sky.update(this.camera, this.time);
+    waterTime.value = this.time;
     this.post.render(this.renderer, this.scene, this.camera, this.time);
 
     if (this.debug) {

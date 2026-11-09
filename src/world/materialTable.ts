@@ -6,7 +6,7 @@
  */
 import type { Palette } from '../levels/levelDefinition';
 
-export type MatKind = 'lit' | 'lit-transparent' | 'clear' | 'basic' | 'basic-tex';
+export type MatKind = 'lit' | 'lit-transparent' | 'clear' | 'basic' | 'basic-tex' | 'water';
 
 export interface MatDef {
   kind: MatKind;
@@ -17,6 +17,8 @@ export interface MatDef {
   tint?: [number, number, number];
   /** Override for UV scale. */
   metres?: number;
+  /** Water wave height (m). */
+  wave?: number;
 }
 
 const FIXED_METRES: Record<string, number> = {
@@ -82,6 +84,7 @@ export function texMetres(key: string): number {
 const lit = (tex: string, extra: Partial<MatDef> = {}): MatDef => ({ kind: 'lit', tex, ...extra });
 const clear = (color: number, opacity: number): MatDef => ({ kind: 'clear', color, opacity });
 const basic = (color: number): MatDef => ({ kind: 'basic', color });
+const water = (color: number, opacity: number, wave = 0.025): MatDef => ({ kind: 'water', color, opacity, wave });
 
 /** All material keys used by generators, for one level palette. */
 export function materialTable(p: Palette): Record<string, MatDef> {
@@ -164,17 +167,17 @@ export function materialTable(p: Palette): Record<string, MatDef> {
     'neon-blue': basic(0x4ac8ff),
     'red-light': basic(0xff3030),
     portal: basic(0x1a0830),
-    water: clear(0x4fb6d0, 0.55),
-    ocean: clear(0x1a5a8a, 0.8),
-    'hot-spring': clear(0x7ad8d0, 0.6),
+    water: water(0x4fb6d0, 0.55),
+    ocean: water(0x1a5a8a, 0.8, 0.12),
+    'hot-spring': water(0x7ad8d0, 0.6, 0.015),
     'glass-floor': clear(0xbfe4ff, 0.12),
     invisible: clear(0xffffff, 0),
     // Solid underside of a floor in vertical levels (also the ceiling below).
     slab: lit(p.ceilingTex),
     'pool-tile': lit('gen:pooltile:f2f0e6:240'),
-    'pool-water': clear(0x38c4b0, 0.5),
-    'pool-water-blue': clear(0x3aa8d8, 0.5),
-    'pool-water-mint': clear(0x6ad8b8, 0.45),
+    'pool-water': water(0x38c4b0, 0.5, 0.015),
+    'pool-water-blue': water(0x3aa8d8, 0.5, 0.015),
+    'pool-water-mint': water(0x6ad8b8, 0.45, 0.015),
     'clouds-window': { kind: 'basic-tex', tex: 'clouds-window' },
     'slide-red': lit('gen:panel:e8402a:241'),
     'slide-yellow': lit('gen:panel:f4c830:242'),
@@ -183,8 +186,8 @@ export function materialTable(p: Palette): Record<string, MatDef> {
     'slide-pink': lit('gen:panel:f070b0:245'),
     'cove-glow': basic(0xfff4d8),
     glass: clear(0x9fd8f0, 0.22),
-    'water-dark': clear(0x0c1c26, 0.85),
-    'water-shallow': clear(0x7fd0e0, 0.4),
+    'water-dark': water(0x0c1c26, 0.85, 0.02),
+    'water-shallow': water(0x7fd0e0, 0.4, 0.012),
   };
 }
 

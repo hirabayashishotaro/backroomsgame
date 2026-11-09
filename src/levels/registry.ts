@@ -69,6 +69,10 @@ export function parseWorldSeed(s: string): number {
  * leads to the same level; different exits may lead to different ones.
  */
 export function resolveExitTarget(worldSeed: number, levelId: string, rule: ExitRule, exitKey: string): string {
+  // About a third of exits (never the long walk, which follows the Wiki graph)
+  // lead into the endless sea of generated levels instead of a named one.
+  const roll = hashInts(worldSeed, hashString(levelId), hashString('wild:' + rule.kind + ':' + exitKey)) / 4294967296;
+  if (rule.kind !== 'walk' && roll < RANDOM_EXIT_SHARE) return randomLevelId(hashInts(worldSeed, hashString(levelId), hashString('pick:' + exitKey)));
   const total = rule.targets.reduce((s, t) => s + t.weight, 0);
   let x = (hashInts(worldSeed, hashString(levelId), hashString(rule.kind + ':' + exitKey)) / 4294967296) * total;
   for (const t of rule.targets) {
@@ -76,6 +80,21 @@ export function resolveExitTarget(worldSeed: number, levelId: string, rule: Exit
     if (x < 0) return t.levelId;
   }
   return rule.targets[rule.targets.length - 1].levelId;
+}
+
+/** Share of exits that lead to generated levels. */
+export const RANDOM_EXIT_SHARE = 0.35;
+
+/** A generated level id from a hash: mostly integers, sometimes decimals or negatives. */
+export function randomLevelId(h: number): string {
+  const u = (h >>> 0) / 4294967296;
+  const v = (Math.imul(h ^ 0x9e3779b9, 0x85ebca6b) >>> 0) / 4294967296;
+  let id: string;
+  if (v < 0.12) id = (Math.floor(u * 400) + 3 + Math.floor(v * 80) / 10).toFixed(1); // e.g. 33.7
+  else if (v < 0.18) id = String(-1 - Math.floor(u * 99)); // e.g. -12
+  else id = String(Math.floor(u * 1990) + 10); // 10 .. 1999
+  // Generated, not one of the hand-made levels (those are reached through named exits).
+  return id in HAND_LEVELS || id in SHAPE_LEVELS ? String(Number(id) + 2000) : id;
 }
 
 /** Entry hash: arriving via different exits lands in different places. */

@@ -10,6 +10,7 @@ import { getTexture } from '../proc-tex/textures';
 import { patchMaterial } from '../systems/lighting';
 import { materialTable, matMetres, type MatDef } from './materialTable';
 import { buildChunkArrays, type ChunkArrays } from './chunkGeometry';
+import { bindWaterClock, makeWaterMaterial } from '../systems/water';
 
 export class LevelMaterials {
   readonly byKey = new Map<string, { mat: THREE.Material; metres: number }>();
@@ -45,6 +46,12 @@ export class LevelMaterials {
       }
       case 'clear':
         return patchMaterial(new THREE.MeshBasicMaterial({ color: d.color, transparent: true, opacity: d.opacity, depthWrite: false, side: THREE.DoubleSide }));
+      case 'water': {
+        // Reflect the sky (open levels) or the warm ceiling light (indoors).
+        const lvl = this.ctx.level;
+        const refl = new THREE.Color(lvl.sky ? lvl.palette.fogColor : lvl.palette.lightColor).lerp(new THREE.Color(0xffffff), 0.25);
+        return bindWaterClock(makeWaterMaterial(d.color!, d.opacity!, refl, d.wave));
+      }
       case 'basic-tex':
         return new THREE.MeshBasicMaterial({ map: getTexture(d.tex!).texture });
       default:

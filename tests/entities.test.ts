@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BLOATER, GUNMAN, WITCH, hurt, newBrain, think, type Perception } from '../src/entities/brain';
+import { BLOATER, BOMBER, GUNMAN, WITCH, hurt, newBrain, think, type Perception } from '../src/entities/brain';
 import { Director, entityTableFor } from '../src/entities/director';
 
 const P = (o: Partial<Perception> = {}): Perception => ({ dist: 20, watched: false, los: true, playerRunning: false, playerCrouching: false, playerRetreat: 0, ...o });
@@ -103,6 +103,15 @@ describe('entity behaviour', () => {
     expect(casts).toBeLessThanOrEqual(Math.ceil(20 / WITCH.cooldown) + 1);
     const hidden = newBrain('witch');
     for (let t = 0; t < 10; t += 0.05) expect(think(hidden, P({ dist: 20, los: false }), 0.05).cast).toBeFalsy();
+  });
+
+  it('bomber keeps its distance and lobs bombs on a cooldown', () => {
+    const b = newBrain('bomber');
+    let tosses = 0;
+    for (let t = 0; t < 12; t += 0.05) if (think(b, P({ dist: 15 }), 0.05).toss) tosses++;
+    expect(tosses).toBeGreaterThanOrEqual(3);
+    expect(tosses).toBeLessThanOrEqual(Math.ceil(12 / BOMBER.cooldown) + 1);
+    expect(think(newBrain('bomber'), P({ dist: 4 }), 0.05).speed).toBeLessThan(0);
   });
 
   it('giant walks in, winds up and stomps with a cooldown', () => {

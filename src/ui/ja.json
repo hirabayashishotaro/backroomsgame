@@ -46,6 +46,9 @@
   "lab.start": "はじめる",
   "lab.enter": "テスト場に入る",
   "lab.enterSub": "全武器と弾を持った状態で入ります",
+  "lab.reenter": "テスト場に入りなおす",
+  "lab.reenterSub": "今の設定で最初から(敵を消して出しなおし、武器と体力を満タン)",
+  "lab.resumeSub": "変更した設定はすぐに反映されます",
   "lab.spawn": "敵を出す(押すとゲームに戻ります)",
   "lab.endless": "無限に出す(倒しても、常にこの数がいるように補充)",
   "lab.endlessN": "常に{n}体",
@@ -171,6 +174,7 @@
   "omen.giant": "(地面がかすかに揺れた)",
   "omen.gunman": "(遠くで撃鉄を起こす音がした)",
   "omen.witch": "(空気がぴりぴりと張りつめた)",
+  "omen.bomber": "(どこかで導火線の燃える音がした)",
   "entity.seen": "記録に追加: {name}",
   "entity.killed": "{name} を倒した",
   "msg.caught": "{name} に襲われた!"

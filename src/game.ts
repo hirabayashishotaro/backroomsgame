@@ -298,7 +298,19 @@ export class Game {
       clearEntities: () => this.ents.clear(),
       refillWeapons: () => this.labRefill(),
       resume: () => this.start(),
-      optionsChanged: () => {},
+      optionsChanged: (o) => {
+        // A new endless setup replaces the current enemies right away.
+        const key = o.endless + ':' + (o.endlessKind ?? '');
+        if (key !== this.labEndlessKey) {
+          this.labEndlessKey = key;
+          if (this.inArena) {
+            this.ents.clear();
+            this.labRefillT = 0;
+          }
+        }
+        this.ents.aiStopped = this.started && this.inArena && o.aiStopped;
+        if (o.god && this.inArena) this.stats.health = 100;
+      },
     });
     this.journalScreen = new JournalScreen(container, this.journal);
     this.settingsScreen = new SettingsScreen(container, this.settings, this.input, (st) => this.applySettings(st));
@@ -570,6 +582,10 @@ export class Game {
     this.devJump(ARENA_ID);
     this.ents.clear();
     this.labRefill();
+    this.labRefillT = 0;
+    this.stats.health = 100;
+    this.stats.stamina = 100;
+    this.player.kx = this.player.kz = 0;
   }
 
   /** Every weapon with a full magazine and full reserves; hold the pistol. */
@@ -598,6 +614,7 @@ export class Game {
   }
 
   private labRefillT = 0;
+  private labEndlessKey = '3:';
 
   /** Endless mode: keep N entities alive, topping up one at a time. */
   private labEndless(dt: number): void {
@@ -610,7 +627,7 @@ export class Game {
     }
     this.labRefillT -= dt;
     if (this.labRefillT > 0) return;
-    this.labRefillT = 1.2;
+    this.labRefillT = 0.6;
     const kind = this.lab.options.endlessKind ?? ALL_ENTITIES[Math.floor(this.rng.float() * ALL_ENTITIES.length)];
     // Somewhere in the hall 12-30 m away, clear of pillars and walls.
     for (let k = 0; k < 40; k++) {
@@ -1240,7 +1257,7 @@ export class Game {
       // Always a warning first (SPEC §7.1): a sound, flickering lights, the hum faltering.
       this.flickerT = 3;
       this.audio.humDip(2.5);
-      const voice = ev.kind === 'hound' ? 'growl' : ev.kind === 'smiler' ? 'giggle' : ev.kind === 'skinstealer' ? 'help' : ev.kind === 'giant' ? 'stomp' : ev.kind === 'gunman' ? 'shot' : ev.kind === 'witch' ? 'zap' : 'hum';
+      const voice = ev.kind === 'hound' ? 'growl' : ev.kind === 'smiler' ? 'giggle' : ev.kind === 'skinstealer' ? 'help' : ev.kind === 'giant' ? 'stomp' : ev.kind === 'gunman' ? 'shot' : ev.kind === 'witch' ? 'zap' : ev.kind === 'bomber' ? 'hiss' : 'hum';
       this.audio.entityVoice(voice, (this.rng.float() - 0.5) * 2, 40);
       this.hud.subtitle(t('omen.' + ev.kind), 3.5);
     } else if (ev?.type === 'spawn') {

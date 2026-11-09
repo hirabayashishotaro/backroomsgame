@@ -7,8 +7,8 @@ import * as THREE from 'three';
 import { PlayerController, type WorldQuery } from '../player/controller';
 import { groundHeight, rayBox, type WBox } from '../world/collision';
 import { ENTITIES, type EntityKind } from './entityDefs';
-import { BLOATER, GIANT, WITCH, hurt, newBrain, think, type BrainState } from './brain';
-import { animateEntity, buildEntityMesh, disposeEntityMesh, setEntityAlpha } from './models';
+import { BLAST_KNOCK, BLOATER, BOMBER, GIANT, WITCH, hurt, newBrain, think, type BrainState } from './brain';
+import { animateEntity, buildBombMesh, buildEntityMesh, disposeEntityMesh, setEntityAlpha } from './models';
 import { stepProjectile } from '../weapons/weaponLogic';
 import { falloffFactor, type WeaponDef } from '../weapons/weaponDefs';
 import { buildWeaponModel } from '../weapons/weaponModels';
@@ -74,6 +74,22 @@ interface Strike {
   ring: THREE.Mesh;
   bolt: THREE.Mesh | null;
 }
+
+/** A thrown bomb: flies in an arc, lands, blinks, then explodes. */
+interface Bomb {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  landed: boolean;
+  fuse: number;
+  life: number;
+  mesh: THREE.Group;
+}
+
+const BOMB_GRAVITY = 14;
 
 /** Enemy bullet speed (m/s): fast, but you can see it and step aside. */
 export const ENEMY_SHOT_SPEED = 55;
@@ -146,6 +162,10 @@ const HITBOXES: Record<EntityKind, Array<{ f: number; y0: number; y1: number; r:
     { f: 0, y0: 0, y1: 1.45, r: 0.34, head: false },
     { f: 0, y0: 1.45, y1: 1.8, r: 0.16, head: true },
   ],
+  bomber: [
+    { f: 0, y0: 0, y1: 1.42, r: 0.36, head: false },
+    { f: 0, y0: 1.42, y1: 1.76, r: 0.17, head: true },
+  ],
 };
 
 /** Eye-level height used for line of sight. */
@@ -163,6 +183,7 @@ export class EntitySystem {
   readonly kunai: LooseKunai[] = [];
   readonly shots: EnemyShot[] = [];
   readonly strikes: Strike[] = [];
+  readonly bombs: Bomb[] = [];
   /** Developer combat lab: entities stand still and never attack. */
   aiStopped = false;
   private sparks: Spark[] = [];
@@ -195,6 +216,8 @@ export class EntitySystem {
       s.bolt?.removeFromParent();
     }
     this.strikes.length = 0;
+    for (const bm of this.bombs) bm.mesh.removeFromParent();
+    this.bombs.length = 0;
   }
 
   // ------------------------------------------------------------------ spawn --
@@ -292,7 +315,7 @@ export class EntitySystem {
         : think(e.brain, { dist, watched, los, playerRunning: running, playerCrouching: crouching, playerRetreat: retreat }, dt);
       if (stop) e.brain.alpha = Math.min(1, e.brain.alpha + dt);
       if (d.explode) {
-        this.explode(b.x, b.y, b.z, dist);
+        this.explode(b.x, b.y, b.z, BLOATER.radius, ENTITIES.bloater.damage, BLAST_KNOCK, 'bloater', e);
         disposeEntityMesh(e.mesh);
         this.entities.splice(i, 1);
         continue;
@@ -300,6 +323,7 @@ export class EntitySystem {
       if (d.stomp) this.stomp(e, dist);
       if (d.fire) this.enemyFire(e, dist);
       if (d.cast) this.cast(e, dist);
+      if (d.toss) this.toss(e, dist);
       if (e.brain.mode !== prevMode) {
         if (e.kind === 'bloater' && e.brain.mode === 'fuse') this.host.audio.entityVoice('hiss', this.panTo(b.x, b.z), dist);
         if (e.kind === 'giant' && e.brain.mode === 'attack') this.host.audio.entityVoice('groan', this.panTo(b.x, b.z), dist);
@@ -365,7 +389,7 @@ export class EntitySystem {
       }
       // Contact attack, then it leaves (SPEC: escapable encounters).
       const vertical = Math.abs(b.y - p.y) < 1.6;
-      if (!this.aiStopped && e.kind !== 'bloater' && e.kind !== 'giant' && e.kind !== 'gunman' && e.kind !== 'witch' && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
+      if (!this.aiStopped && e.kind !== 'bloater' && e.kind !== 'giant' && e.kind !== 'gunman' && e.kind !== 'witch' && e.kind !== 'bomber' && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
         this.host.onPlayerHit(e.kind, ENTITIES[e.kind].damage);
         e.brain.mode = 'flee';
         e.brain.t = 0;
@@ -381,7 +405,7 @@ export class EntitySystem {
       // Render
       const [rx, rz] = this.host.toRender(b.x, b.z);
       e.mesh.position.set(rx, b.y, rz);
-      e.mesh.rotation.y = e.kind === 'gunman' || e.kind === 'witch' ? face : yaw;
+      e.mesh.rotation.y = e.kind === 'gunman' || e.kind === 'witch' || e.kind === 'bomber' ? face : yaw;
       e.flash = Math.max(0, e.flash - dt * 5);
       if (e.kind === 'bloater') {
         // Swells and flickers while the fuse burns.
@@ -396,6 +420,7 @@ export class EntitySystem {
     this.updateProjectiles(dt);
     this.updateShots(dt);
     this.updateStrikes(dt);
+    this.updateBombs(dt);
     this.updateFx(dt);
   }
 
@@ -572,16 +597,105 @@ export class EntitySystem {
     this.sparks.push({ mesh, t: life, life, size, x, y, z });
   }
 
-  /** Bloater burst: damage falls off with distance; nothing beyond the blast radius. */
-  private explode(x: number, y: number, z: number, dist: number): void {
-    this.spark(x, y + 1, z, 0xffb050, 55, 0.45);
-    this.spark(x, y + 1, z, 0xfff0c0, 25, 0.25);
-    for (let k = 0; k < 14; k++) this.spark(x + (Math.random() - 0.5) * 3, y + 0.3 + Math.random() * 2.2, z + (Math.random() - 0.5) * 3, 0x6a5a40, 4, 0.7);
-    this.host.audio.entityVoice('boom', this.panTo(x, z), dist);
+  /**
+   * Explosion (bloater burst, bomber's bomb): damage falls off with distance,
+   * and everything inside the radius - player and entities - is blown away.
+   */
+  private explode(x: number, y: number, z: number, radius: number, damage: number, knock: number, kind: EntityKind, source: Entity | null): void {
     const p = this.host.player;
-    if (dist < BLOATER.radius && Math.abs(p.y - y) < 3) {
-      const k = 1 - dist / BLOATER.radius;
-      this.host.onPlayerHit('bloater', ENTITIES.bloater.damage * (0.25 + 0.75 * k));
+    const dist = Math.hypot(p.x - x, p.z - z);
+    const s = radius / 5.5;
+    this.spark(x, y + 1, z, 0xffb050, 55 * s, 0.45);
+    this.spark(x, y + 1, z, 0xfff0c0, 25 * s, 0.25);
+    for (let k = 0; k < 14; k++) this.spark(x + (Math.random() - 0.5) * 3 * s, y + 0.3 + Math.random() * 2.2, z + (Math.random() - 0.5) * 3 * s, 0x6a5a40, 4, 0.7);
+    this.host.audio.entityVoice('boom', this.panTo(x, z), dist);
+    if (dist < radius && Math.abs(p.y - y) < 3) {
+      const k = 1 - dist / radius;
+      const dmg = damage * (0.25 + 0.75 * k);
+      if (kind === 'bloater') this.host.onPlayerHit(kind, dmg);
+      else this.host.onRangedHit(kind, dmg);
+      // Blown back (and a little up): stronger the closer you were.
+      p.knock(p.x - x || 0.01, p.z - z, knock * (0.4 + 0.6 * k), 3 + 4 * k);
+    }
+    for (const e of this.entities) {
+      if (e === source || e.brain.hp <= 0) continue;
+      const d = Math.hypot(e.body.x - x, e.body.z - z);
+      if (d >= radius || Math.abs(e.body.y - y) > 3) continue;
+      const k = 1 - d / radius;
+      const dead = hurt(e.brain, damage * (0.25 + 0.75 * k));
+      e.flash = 1;
+      if (dead) this.host.onKilled(e.kind);
+      if (e.kind !== 'giant') e.body.knock(e.body.x - x || 0.01, e.body.z - z, knock * (0.4 + 0.6 * k), 3 + 4 * k);
+    }
+  }
+
+  /** Bomber: lob a bomb so that it lands where the player stands. */
+  private toss(e: Entity, dist: number): void {
+    const b = e.body;
+    const p = this.host.player;
+    const ox = b.x - Math.sin(b.yaw) * 0.4;
+    const oy = b.y + 1.7;
+    const oz = b.z - Math.cos(b.yaw) * 0.4;
+    // Lead the target a little and miss by a bit, so moving keeps you safe.
+    const T = Math.max(0.8, Math.min(1.6, dist / 13));
+    const tx = p.x + (Math.random() - 0.5) * 1.6;
+    const tz = p.z + (Math.random() - 0.5) * 1.6;
+    const vx = (tx - ox) / T;
+    const vz = (tz - oz) / T;
+    const vy = (p.y + 0.15 - oy + 0.5 * BOMB_GRAVITY * T * T) / T;
+    const mesh = buildBombMesh();
+    this.host.fx.add(mesh);
+    this.bombs.push({ x: ox, y: oy, z: oz, vx, vy, vz, landed: false, fuse: BOMBER.fuse, life: 6, mesh });
+    this.host.audio.throwWhoosh();
+    void dist;
+  }
+
+  private updateBombs(dt: number): void {
+    for (let i = this.bombs.length - 1; i >= 0; i--) {
+      const bm = this.bombs[i];
+      bm.life -= dt;
+      if (!bm.landed) {
+        const x0 = bm.x;
+        const y0 = bm.y;
+        const z0 = bm.z;
+        bm.vy -= BOMB_GRAVITY * dt;
+        bm.x += bm.vx * dt;
+        bm.y += bm.vy * dt;
+        bm.z += bm.vz * dt;
+        const sx = bm.x - x0;
+        const sy = bm.y - y0;
+        const sz = bm.z - z0;
+        const len = Math.hypot(sx, sy, sz) || 1e-6;
+        const hit = this.host.rayWorld(x0, y0, z0, sx / len, sy / len, sz / len, len + 0.15);
+        if (hit !== null) {
+          // Stop at the surface; if it hit a wall, drop to the floor below.
+          const back = Math.max(0, hit - 0.2);
+          bm.x = x0 + (sx / len) * back;
+          bm.z = z0 + (sz / len) * back;
+          const yHit = y0 + (sy / len) * back;
+          const g = groundHeight(bm.x, bm.z, 0.1, yHit + 0.3, this.host.world.floors(bm.x, bm.z), this.host.world.boxes(bm.x, bm.z));
+          const terr = this.host.world.terrain?.(bm.x, bm.z) ?? null;
+          let ground = Number.isFinite(g) ? g : yHit;
+          if (terr !== null && terr <= yHit + 0.3 && terr > ground) ground = terr;
+          bm.y = ground + 0.14;
+          bm.landed = true;
+          this.host.audio.impact(false, this.panTo(bm.x, bm.z), Math.hypot(bm.x - this.host.player.x, bm.z - this.host.player.z));
+        }
+      } else bm.fuse -= dt;
+      if ((bm.landed && bm.fuse <= 0) || bm.life <= 0) {
+        bm.mesh.traverse((o) => ((o as THREE.Mesh).isMesh ? ((o as THREE.Mesh).material as THREE.Material).dispose() : undefined));
+        bm.mesh.removeFromParent();
+        this.bombs.splice(i, 1);
+        this.explode(bm.x, bm.y - 0.14, bm.z, BOMBER.radius, ENTITIES.bomber.damage, BOMBER.knock, 'bomber', null);
+        continue;
+      }
+      const [rx, rz] = this.host.toRender(bm.x, bm.z);
+      bm.mesh.position.set(rx, bm.y, rz);
+      if (!bm.landed) bm.mesh.rotation.x += dt * 8;
+      // Red light blinks faster as the fuse runs down.
+      const light = bm.mesh.getObjectByName('light') as THREE.Mesh;
+      const rate = bm.landed ? 4 + (1 - bm.fuse / BOMBER.fuse) * 20 : 3;
+      (light.material as THREE.MeshBasicMaterial).color.setHex(Math.sin(performance.now() * 0.001 * rate * Math.PI * 2) > 0 ? 0xff2a1a : 0x401010);
     }
   }
 

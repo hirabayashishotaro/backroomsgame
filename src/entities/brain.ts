@@ -56,7 +56,14 @@ export interface Decision {
   fire?: boolean;
   /** Witch: call down lightning on the player's position now. */
   cast?: boolean;
+  /** Bomber: lob a bomb at the player now. */
+  toss?: boolean;
 }
+
+/** Bomber: throw cooldown, fuse after landing, blast radius, knockback, preferred range. */
+export const BOMBER = { cooldown: 3.2, fuse: 1.3, radius: 4.5, knock: 13, near: 9, far: 22, maxRange: 30 };
+/** Knockback of the bloater's burst (m/s outward). */
+export const BLAST_KNOCK = 15;
 
 /** Gunman: magazine, time between shots in a burst, reload, preferred range. */
 export const GUNMAN = { mag: 6, rate: 0.28, reload: 2.6, near: 8, far: 20, maxRange: 38 };
@@ -195,6 +202,16 @@ export function think(b: BrainState, p: Perception, dt: number): Decision {
       }
       return d;
     }
+    case 'bomber': {
+      // Hangs back and lobs bombs that blow you off your feet.
+      const d = keepRange(b, p, dt, BOMBER.near, BOMBER.far, def.walk, def.run);
+      b.cd -= dt;
+      if (p.los && p.dist < BOMBER.maxRange && b.cd <= 0 && b.alpha > 0.6) {
+        b.cd = BOMBER.cooldown;
+        d.toss = true;
+      }
+      return d;
+    }
     case 'giant': {
       // Slow, relentless; stomps when you are at its feet.
       if (b.mode === 'attack') {
@@ -232,7 +249,7 @@ export function hurt(b: BrainState, dmg: number): boolean {
   if ((b.kind === 'hound' || b.kind === 'skinstealer') && dmg >= 50) {
     b.mode = 'stagger';
     b.t = 0;
-  } else if (b.kind !== 'bloater' && b.kind !== 'giant' && b.kind !== 'gunman' && b.kind !== 'witch' && b.mode !== 'stagger') {
+  } else if (b.kind !== 'bloater' && b.kind !== 'giant' && b.kind !== 'gunman' && b.kind !== 'witch' && b.kind !== 'bomber' && b.mode !== 'stagger') {
     // Shooting it wakes it up.
     if (b.mode !== 'chase') {
       b.mode = 'chase';

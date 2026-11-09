@@ -134,6 +134,21 @@ export function buildEntityMesh(kind: EntityKind): THREE.Group {
       part(g, new THREE.SphereGeometry(0.025, 6, 5), eye, 0.05, 1.64, -0.13);
       break;
     }
+    case 'bomber': {
+      // Stocky, padded vest, goggles, a sack of bombs on its back and one in hand.
+      humanoid(g, m(0x56553a), 1.75);
+      for (const c of g.children) if (c.name === 'torso') c.scale.set(1.25, 1, 1.4);
+      part(g, new THREE.BoxGeometry(0.62, 0.42, 0.36), m(0x7a4a1c), 0, 1.15, 0, 'vest');
+      part(g, new THREE.BoxGeometry(0.26, 0.06, 0.06), m(0x202020), 0, 1.6, -0.14, 'goggles');
+      const sack = part(g, new THREE.SphereGeometry(0.3, 12, 10), m(0x6a5a3e), 0, 1.15, 0.33, 'sack');
+      sack.scale.set(1, 1.2, 0.8);
+      const arm = g.getObjectByName('armR')!;
+      const held = buildBombMesh();
+      held.position.set(0, -0.38, 0);
+      held.scale.setScalar(0.9);
+      arm.add(held);
+      break;
+    }
     case 'giant': {
       // A towering, stooped figure about 6.5 m tall.
       humanoid(g, m(0x3a3631), 1.8, 1);
@@ -154,6 +169,21 @@ export function buildEntityMesh(kind: EntityKind): THREE.Group {
   }
   g.traverse((o) => ((o as THREE.Mesh).isMesh ? (o.userData.keep = false) : undefined));
   swapInGLB(g, 'entity_' + kind);
+  return g;
+}
+
+/** A round black bomb with a short fuse and a blinking red light (named 'light'). */
+export function buildBombMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), new THREE.MeshBasicMaterial({ color: 0x1a1a1c, transparent: true }));
+  g.add(body);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.06, 8), new THREE.MeshBasicMaterial({ color: 0x5a5a5a, transparent: true }));
+  cap.position.y = 0.15;
+  g.add(cap);
+  const light = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true }));
+  light.position.y = 0.2;
+  light.name = 'light';
+  g.add(light);
   return g;
 }
 

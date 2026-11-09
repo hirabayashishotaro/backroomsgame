@@ -47,6 +47,20 @@ export class PlayerController {
   distanceWalked = 0;
   bobPhase = 0;
   speed = 0;
+  /** Knockback velocity (m/s), decays quickly on the ground. */
+  kx = 0;
+  kz = 0;
+
+  /** Push away horizontally along (dx, dz) at `horiz` m/s and pop up at `up` m/s. */
+  knock(dx: number, dz: number, horiz: number, up: number): void {
+    const l = Math.hypot(dx, dz) || 1;
+    this.kx += (dx / l) * horiz;
+    this.kz += (dz / l) * horiz;
+    if (up > 0) {
+      this.vy = Math.max(this.vy, up);
+      this.grounded = false;
+    }
+  }
 
   get dirX(): number {
     return -Math.sin(this.yaw);
@@ -74,8 +88,14 @@ export class PlayerController {
     const spd = input.speed ?? (input.crouch ? CROUCH : input.sprint && fx > 0 ? RUN : WALK);
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
-    const mx = (-sin * fx + cos * sx) * spd * dt;
-    const mz = (-cos * fx - sin * sx) * spd * dt;
+    const mx = (-sin * fx + cos * sx) * spd * dt + this.kx * dt;
+    const mz = (-cos * fx - sin * sx) * spd * dt + this.kz * dt;
+    if (this.kx !== 0 || this.kz !== 0) {
+      const decay = Math.exp(-dt * (this.grounded ? 6 : 1.2));
+      this.kx *= decay;
+      this.kz *= decay;
+      if (Math.hypot(this.kx, this.kz) < 0.05) this.kx = this.kz = 0;
+    }
 
     // Horizontal: sub-step so fast movement never tunnels through thin walls.
     const dist = Math.hypot(mx, mz);

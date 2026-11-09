@@ -118,14 +118,20 @@ export class CombatLab {
     p.append(h, note);
 
     const inArena = this.cb.inArena();
-    if (!inArena) {
+    {
       this.heading(t('lab.start'));
       const row = document.createElement('div');
       row.className = 'lab-row';
-      this.btn(row, t('lab.enter'), t('lab.enterSub'), () => {
+      // Enter, or re-enter with a clean slate (current settings, fresh enemies, full weapons).
+      this.btn(row, inArena ? t('lab.reenter') : t('lab.enter'), inArena ? t('lab.reenterSub') : t('lab.enterSub'), () => {
         this.hide();
         this.cb.enterArena();
       });
+      if (inArena)
+        this.btn(row, t('lab.resume'), t('lab.resumeSub'), () => {
+          this.hide();
+          this.cb.resume();
+        });
       p.appendChild(row);
     }
 

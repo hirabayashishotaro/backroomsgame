@@ -90,3 +90,21 @@ describe('WorldDeltas', () => {
     expect(e.isTaken('0', '1,2', '3,4')).toBe(true);
   });
 });
+
+describe('knockback', () => {
+  it('pushes the body away and decays once it lands', async () => {
+    const { PlayerController } = await import('../src/player/controller');
+    const floor = { x0: -100, z0: -100, x1: 100, z1: 100, y: 0 };
+    const world = { boxes: () => [], floors: () => [floor], terrain: undefined };
+    const p = new PlayerController();
+    p.knock(1, 0, 12, 5);
+    expect(p.grounded).toBe(false);
+    for (let i = 0; i < 120; i++) p.step(1 / 60, { forward: 0, strafe: 0, sprint: false, crouch: false, jump: false }, world as never);
+    expect(p.x).toBeGreaterThan(3);
+    expect(p.grounded).toBe(true);
+    expect(Math.abs(p.kx)).toBeLessThan(0.5);
+    const x = p.x;
+    for (let i = 0; i < 120; i++) p.step(1 / 60, { forward: 0, strafe: 0, sprint: false, crouch: false, jump: false }, world as never);
+    expect(p.x - x).toBeLessThan(0.2);
+  });
+});

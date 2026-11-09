@@ -7,6 +7,7 @@ import { getStore } from './storage';
 import type { ItemId } from '../items/itemDefs';
 import type { DeltaData } from '../world/deltas';
 import type { JournalData } from '../systems/journal';
+import type { ArsenalData } from '../weapons/weaponLogic';
 
 export const SAVE_VERSION = 1;
 export const SLOT_COUNT = 3;
@@ -48,6 +49,8 @@ export interface SaveData {
   journal?: JournalData;
   /** Game mode (SPEC §1.1). */
   mode?: 'endless' | 'escape';
+  /** Magazines and ammunition. */
+  arsenal?: ArsenalData;
 }
 
 export interface SlotInfo {
@@ -92,6 +95,7 @@ export function validateSave(raw: unknown): SaveData | null {
     history: Array.isArray(r.history) ? (r.history as unknown[]).filter((x): x is string => typeof x === 'string').slice(-50) : [],
     journal: r.journal && typeof r.journal === 'object' ? (r.journal as JournalData) : undefined,
     mode: r.mode === 'escape' ? 'escape' : 'endless',
+    arsenal: r.arsenal && typeof r.arsenal === 'object' ? (r.arsenal as ArsenalData) : undefined,
   };
 }
 

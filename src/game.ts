@@ -28,6 +28,16 @@ import { ESCAPE_ROUTE } from './escapeRoute';
 import { Journal } from './systems/journal';
 import { JournalScreen } from './ui/journalScreen';
 import { DebugOverlay } from './ui/debugOverlay';
+import { Arsenal } from './weapons/weaponLogic';
+import { AMMO_PICKUP, WEAPONS, type WeaponId } from './weapons/weaponDefs';
+import { ViewModel } from './weapons/viewmodel';
+import { EntitySystem } from './entities/entitySystem';
+import { Director, entityTableFor } from './entities/director';
+import { ENTITIES, type EntityKind } from './entities/entityDefs';
+import { augmentLoot } from './items/weaponLoot';
+import { isWeapon } from './items/itemDefs';
+import { buildCorpse } from './world/objectMeshes';
+import { DIFFICULTY } from './player/stats';
 import { Hud } from './ui/hud';
 import { Screens } from './ui/screens';
 import { SettingsScreen } from './ui/settingsScreen';
@@ -130,7 +140,7 @@ export function readLaunchOptions(): LaunchOptions {
 }
 
 
-const SLOT_ACTIONS: Action[] = ['slot1', 'slot2', 'slot3', 'slot4'];
+const SLOT_ACTIONS: Action[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6'];
 
 export class Game {
   readonly settings: Settings;
@@ -175,6 +185,18 @@ export class Game {
   private halluc: Hallucinations;
   private sky = new SkyDome();
   private drifters: Drifter[] = [];
+  readonly arsenal = new Arsenal();
+  private viewmodel!: ViewModel;
+  readonly ents!: EntitySystem;
+  private director!: Director;
+  private entityTable: EntityKind[] = [];
+  /** 0 = hip, 1 = aimed (smoothed). */
+  private adsT = 0;
+  private meleePending = -1;
+  private heldPrev: string | null = null;
+  private lastLookDY = 0;
+  private lastLookDX = 0;
+  private flickerT = 0;
   private drifterClock = 30;
   private drifterCount = 0;
   private pool = new URLSearchParams(location.search).get('noworker') === '1' ? null : ChunkWorkerPool.create();
@@ -224,6 +246,33 @@ export class Game {
     this.hud = new Hud(container, this.inventory);
     this.hud.setVisible(this.settings.showHud);
     this.halluc = new Hallucinations(this.fxRoot, this.audio);
+    this.viewmodel = new ViewModel(this.camera);
+    this.director = new Director(this.worldSeed);
+    (this as { ents: EntitySystem }).ents = new EntitySystem({
+      fx: this.fxRoot,
+      toRender: (x, z) => [this.origin.toRenderX(x), this.origin.toRenderZ(z)],
+      world: this.world,
+      rayWorld: (ox, oy, oz, dx, dy, dz, max) => this.rayWorld(ox, oy, oz, dx, dy, dz, max),
+      player: this.player,
+      audio: this.audio,
+      isSafe: (x, z) => this.isSafeSpot(x, z),
+      onPlayerHit: (kind, dmg) => this.onEntityHit(kind, dmg),
+      onSeen: (kind) => {
+        const lv = this.journal.data.levels[this.level.id];
+        if (lv && !lv.entities.includes(kind)) {
+          lv.entities.push(kind);
+          this.hud.message(t('entity.seen', { name: ENTITIES[kind].name }), 2.5);
+        }
+      },
+      onKilled: (kind) => {
+        this.hud.message(t('entity.killed', { name: ENTITIES[kind].name }), 2);
+        this.director.encounterOver({ rate: DIFFICULTY[this.settings.difficulty].entity, maxActive: 1 });
+      },
+      onHit: (head, kill) => {
+        this.hud.hitMarker(head, kill);
+        this.audio.hitTick(head, kill);
+      },
+    });
     this.halluc.onSound = (k) => {
       if (this.settings.subtitles) this.hud.subtitle(t('sub.' + k));
     };
@@ -275,6 +324,8 @@ export class Game {
     this.worldSeed = seed;
     this.rng = new Rng(seed ^ 0x5eed);
     this.inventory.load({ slots: [], selected: 0 });
+    this.arsenal.load(undefined);
+    this.ents?.clear();
     this.inventory.add('almond_water');
     this.stats.load({ health: 100, stamina: 100 });
     this.deltas.load({});
@@ -310,6 +361,7 @@ export class Game {
     this.mode = d.mode ?? 'endless';
     this.escapeStage = Math.max(0, ESCAPE_ROUTE.indexOf(d.levelId));
     this.inventory.load(d.inventory);
+    this.arsenal.load(d.arsenal);
     this.stats.load(d.stats);
     this.deltas.load(d.deltas);
     this.playTime = d.playTime;
@@ -345,6 +397,7 @@ export class Game {
       history: this.history.slice(-50),
       journal: this.journal.toJSON(),
       mode: this.mode,
+      arsenal: this.arsenal.toJSON(),
     };
   }
 
@@ -532,6 +585,7 @@ export class Game {
     if (this.chunks) this.chunks.clear();
     this.mats?.dispose();
     this.halluc.clear();
+    this.ents?.clear();
     for (const d of this.drifters) disposeObject(d.mesh);
     this.drifters = [];
     this.drifterClock = 25;
@@ -589,6 +643,8 @@ export class Game {
     this.player.grounded = true;
     this.walkWarned = false;
     for (const a of this.anchors[this.level.id] ?? []) this.showAnchor(a);
+    this.entityTable = entityTableFor(this.level.id, { dark: this.level.palette.ambient < 0.12, safe: this.level.id === 'frontrooms' });
+    this.director?.reset(this.entityTable.length > 0);
     if (this.history[this.history.length - 1] !== this.level.id) this.history.push(this.level.id);
     if (this.started) this.audio.setAmbience(this.level.ambience);
   }
@@ -602,6 +658,14 @@ export class Game {
     const key = chunkKey(data.cx, data.cz, data.cy ?? 0);
     const delta = this.deltas.get(this.level.id, key);
     const items = new Map<string, WorldItem>();
+    // Rare weapons with fallen survey-team members, and loose ammunition.
+    const corpses = augmentLoot(data, ctx.levelSeed, this.level.id === 'frontrooms');
+    for (const c of corpses) {
+      const m = buildCorpse(sampler(c.x + ox, 0.3, c.z + oz, 0, 1, 0));
+      m.position.set(c.x - Math.cos(c.rot) * 0.55, c.y, c.z - Math.sin(c.rot) * 0.55);
+      m.rotation.y = -c.rot;
+      group.add(m);
+    }
     for (const it of data.items) {
       if (delta?.taken.includes(it.uid)) continue;
       const mesh = buildItemMesh(it.id, sampler(it.x + ox, 0.3, it.z + oz, 0, 1, 0));
@@ -830,9 +894,31 @@ export class Game {
   // ---------------------------------------------------------------------------
 
   private pickUp(it: WorldItem): void {
-    if (!this.inventory.add(it.id)) {
-      this.hud.message(t('msg.full'));
-      return;
+    const def = ITEMS[it.id];
+    let msg: string;
+    if (def.kind === 'ammo') {
+      const n = this.arsenal.addAmmo(def.ammo!, AMMO_PICKUP[def.ammo!]);
+      if (n <= 0) {
+        this.hud.message(t('msg.ammoFull'));
+        return;
+      }
+      msg = t('msg.pickAmmo', { name: def.name, n });
+    } else if (def.kind === 'weapon') {
+      const owned = this.inventory.has(it.id);
+      if (!owned && !this.inventory.add(it.id)) {
+        this.hud.message(t('msg.full'));
+        return;
+      }
+      this.arsenal.gainWeapon(def.weapon!, owned);
+      msg = owned ? t('msg.pickAmmo', { name: def.name, n: def.weapon === 'kunai' ? 10 : WEAPONS[def.weapon!].mag }) : t('msg.pickWeapon', { name: def.name });
+      // Switch to a newly found weapon.
+      if (!owned) this.inventory.select(this.inventory.slots.indexOf(it.id));
+    } else {
+      if (!this.inventory.add(it.id)) {
+        this.hud.message(t('msg.full'));
+        return;
+      }
+      msg = t('msg.pickup', { name: def.name });
     }
     const c = this.chunkAt(it.x, it.z, it.y);
     if (c) {
@@ -845,12 +931,13 @@ export class Game {
       it.mesh.removeFromParent();
     }
     this.audio.pickup();
-    this.hud.message(t('msg.pickup', { name: ITEMS[it.id].name }));
+    this.hud.message(msg);
   }
 
+  /** Q: drink almond water (the held bottle, or the first one in the bar). */
   private useHeld(): void {
-    const id = this.inventory.held;
-    if (!id) {
+    const slot = this.inventory.held === 'almond_water' ? this.inventory.selected : this.inventory.slots.indexOf('almond_water');
+    if (slot < 0) {
       this.hud.message(t('msg.nothingHeld'));
       return;
     }
@@ -858,10 +945,200 @@ export class Game {
       this.hud.message(t('msg.fullHealth'));
       return;
     }
-    this.inventory.take(this.inventory.selected);
+    const id = this.inventory.take(slot)!;
     this.stats.heal(ITEMS[id].heal);
     this.audio.drink();
     this.hud.message(t('msg.drink', { name: ITEMS[id].name }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Weapons
+  // ---------------------------------------------------------------------------
+
+  /** World ray (walls, floors, terrain), marching in short segments so long rays stay cheap. */
+  private rayWorld(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, max: number): number | null {
+    const seg = 6;
+    for (let s0 = 0; s0 < max; s0 += seg) {
+      const len = Math.min(seg, max - s0);
+      const sx = ox + dx * s0;
+      const sy = oy + dy * s0;
+      const sz = oz + dz * s0;
+      let best = Infinity;
+      for (const b of this.boxesNear(sx + (dx * len) / 2, sz + (dz * len) / 2, len / 2 + 0.6)) {
+        const h = rayBox(sx, sy, sz, dx, dy, dz, b, len);
+        if (h && h.t < best) best = h.t;
+      }
+      if (Math.abs(dy) > 1e-5)
+        for (const f of this.floorsNear(sx + (dx * len) / 2, sz + (dz * len) / 2)) {
+          const tt = (f.y - sy) / dy;
+          if (tt < 0 || tt > len || tt >= best) continue;
+          const x = sx + dx * tt;
+          const z = sz + dz * tt;
+          if (x >= f.x0 && x <= f.x1 && z >= f.z0 && z <= f.z1) best = tt;
+        }
+      // Terrain: sample along the segment.
+      if (this.level.chunkSize && best === Infinity)
+        for (let u = 0.25; u <= len; u += 0.25) {
+          const th = this.terrainAt(sx + dx * u, sz + dz * u);
+          if (th !== null && sy + dy * u < th) {
+            best = u;
+            break;
+          }
+        }
+      if (best < Infinity) return s0 + best;
+    }
+    return null;
+  }
+
+  private isSafeSpot(x: number, z: number): boolean {
+    for (const a of this.anchors[this.level.id] ?? []) if (Math.hypot(a.x - x, a.z - z) < 5) return true;
+    return false;
+  }
+
+  private heldWeapon(): WeaponId | null {
+    const h = this.inventory.held;
+    return isWeapon(h) ? ITEMS[h].weapon! : null;
+  }
+
+  private aimDir(spread: number): [number, number, number] {
+    let yaw = this.player.yaw;
+    let pitch = this.player.pitch;
+    if (spread > 0) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(Math.random()) * spread;
+      yaw += Math.cos(a) * r;
+      pitch += Math.sin(a) * r;
+    }
+    const cp = Math.cos(pitch);
+    return [-Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp];
+  }
+
+  /** Current spread (radians): hip vs aimed, worse while moving or airborne. */
+  private currentSpread(id: WeaponId): number {
+    const def = WEAPONS[id];
+    const base = def.hipSpread + (def.adsSpread - def.hipSpread) * this.adsT;
+    const move = Math.min(1, this.player.speed / 6) * 0.01 * (1 - this.adsT) + (this.player.grounded ? 0 : 0.02);
+    return base + (def.kind === 'melee' ? 0 : move);
+  }
+
+  private fireWeapon(id: WeaponId): void {
+    const r = this.arsenal.fire(id);
+    if (r === null) return;
+    const def = WEAPONS[id];
+    if (r === 'empty') {
+      this.audio.dryFire();
+      if (this.arsenal.startReload(id)) this.beginReloadFx(id);
+      else if (def.kind === 'thrown') this.hud.message(t('msg.noAmmo'), 1.2);
+      return;
+    }
+    // Magnum: the reticle returns before this shot, then kicks up again.
+    this.player.pitch -= r.returnPitch;
+    const spread = this.currentSpread(id);
+    const d = this.aimDir(spread);
+    const o: [number, number, number] = [this.player.x, this.player.y + this.player.eye, this.player.z];
+    if (def.kind === 'hitscan') {
+      this.ents.hitscan(def, o, d);
+      this.audio.gunshot('pistol');
+    } else if (def.kind === 'projectile') {
+      this.ents.launch(def, o, d, this.viewmodel.muzzleWorld);
+      this.audio.gunshot('magnum');
+    } else if (def.kind === 'thrown') {
+      this.ents.launch(def, o, d, this.viewmodel.muzzleWorld);
+      this.audio.throwWhoosh();
+    } else {
+      this.meleePending = 0.18; // the blade lands a moment into the swing
+      this.audio.swing();
+    }
+    this.player.pitch = Math.min(1.55, this.player.pitch + r.kick);
+    this.viewmodel.fire(def.kind, def.kind === 'projectile' ? 1.6 : 0.6);
+    // Auto-reload an emptied magazine.
+    if (def.mag > 0 && this.arsenal.loaded(id) === 0 && this.arsenal.startReload(id)) this.beginReloadFx(id);
+  }
+
+  private beginReloadFx(id: WeaponId): void {
+    const def = WEAPONS[id];
+    this.audio.reloadSound(id === 'magnum' ? 'magnum' : 'pistol', def.reloadTime);
+    this.viewmodel.reload(def.reloadTime);
+  }
+
+  private updateWeapons(dt: number, active: boolean): void {
+    const id = this.heldWeapon();
+    const held = this.inventory.held;
+    if (held !== this.heldPrev) {
+      this.heldPrev = held;
+      this.arsenal.cancelReload();
+      this.viewmodel.set(held);
+      this.meleePending = -1;
+    }
+    this.arsenal.update(dt);
+    const aiming = active && !!id && this.input.isDown('aim') && WEAPONS[id].kind !== 'melee';
+    this.adsT += ((aiming ? 1 : 0) - this.adsT) * Math.min(1, dt * 14);
+    if (active) {
+      if (id) {
+        if (this.input.wasPressed('attack')) this.fireWeapon(id);
+        if (this.input.wasPressed('reload') && this.arsenal.startReload(id)) this.beginReloadFx(id);
+      } else if (held === 'almond_water' && this.input.wasPressed('attack')) this.useHeld();
+    }
+    if (this.meleePending >= 0) {
+      this.meleePending -= dt;
+      if (this.meleePending < 0 && id === 'axe') this.ents.melee(WEAPONS.axe);
+    }
+    // Walk over thrown kunai to collect them.
+    const got = this.ents.collectKunai();
+    if (got) {
+      this.arsenal.addAmmo('kunai', got);
+      if (!this.inventory.has('kunai')) this.inventory.add('kunai');
+      this.hud.message(t('msg.kunaiBack'), 1.2);
+      this.audio.pickup();
+    }
+    this.viewmodel.update(dt, { aiming: this.adsT > 0.5 || aiming, bob: this.player.bobPhase, speed: this.player.speed, lookDX: this.lastLookDX, lookDY: this.lastLookDY });
+    // HUD: reticle and ammo
+    const s = this.settings;
+    if (id) {
+      const def = WEAPONS[id];
+      const spread = this.currentSpread(id);
+      const gap = (Math.tan(spread) / Math.tan(((this.camera.fov * Math.PI) / 180) / 2)) * (window.innerHeight / 2);
+      this.hud.setCrosshair(gap, def.kind !== 'melee', s.crosshairSize, s.crosshairColor, s.crosshairDot, this.adsT);
+      const loaded = this.arsenal.loaded(id);
+      if (def.kind === 'melee') this.hud.setAmmo(def.name, '', '', false);
+      else if (def.mag === 0) this.hud.setAmmo(def.name, String(loaded), '', false);
+      else this.hud.setAmmo(def.name, String(loaded), String(this.arsenal.reserve[def.ammo!]), !!this.arsenal.reloading);
+    } else {
+      this.hud.setCrosshair(0, true, s.crosshairSize * 0.6, s.crosshairColor, s.crosshairDot, 0);
+      this.hud.setAmmo(null, '', '', false);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Entities
+  // ---------------------------------------------------------------------------
+
+  private onEntityHit(kind: EntityKind, dmg: number): void {
+    const k = this.settings.difficulty === 'easy' ? 0.7 : this.settings.difficulty === 'hard' ? 1.3 : 1;
+    this.stats.damage(dmg * k);
+    this.hud.jumpscare(this.settings.jumpscare, kind === 'smiler' ? '#f0f0e8' : kind === 'faceling' ? '#d8cfc4' : '#c8b8a8');
+    this.audio.sting(this.settings.jumpscare === 'full' ? 1 : this.settings.jumpscare === 'mild' ? 0.5 : 0);
+    this.audio.hurt();
+    this.hud.message(t('msg.caught', { name: ENTITIES[kind].name }), 2);
+    this.flickerT = 1.2;
+    this.director.encounterOver({ rate: DIFFICULTY[this.settings.difficulty].entity, maxActive: 1 });
+  }
+
+  private updateEntities(dt: number): void {
+    const tune = { rate: DIFFICULTY[this.settings.difficulty].entity, maxActive: this.settings.difficulty === 'hard' ? 2 : 1 };
+    const safe = this.isSafeSpot(this.player.x, this.player.z) || !!this.transition;
+    const ev = this.director.update(dt, this.entityTable, this.ents.active, tune, safe);
+    if (ev?.type === 'omen') {
+      // Always a warning first (SPEC §7.1): a sound, flickering lights, the hum faltering.
+      this.flickerT = 3;
+      this.audio.humDip(2.5);
+      const voice = ev.kind === 'hound' ? 'growl' : ev.kind === 'smiler' ? 'giggle' : ev.kind === 'skinstealer' ? 'help' : 'hum';
+      this.audio.entityVoice(voice, (this.rng.float() - 0.5) * 2, 40);
+      this.hud.subtitle(t('omen.' + ev.kind), 3.5);
+    } else if (ev?.type === 'spawn') {
+      if (!this.ents.trySpawn(ev.kind, () => this.rng.float())) this.director.retrySoon();
+    }
+    this.ents.update(dt);
   }
 
   // ---------------------------------------------------------------------------
@@ -1114,6 +1391,8 @@ export class Game {
     this.player.yaw = s.yaw;
     this.stats.respawn();
     this.halluc.clear();
+    this.ents.clear();
+    this.director.reset(this.entityTable.length > 0);
     this.chunks.loadAllSync(s.x, s.z, 1, s.y);
     this.hud.hideDeath();
   }
@@ -1200,10 +1479,16 @@ export class Game {
       const inv = s.invertY ? -1 : 1;
       const pinv = s.padInvertY ? -1 : 1;
       const pk = s.padSensitivity * 1.1 * dt;
-      this.player.look(
-        this.input.mouseDX * k * s.sensitivityX + this.input.padLook.x * pk,
-        this.input.mouseDY * k * s.sensitivityY * inv + this.input.padLook.y * pk * pinv,
-      );
+      // While aiming, sensitivity scales with the zoom (so the same flick covers the same on-screen distance)
+      // times the player's ADS multiplier.
+      const zoom = this.camera.fov / s.fov;
+      const adsK = 1 + (s.adsSensitivity * zoom - 1) * this.adsT;
+      const lookDX = (this.input.mouseDX * k * s.sensitivityX + this.input.padLook.x * pk) * adsK;
+      const lookDY = (this.input.mouseDY * k * s.sensitivityY * inv + this.input.padLook.y * pk * pinv) * adsK;
+      this.player.look(lookDX, lookDY);
+      this.arsenal.aimedDown(lookDY); // pulling down pays off magnum kick
+      this.lastLookDX = this.input.mouseDX;
+      this.lastLookDY = this.input.mouseDY;
       forward = (this.input.isDown('forward') ? 1 : 0) - (this.input.isDown('back') ? 1 : 0) - this.input.padMove.y;
       let r = (this.input.isDown('right') ? 1 : 0) - (this.input.isDown('left') ? 1 : 0) + this.input.padMove.x;
       forward = Math.max(-1, Math.min(1, forward));
@@ -1243,6 +1528,7 @@ export class Game {
       if (cause) this.die(cause);
       this.updateExits(realDt, moving, forward);
       this.updateDrifters(realDt);
+      this.updateEntities(dt);
     }
 
     // Level 0 slowly rearranges itself behind you (SPEC §3.4): chunks generated
@@ -1258,6 +1544,8 @@ export class Game {
       const glow = a.mesh.children[3] as THREE.Mesh;
       (glow.material as THREE.MeshBasicMaterial).opacity = 0.45 + Math.sin(this.time * 2) * 0.12;
     }
+
+    this.updateWeapons(dt, active);
 
     // Interaction prompt
     this.target = active ? this.findTarget() : null;
@@ -1289,6 +1577,12 @@ export class Game {
     const slot = Math.floor(this.time * (s.reduceFlicker ? 2.5 : 7));
     const fl = (Math.sin(slot * 12.9898) * 43758.5453) % 1;
     this.mats.lightFlicker.color.setHex(this.level.palette.lightColor).multiplyScalar(Math.abs(fl) > 0.3 ? 1 : s.reduceFlicker ? 0.8 : 0.4);
+    // An entity is near: every tube stutters for a moment.
+    if (this.flickerT > 0) {
+      this.flickerT -= realDt;
+      const on = Math.sin(this.time * (s.reduceFlicker ? 6 : 22)) > -0.2;
+      this.mats.lightOn.color.setHex(this.level.palette.lightColor).multiplyScalar(on ? 1 : s.reduceFlicker ? 0.7 : 0.25);
+    } else this.mats.lightOn.color.setHex(this.level.palette.lightColor);
 
     // Noclippable walls and floors breathe slowly so attentive players can spot them.
     const pulse = 1 + Math.sin(this.time * 2.1) * (s.reduceFlicker ? 0.04 : 0.07);
@@ -1319,7 +1613,9 @@ export class Game {
       this.player.yaw + Math.sin(this.time * 0.9) * sway,
       Math.sin(this.time * 0.7) * sway + Math.sin(this.time * 9) * warp * 0.03 * shakeK,
     );
-    const fov = s.fov + warp * 18 * shakeK;
+    const wid = this.heldWeapon();
+    const zoomK = wid ? 1 + (WEAPONS[wid].adsZoom - 1) * this.adsT : 1;
+    const fov = s.fov * zoomK + warp * 18 * shakeK;
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();

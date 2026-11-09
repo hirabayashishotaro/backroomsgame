@@ -7,11 +7,11 @@ import { ITEMS } from '../src/items/itemDefs';
 
 const env = (o: Partial<StatEnv> = {}): StatEnv => ({ running: false, drainMul: 1, difficulty: 'normal', ...o });
 
-describe('Inventory (4 slots)', () => {
-  it('holds exactly 4 items, one per slot', () => {
+describe('Inventory (6 slots)', () => {
+  it('holds exactly 6 items, one per slot', () => {
     const inv = new Inventory();
-    expect(SLOTS).toBe(4);
-    for (let i = 0; i < 4; i++) expect(inv.add('almond_water')).toBe(true);
+    expect(SLOTS).toBe(6);
+    for (let i = 0; i < 6; i++) expect(inv.add('almond_water')).toBe(true);
     expect(inv.add('almond_water')).toBe(false);
     expect(inv.full).toBe(true);
   });
@@ -30,8 +30,8 @@ describe('Inventory (4 slots)', () => {
   it('wraps hotbar selection', () => {
     const inv = new Inventory();
     inv.select(-1);
-    expect(inv.selected).toBe(3);
-    inv.select(4);
+    expect(inv.selected).toBe(5);
+    inv.select(6);
     expect(inv.selected).toBe(0);
   });
 });

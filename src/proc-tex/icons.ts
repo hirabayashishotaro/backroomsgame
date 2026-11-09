@@ -113,12 +113,102 @@ function almondWaterIcon(size: number): HTMLCanvasElement {
   return c;
 }
 
+/** Simple side-view silhouettes for weapons and ammo boxes. */
+function shapeIcon(id: ItemId, size: number): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d')!;
+  g.scale(size / 64, size / 64);
+  g.shadowColor = 'rgba(0,0,0,0.7)';
+  g.shadowBlur = 3;
+  const fill = (col: string, path: () => void) => {
+    g.fillStyle = col;
+    g.beginPath();
+    path();
+    g.fill();
+  };
+  switch (id) {
+    case 'pistol':
+      fill('#2a2c30', () => g.rect(10, 20, 42, 10)); // slide
+      fill('#1e1f22', () => {
+        g.moveTo(34, 30);
+        g.lineTo(46, 30);
+        g.lineTo(50, 50);
+        g.lineTo(38, 50);
+        g.closePath();
+      }); // grip
+      fill('#555', () => g.rect(12, 18, 3, 3));
+      g.strokeStyle = '#1e1f22';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(32, 33, 4, 0, Math.PI);
+      g.stroke();
+      break;
+    case 'magnum':
+      fill('#8a8f94', () => g.rect(4, 22, 36, 6)); // barrel
+      fill('#6e7378', () => g.rect(36, 19, 12, 13)); // cylinder
+      fill('#5a3a24', () => {
+        g.moveTo(44, 31);
+        g.lineTo(52, 31);
+        g.lineTo(58, 52);
+        g.lineTo(47, 52);
+        g.closePath();
+      });
+      fill('#e8a030', () => g.rect(5, 19, 3, 3));
+      break;
+    case 'kunai':
+      for (const [dx, dy] of [
+        [0, 0],
+        [4, 6],
+        [8, 12],
+      ]) {
+        fill('#b8bcc0', () => {
+          g.moveTo(10 + dx, 30 + dy);
+          g.lineTo(32 + dx, 24 + dy);
+          g.lineTo(32 + dx, 34 + dy);
+          g.closePath();
+        });
+        fill('#2a1c14', () => g.rect(32 + dx, 27 + dy, 16, 4));
+        g.strokeStyle = '#6a6e72';
+        g.lineWidth = 2;
+        g.beginPath();
+        g.arc(51 + dx, 29 + dy, 3, 0, Math.PI * 2);
+        g.stroke();
+      }
+      break;
+    case 'axe':
+      fill('#6a4628', () => {
+        g.moveTo(18, 54);
+        g.lineTo(22, 56);
+        g.lineTo(44, 14);
+        g.lineTo(40, 12);
+        g.closePath();
+      });
+      fill('#9aa0a6', () => {
+        g.moveTo(36, 8);
+        g.lineTo(54, 14);
+        g.lineTo(52, 30);
+        g.lineTo(40, 22);
+        g.closePath();
+      });
+      fill('#d8dce0', () => g.rect(51, 14, 3, 16));
+      break;
+    default: {
+      // ammo box
+      fill(id === 'ammo_magnum' ? '#6a3a24' : '#3a5a3a', () => g.rect(12, 24, 40, 24));
+      fill('#d8b040', () => g.rect(16, 28, 32, 6));
+      for (let k = 0; k < 4; k++) fill('#c8a050', () => g.rect(18 + k * 8, 14, 5, 12));
+    }
+  }
+  return c;
+}
+
 /** Data URL for an item icon (cached). */
 export function itemIcon(id: ItemId, size = 64): string {
   const key = id + ':' + size;
   let url = iconCache.get(key);
   if (!url) {
-    const c = almondWaterIcon(size);
+    const c = id === 'almond_water' ? almondWaterIcon(size) : shapeIcon(id, size);
     url = c.toDataURL();
     iconCache.set(key, url);
   }

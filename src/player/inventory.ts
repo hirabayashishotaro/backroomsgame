@@ -1,7 +1,7 @@
-/** 4-slot item bar, one item per slot (SPEC §17). */
+/** 6-slot item bar, one item per slot (SPEC §17, extended for weapons). */
 import { ITEMS, type ItemId } from '../items/itemDefs';
 
-export const SLOTS = 4;
+export const SLOTS = 6;
 
 export class Inventory {
   slots: Array<ItemId | null> = new Array(SLOTS).fill(null);
@@ -13,6 +13,10 @@ export class Inventory {
 
   get count(): number {
     return this.slots.filter(Boolean).length;
+  }
+
+  has(id: ItemId): boolean {
+    return this.slots.includes(id);
   }
 
   get full(): boolean {

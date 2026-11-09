@@ -25,8 +25,16 @@ const CSS = `
   font-size: 15px; }
 .hud-prompt { position: absolute; left: 50%; top: 55%; transform: translateX(-50%); font-size: 15px;
   background: rgba(0,0,0,0.45); padding: 4px 12px; border-radius: 4px; }
-.hud-cross { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 50%;
-  background: rgba(255,250,220,0.6); }
+.hud-cross { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+.hud-cross i { position: absolute; background: var(--xc, #fff); box-shadow: 0 0 2px rgba(0,0,0,0.9); }
+.hud-cross .dot { width: 3px; height: 3px; left: -1.5px; top: -1.5px; border-radius: 50%; }
+.hud-hit { position: absolute; left: 50%; top: 50%; width: 0; height: 0; opacity: 0; transition: opacity 0.12s; }
+.hud-hit i { position: absolute; width: 10px; height: 2px; background: #fff; box-shadow: 0 0 2px #000; }
+.hud-ammo { position: absolute; right: 22px; bottom: 96px; text-align: right; font-variant-numeric: tabular-nums; }
+.hud-ammo .n { font-size: 34px; font-weight: 300; letter-spacing: 0.04em; }
+.hud-ammo .r { font-size: 16px; opacity: 0.7; }
+.hud-ammo .w { font-size: 12px; opacity: 0.7; letter-spacing: 0.15em; }
+.hud-scare { position: fixed; inset: 0; z-index: 27; pointer-events: none; opacity: 0; display: flex; align-items: center; justify-content: center; }
 .hud-hint { position: absolute; right: 20px; bottom: 20px; text-align: right; opacity: 0.6; line-height: 1.8; font-size: 12px;
   white-space: pre-line; transition: opacity 2s; }
 .hud-title { position: fixed; inset: 0; z-index: 25; pointer-events: none; display: flex; flex-direction: column;
@@ -80,6 +88,12 @@ export class Hud {
   private fade: HTMLDivElement;
   private hurt: HTMLDivElement;
   private deadOverlay: HTMLDivElement;
+  private cross!: HTMLDivElement;
+  private hit!: HTMLDivElement;
+  private ammo!: HTMLDivElement;
+  private hitT = 0;
+  private scare!: HTMLDivElement;
+  private scareT = 0;
   private subs: HTMLDivElement;
   private objective: HTMLDivElement;
   private credits: HTMLDivElement;
@@ -129,7 +143,19 @@ export class Hud {
     this.prompt.style.display = 'none';
     this.hint = this.div('hud-hint');
     this.hint.textContent = t('hud.hint');
-    this.root.append(bars, slotRow, this.held, this.msg, this.prompt, this.hint, this.div('hud-cross'));
+    this.cross = this.div('hud-cross');
+    for (let i = 0; i < 5; i++) this.cross.appendChild(document.createElement('i'));
+    (this.cross.lastChild as HTMLElement).className = 'dot';
+    this.hit = this.div('hud-hit');
+    for (let i = 0; i < 4; i++) {
+      const l = document.createElement('i');
+      const a = 45 + i * 90;
+      l.style.transform = `rotate(${a}deg) translateX(7px)`;
+      l.style.transformOrigin = '0 50%';
+      this.hit.appendChild(l);
+    }
+    this.ammo = this.div('hud-ammo');
+    this.root.append(bars, slotRow, this.held, this.msg, this.prompt, this.hint, this.cross, this.hit, this.ammo);
 
     this.title = this.div('hud-title');
     this.fade = this.div('hud-fade');
@@ -138,7 +164,8 @@ export class Hud {
     this.objective = this.div('hud-objective');
     this.root.appendChild(this.objective);
     this.credits = this.div('hud-credits');
-    parent.append(vignette, this.hurt, this.root, this.title, this.fade, this.deadOverlay, this.subs, this.credits);
+    this.scare = this.div('hud-scare');
+    parent.append(this.scare, vignette, this.hurt, this.root, this.title, this.fade, this.deadOverlay, this.subs, this.credits);
     setTimeout(() => (this.hint.style.opacity = '0'), 45000);
   }
 
@@ -161,6 +188,84 @@ export class Hud {
     slots.style.transform = `translateX(-50%) scale(${k})`;
     slots.style.transformOrigin = 'center bottom';
     this.held.style.bottom = `${Math.round(26 + 66 * k)}px`;
+  }
+
+  /**
+   * Reticle: four lines whose gap follows the current spread (pixels), an
+   * optional centre dot. Hidden for melee or empty hands.
+   */
+  setCrosshair(gapPx: number, visible: boolean, size: number, color: string, dot: boolean, ads: number): void {
+    this.cross.style.display = visible ? '' : 'none';
+    if (!visible) return;
+    this.cross.style.setProperty('--xc', { white: '#ffffff', green: '#5cff7a', yellow: '#ffe25c', cyan: '#5cf0ff', red: '#ff5c5c' }[color] ?? '#fff');
+    const len = 7 * size;
+    const th = Math.max(1.5, 2 * size);
+    const g = gapPx + 3 * size;
+    const lines = this.cross.children;
+    const set = (el: Element, x: number, y: number, w: number, h: number) => Object.assign((el as HTMLElement).style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`, opacity: String(1 - ads * 0.85) });
+    set(lines[0], -th / 2, -g - len, th, len);
+    set(lines[1], -th / 2, g, th, len);
+    set(lines[2], -g - len, -th / 2, len, th);
+    set(lines[3], g, -th / 2, len, th);
+    (lines[4] as HTMLElement).style.display = dot ? '' : 'none';
+  }
+
+  /** Hit marker: white = body, red = head, larger = kill. */
+  hitMarker(head: boolean, kill: boolean): void {
+    this.hitT = kill ? 0.45 : 0.22;
+    this.hit.style.opacity = '1';
+    for (const l of [...this.hit.children]) (l as HTMLElement).style.background = head || kill ? '#ff3a3a' : '#ffffff';
+    this.hit.style.transform = `scale(${kill ? 1.6 : 1})`;
+  }
+
+  /** Ammo: loaded / reserve and weapon name (null hides). */
+  setAmmo(name: string | null, loaded: string, reserve: string, reloading: boolean): void {
+    this.ammo.style.display = name ? '' : 'none';
+    if (!name) return;
+    this.ammo.innerHTML = '';
+    const w = document.createElement('div');
+    w.className = 'w';
+    w.textContent = reloading ? t('msg.reload') : name;
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = loaded;
+    const r = document.createElement('span');
+    r.className = 'r';
+    r.textContent = reserve ? ' / ' + reserve : '';
+    this.ammo.append(w, n, r);
+  }
+
+  /** Jump scare overlay: a face rushing at the screen, then a red fade. */
+  jumpscare(strength: 'off' | 'mild' | 'full', color: string): void {
+    if (strength === 'off') {
+      this.scareT = 0.35;
+      this.scare.style.background = 'rgba(120,0,0,0.5)';
+      this.scare.innerHTML = '';
+      return;
+    }
+    this.scareT = strength === 'full' ? 1.1 : 0.6;
+    this.scare.style.background = strength === 'full' ? '#000' : 'rgba(40,0,0,0.75)';
+    this.scare.innerHTML = '';
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const g = c.getContext('2d')!;
+    // An abstract face: pale oval, two black eyes, an over-wide mouth.
+    g.fillStyle = color;
+    g.beginPath();
+    g.ellipse(128, 128, 80, 104, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#000';
+    for (const x of [96, 160]) {
+      g.beginPath();
+      g.ellipse(x, 104, 16, 24, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.beginPath();
+    g.ellipse(128, 178, 50, 14, 0, 0, Math.PI * 2);
+    g.fill();
+    c.style.width = strength === 'full' ? '90vmin' : '55vmin';
+    c.style.filter = 'blur(1px) contrast(1.4)';
+    this.scare.appendChild(c);
   }
 
   /** Escape-mode objective line (empty string hides it). */
@@ -275,6 +380,16 @@ export class Hud {
     const h = this.inv.held;
     this.held.textContent = h ? ITEMS[h].name : '';
 
+    if (this.hitT > 0) {
+      this.hitT -= dt;
+      if (this.hitT <= 0) this.hit.style.opacity = '0';
+    }
+    if (this.scareT > 0) {
+      this.scareT -= dt;
+      this.scare.style.opacity = String(Math.max(0, Math.min(1, this.scareT * 3)));
+      const img = this.scare.firstChild as HTMLElement | null;
+      if (img) img.style.transform = `scale(${1 + (1 - this.scareT) * 0.4}) translate(${(Math.random() - 0.5) * 12}px, ${(Math.random() - 0.5) * 12}px)`;
+    }
     if (this.subTimer > 0) {
       this.subTimer -= dt;
       if (this.subTimer <= 0) this.subs.style.opacity = '0';

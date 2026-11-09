@@ -7,6 +7,8 @@ export interface MoveInput {
   sprint: boolean;
   crouch: boolean;
   jump: boolean;
+  /** Exact speed (m/s) instead of walk/run/crouch (used by entities). */
+  speed?: number;
 }
 
 export interface WorldQuery {
@@ -69,7 +71,7 @@ export class PlayerController {
       fx /= len;
       sx /= len;
     }
-    const spd = input.crouch ? CROUCH : input.sprint && fx > 0 ? RUN : WALK;
+    const spd = input.speed ?? (input.crouch ? CROUCH : input.sprint && fx > 0 ? RUN : WALK);
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
     const mx = (-sin * fx + cos * sx) * spd * dt;

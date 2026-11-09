@@ -141,6 +141,168 @@ export class AudioSystem {
     this.noiseBurst(2500, 0.03, 0.15, 'highpass');
   }
 
+  // ---------------------------------------------------------------- weapons --
+
+  private env(t: number, peak: number, attack: number, decay: number): GainNode {
+    const g = this.ctx!.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(peak, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+    return g;
+  }
+
+  private noise(t: number, dur: number, type: BiquadFilterType, freq: number, q: number, out: AudioNode, gain: GainNode): void {
+    const src = this.ctx!.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const f = this.ctx!.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    f.Q.value = q;
+    src.connect(f).connect(gain).connect(out);
+    src.start(t, (t * 0.71) % 1.4, dur + 0.05);
+  }
+
+  private tone(t: number, type: OscillatorType, f0: number, f1: number, dur: number, gain: GainNode, out: AudioNode): void {
+    const o = this.ctx!.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+    o.connect(gain).connect(out);
+    o.start(t);
+    o.stop(t + dur + 0.05);
+  }
+
+  /** Gunshot: crack + body + room tail. */
+  gunshot(kind: 'pistol' | 'magnum'): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const big = kind === 'magnum';
+    this.noise(t, 0.05, 'highpass', 1800, 0.7, this.sfxBus, this.env(t, big ? 0.9 : 0.6, 0.002, 0.05));
+    this.noise(t, big ? 0.35 : 0.18, 'lowpass', big ? 900 : 1500, 0.8, this.sfxBus, this.env(t, big ? 1.0 : 0.6, 0.003, big ? 0.35 : 0.18));
+    this.tone(t, 'sine', big ? 120 : 180, 40, big ? 0.25 : 0.12, this.env(t, big ? 0.8 : 0.4, 0.002, big ? 0.25 : 0.12), this.sfxBus);
+    // Reverberant tail (the empty rooms answer)
+    this.noise(t + 0.03, big ? 1.2 : 0.7, 'bandpass', 600, 0.6, this.sfxBus, this.env(t + 0.03, big ? 0.18 : 0.1, 0.05, big ? 1.1 : 0.6));
+  }
+
+  dryFire(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.noise(t, 0.03, 'bandpass', 3500, 4, this.sfxBus, this.env(t, 0.25, 0.001, 0.03));
+  }
+
+  /** Magazine out / in / slide. */
+  reloadSound(kind: 'pistol' | 'magnum', duration: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const marks = kind === 'magnum' ? [0.15, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, duration - 0.2] : [0.2, duration * 0.6, duration - 0.15];
+    marks.forEach((m, i) => {
+      const f = kind === 'magnum' && i > 0 && i < marks.length - 1 ? 2600 : 1600 + i * 300;
+      this.noise(t + m, 0.04, 'bandpass', f, 5, this.sfxBus, this.env(t + m, 0.3, 0.002, 0.05));
+    });
+  }
+
+  throwWhoosh(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.noise(t, 0.25, 'bandpass', 1400, 1.5, this.sfxBus, this.env(t, 0.2, 0.05, 0.2));
+  }
+
+  swing(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.noise(t + 0.1, 0.2, 'bandpass', 900, 1.2, this.sfxBus, this.env(t + 0.1, 0.28, 0.06, 0.15));
+  }
+
+  /** Impact on a surface or a body. */
+  impact(onFlesh: boolean, pan = 0, dist = 5): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const p = ctx.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, pan));
+    p.connect(this.sfxBus);
+    const v = Math.min(1, 6 / (dist + 1));
+    if (onFlesh) this.noise(t, 0.12, 'lowpass', 500, 1, p, this.env(t, 0.5 * v, 0.003, 0.12));
+    else this.noise(t, 0.06, 'bandpass', 2400, 2, p, this.env(t, 0.35 * v, 0.002, 0.06));
+  }
+
+  /** Hit marker tick (head = higher). */
+  hitTick(head: boolean, kill: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.tone(t, 'square', head ? 2200 : 1500, head ? 2100 : 1400, 0.04, this.env(t, 0.08, 0.001, 0.04), this.sfxBus);
+    if (kill) this.tone(t + 0.05, 'triangle', 900, 500, 0.18, this.env(t + 0.05, 0.12, 0.005, 0.18), this.sfxBus);
+  }
+
+  /** Positional entity voice: growl, giggle, whisper "help", hum. */
+  entityVoice(kind: 'growl' | 'giggle' | 'help' | 'hum' | 'step', pan: number, dist: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const p = ctx.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, pan));
+    p.connect(this.entityBus);
+    const v = Math.min(1, 10 / (dist + 2));
+    switch (kind) {
+      case 'growl': {
+        const g = this.env(t, 0.35 * v, 0.1, 0.9);
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = 55;
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = 23;
+        const lg = ctx.createGain();
+        lg.gain.value = 18;
+        lfo.connect(lg).connect(o.frequency);
+        const f = ctx.createBiquadFilter();
+        f.type = 'lowpass';
+        f.frequency.value = 400;
+        o.connect(f).connect(g).connect(p);
+        o.start(t);
+        lfo.start(t);
+        o.stop(t + 1.1);
+        lfo.stop(t + 1.1);
+        break;
+      }
+      case 'giggle':
+        for (let i = 0; i < 4; i++) this.tone(t + i * 0.13, 'triangle', 700 - i * 40, 560 - i * 40, 0.09, this.env(t + i * 0.13, 0.12 * v, 0.01, 0.09), p);
+        break;
+      case 'help':
+        // Two formant "syllables": ta-su-ke-te
+        for (let i = 0; i < 4; i++) this.noise(t + i * 0.18, 0.14, 'bandpass', [900, 1400, 1100, 1300][i], 8, p, this.env(t + i * 0.18, 0.28 * v, 0.02, 0.13));
+        break;
+      case 'hum':
+        this.tone(t, 'sine', 70, 66, 1.5, this.env(t, 0.25 * v, 0.4, 1.0), p);
+        break;
+      case 'step':
+        this.noise(t, 0.08, 'lowpass', 300, 1, p, this.env(t, 0.25 * v, 0.004, 0.08));
+        break;
+    }
+  }
+
+  /** Jump-scare sting (0..1 strength). */
+  sting(strength: number): void {
+    const ctx = this.ctx;
+    if (!ctx || strength <= 0) return;
+    const t = ctx.currentTime;
+    for (const f of [311, 330, 466, 622]) this.tone(t, 'sawtooth', f, f * 0.97, 0.9, this.env(t, 0.12 * strength, 0.005, 0.9), this.sfxBus);
+    this.noise(t, 0.6, 'highpass', 1200, 0.5, this.sfxBus, this.env(t, 0.4 * strength, 0.003, 0.6));
+  }
+
+  /** Low thud when the player is hurt. */
+  hurt(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.tone(t, 'sine', 90, 40, 0.3, this.env(t, 0.6, 0.005, 0.3), this.sfxBus);
+  }
+
   /** Low whoosh for level transitions. */
   whoosh(): void {
     const ctx = this.ctx;

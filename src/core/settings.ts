@@ -16,11 +16,16 @@ export type Action =
   | 'jump'
   | 'interact'
   | 'use'
+  | 'attack'
+  | 'aim'
+  | 'reload'
   | 'pause'
   | 'slot1'
   | 'slot2'
   | 'slot3'
   | 'slot4'
+  | 'slot5'
+  | 'slot6'
   | 'prevSlot'
   | 'nextSlot'
   | 'journal';
@@ -33,12 +38,17 @@ export const ACTIONS: Action[] = [
   'jump',
   'sprint',
   'crouch',
+  'attack',
+  'aim',
+  'reload',
   'interact',
   'use',
   'slot1',
   'slot2',
   'slot3',
   'slot4',
+  'slot5',
+  'slot6',
   'prevSlot',
   'nextSlot',
   'journal',
@@ -54,12 +64,17 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   crouch: ['ControlLeft', 'KeyC'],
   jump: ['Space'],
   interact: ['KeyE'],
-  use: ['KeyQ', 'Mouse0'],
+  use: ['KeyQ'],
+  attack: ['Mouse0'],
+  aim: ['Mouse2'],
+  reload: ['KeyR'],
   pause: ['Escape'],
   slot1: ['Digit1'],
   slot2: ['Digit2'],
   slot3: ['Digit3'],
   slot4: ['Digit4'],
+  slot5: ['Digit5'],
+  slot6: ['Digit6'],
   prevSlot: ['WheelUp'],
   nextSlot: ['WheelDown'],
   journal: ['Tab', 'KeyJ'],
@@ -71,10 +86,13 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
  */
 export const DEFAULT_PAD_BINDINGS: Partial<Record<Action, number[]>> = {
   jump: [0],
-  crouch: [1, 11],
+  crouch: [11],
+  reload: [1],
   interact: [2],
-  use: [3, 6],
-  sprint: [7, 10],
+  use: [3],
+  aim: [6],
+  attack: [7],
+  sprint: [10],
   prevSlot: [4],
   nextSlot: [5],
   pause: [9],
@@ -95,6 +113,11 @@ export interface Settings {
   padSensitivity: number;
   padDeadzone: number;
   padInvertY: boolean;
+  adsSensitivity: number;
+  crosshairSize: number;
+  crosshairColor: 'white' | 'green' | 'yellow' | 'cyan' | 'red';
+  crosshairDot: boolean;
+  jumpscare: 'off' | 'mild' | 'full';
   bindings: Record<Action, string[]>;
   padBindings: Partial<Record<Action, number[]>>;
   // Video
@@ -129,7 +152,7 @@ export interface Settings {
 }
 
 type Field =
-  | { key: keyof Settings; type: 'range'; min: number; max: number; step: number; def: number; tab: Tab; label: string; fmt?: (v: number) => string }
+  | { key: keyof Settings; type: 'range'; min: number; max: number; step: number; def: number; tab: Tab; label: string; fmt?: (v: number) => string; note?: string }
   | { key: keyof Settings; type: 'bool'; def: boolean; tab: Tab; label: string; note?: string }
   | { key: keyof Settings; type: 'select'; options: Array<[string | number, string]>; def: string | number; tab: Tab; label: string; note?: string }
   | { key: keyof Settings; type: 'text'; def: string; tab: Tab; label: string; note?: string };
@@ -146,6 +169,10 @@ export const SETTINGS_SCHEMA: Field[] = [
   { key: 'fov', type: 'range', min: 60, max: 110, step: 1, def: 75, tab: 'controls', label: '視野角(FOV)' },
   { key: 'sprintToggle', type: 'bool', def: false, tab: 'controls', label: 'ダッシュをトグルにする', note: 'オフ: 押している間だけ / オン: 押すたびに切り替え' },
   { key: 'crouchToggle', type: 'bool', def: false, tab: 'controls', label: 'しゃがみをトグルにする' },
+  { key: 'adsSensitivity', type: 'range', min: 0.1, max: 3, step: 0.05, def: 1, tab: 'controls', label: 'エイム時の感度倍率', note: '右クリックで覗き込んでいるときの感度(ズーム率に合わせて補正済み)' },
+  { key: 'crosshairSize', type: 'range', min: 0.5, max: 2, step: 0.05, def: 1, tab: 'controls', label: 'レティクルの大きさ', fmt: pct },
+  { key: 'crosshairColor', type: 'select', options: [['white', '白'], ['green', '緑'], ['yellow', '黄'], ['cyan', '水色'], ['red', '赤']], def: 'white', tab: 'controls', label: 'レティクルの色' },
+  { key: 'crosshairDot', type: 'bool', def: true, tab: 'controls', label: 'レティクルの中心点' },
   { key: 'padSensitivity', type: 'range', min: 0.1, max: 10, step: 0.1, def: 2.5, tab: 'controls', label: 'ゲームパッド感度' },
   { key: 'padDeadzone', type: 'range', min: 0, max: 0.5, step: 0.01, def: 0.15, tab: 'controls', label: 'ゲームパッドのデッドゾーン' },
   { key: 'padInvertY', type: 'bool', def: false, tab: 'controls', label: 'ゲームパッドのY軸反転' },
@@ -171,6 +198,7 @@ export const SETTINGS_SCHEMA: Field[] = [
   { key: 'humStrength', type: 'range', min: 0, max: 1, step: 0.05, def: 0.6, tab: 'audio', label: 'ハム音の強さ', fmt: pct },
 
   { key: 'difficulty', type: 'select', options: [['easy', 'やさしい'], ['normal', 'ふつう'], ['hard', 'むずかしい']], def: 'normal', tab: 'game', label: '難易度' },
+  { key: 'jumpscare', type: 'select', options: [['off', 'なし'], ['mild', '控えめ'], ['full', '強い']], def: 'mild', tab: 'game', label: 'ジャンプスケア', note: '捕まったときの驚かせ演出の強さ' },
   { key: 'subtitles', type: 'bool', def: false, tab: 'game', label: '字幕(環境音・声の文字化)' },
   { key: 'showHud', type: 'bool', def: true, tab: 'game', label: 'HUD を表示' },
   { key: 'hudScale', type: 'range', min: 0.7, max: 1.5, step: 0.05, def: 1, tab: 'game', label: 'HUD の大きさ', fmt: pct },
@@ -231,6 +259,8 @@ export function sanitizeSettings(raw: Partial<Settings> | null | undefined): Set
       const b = (r.bindings as Record<string, unknown>)[k];
       if (Array.isArray(b) && b.every((x) => typeof x === 'string')) bindings[k] = (b as string[]).slice(0, 2);
     }
+    // Older versions drank with the left mouse button; it now fires the weapon.
+    if (!('attack' in (r.bindings as object))) bindings.use = bindings.use.filter((c) => c !== 'Mouse0');
   }
   const pad = out.padBindings as Partial<Record<Action, number[]>>;
   if (r.padBindings && typeof r.padBindings === 'object') {

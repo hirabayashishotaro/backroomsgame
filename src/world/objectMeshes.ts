@@ -4,7 +4,8 @@
  * location, and are disposed with the chunk (userData.ownMat).
  */
 import * as THREE from 'three';
-import type { ItemId } from '../items/itemDefs';
+import { ITEMS, type ItemId } from '../items/itemDefs';
+import { buildWeaponModel } from '../weapons/weaponModels';
 import type { Prop } from './chunkData';
 import { getTexture } from '../proc-tex/textures';
 import { patchMaterial } from '../systems/lighting';
@@ -54,8 +55,32 @@ function bottleGeometry(): THREE.BufferGeometry {
 
 /** Build a small world model for an item. `light` is the baked brightness at its spot. */
 export function buildItemMesh(id: ItemId, light: number): THREE.Group {
-  void id; // only almond water exists for now (SPEC §17)
   const b = Math.min(1.3, 0.45 + light * 0.9);
+  const def = ITEMS[id];
+  if (def.kind === 'weapon') {
+    // Lying on its side on the ground.
+    const w = buildWeaponModel(def.weapon!, Math.max(0.5, b));
+    w.rotation.set(0, 0, Math.PI / 2);
+    w.position.y = id === 'axe' ? 0.03 : 0.025;
+    const g = new THREE.Group();
+    g.add(w);
+    if (id === 'kunai')
+      for (let k = 1; k < 4; k++) {
+        const c = buildWeaponModel('kunai', Math.max(0.5, b));
+        c.rotation.set(0, k * 0.3, Math.PI / 2);
+        c.position.set(k * 0.03, 0.025, k * 0.02);
+        g.add(c);
+      }
+    return g;
+  }
+  if (def.kind === 'ammo') {
+    // A small cardboard box with the cartridge colour on the lid.
+    const g = new THREE.Group();
+    const box = part(geo('ammo-box', () => new THREE.BoxGeometry(0.14, 0.07, 0.09)), mat(id === 'ammo_magnum' ? 0x6a3a24 : 0x3a5a3a, b), 0, 0.035, 0);
+    const lid = part(geo('ammo-lid', () => new THREE.BoxGeometry(0.1, 0.002, 0.05)), mat(0xd8b040, b), 0, 0.071, 0);
+    g.add(box, lid);
+    return g;
+  }
   const g = new THREE.Group();
   // Clear plastic body with a faint tint.
   const body = part(
@@ -155,4 +180,21 @@ export function disposeObject(o: THREE.Object3D): void {
     (m.material as THREE.Material).dispose();
   });
   o.removeFromParent();
+}
+
+/** A fallen survey-team member: lying body, backpack, helmet lamp. Origin at the feet. */
+export function buildCorpse(light: number): THREE.Group {
+  const b = Math.min(1.1, 0.35 + light * 0.9);
+  const g = new THREE.Group();
+  const suit = mat(0xb87a28, b); // orange coverall
+  const dark = mat(0x2a2a2e, b);
+  g.add(part(geo('c-torso', () => new THREE.BoxGeometry(0.46, 0.22, 0.7)), suit, 0, 0.11, -0.55));
+  g.add(part(geo('c-leg', () => new THREE.BoxGeometry(0.17, 0.16, 0.85)), suit, -0.12, 0.08, 0.25));
+  g.add(part(geo('c-leg', () => new THREE.BoxGeometry(0.17, 0.16, 0.85)), suit, 0.13, 0.08, 0.22));
+  g.add(part(geo('c-arm', () => new THREE.BoxGeometry(0.14, 0.13, 0.6)), suit, -0.4, 0.07, -0.6));
+  g.add(part(geo('c-head', () => new THREE.SphereGeometry(0.14, 10, 8)), mat(0xd8d0b8, b), 0, 0.14, -1.05));
+  g.add(part(geo('c-helmet', () => new THREE.SphereGeometry(0.16, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2)), mat(0xe8d040, b), 0, 0.16, -1.07));
+  g.add(part(geo('c-pack', () => new THREE.BoxGeometry(0.38, 0.18, 0.45)), dark, 0.05, 0.3, -0.5));
+  g.add(part(geo('c-lamp', () => new THREE.BoxGeometry(0.06, 0.04, 0.04)), new THREE.MeshBasicMaterial({ color: 0xfff0c0 }), 0, 0.24, -1.2));
+  return g;
 }

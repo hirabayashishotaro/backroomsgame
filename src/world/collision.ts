@@ -60,3 +60,56 @@ export function resolveCylinder(
 export function toWorldBox(b: Box, ox: number, oz: number): WBox {
   return { minX: b.minX + ox, maxX: b.maxX + ox, minY: b.minY, maxY: b.maxY, minZ: b.minZ + oz, maxZ: b.maxZ + oz };
 }
+
+export interface RayHit {
+  t: number;
+  nx: number;
+  ny: number;
+  nz: number;
+}
+
+/** Ray vs AABB slab test. Returns the entry distance and face normal, or null. */
+export function rayBox(
+  ox: number,
+  oy: number,
+  oz: number,
+  dx: number,
+  dy: number,
+  dz: number,
+  b: WBox,
+  maxT: number,
+): RayHit | null {
+  let tmin = 0;
+  let tmax = maxT;
+  let nx = 0;
+  let ny = 0;
+  let nz = 0;
+  const axes: Array<[number, number, number, number, 0 | 1 | 2]> = [
+    [ox, dx, b.minX, b.maxX, 0],
+    [oy, dy, b.minY, b.maxY, 1],
+    [oz, dz, b.minZ, b.maxZ, 2],
+  ];
+  for (const [o, d, lo, hi, axis] of axes) {
+    if (Math.abs(d) < 1e-9) {
+      if (o < lo || o > hi) return null;
+      continue;
+    }
+    let t1 = (lo - o) / d;
+    let t2 = (hi - o) / d;
+    let sign = -1;
+    if (t1 > t2) {
+      [t1, t2] = [t2, t1];
+      sign = 1;
+    }
+    if (t1 > tmin) {
+      tmin = t1;
+      nx = axis === 0 ? sign : 0;
+      ny = axis === 1 ? sign : 0;
+      nz = axis === 2 ? sign : 0;
+    }
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+  if (nx === 0 && ny === 0 && nz === 0) return null; // origin inside the box
+  return { t: tmin, nx, ny, nz };
+}

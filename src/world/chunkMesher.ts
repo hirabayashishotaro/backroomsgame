@@ -7,27 +7,35 @@ import * as THREE from 'three';
 import type { Box, ChunkData } from './chunkData';
 import type { GenContext, LightSampler } from '../levels/levelDefinition';
 import { getTexture } from '../proc-tex/textures';
+import { patchMaterial } from '../systems/lighting';
 
 export class LevelMaterials {
   readonly byKey = new Map<string, { mat: THREE.Material; metres: number }>();
   readonly lightOn: THREE.MeshBasicMaterial;
   readonly lightFlicker: THREE.MeshBasicMaterial;
   readonly lightOff: THREE.MeshBasicMaterial;
+  readonly lightWarm: THREE.MeshBasicMaterial;
 
   constructor(private ctx: GenContext) {
     const p = ctx.level.palette;
-    const mk = (texKey: string) => {
+    const mk = (texKey: string, transparent = false) => {
       const t = getTexture(texKey);
-      return { mat: new THREE.MeshBasicMaterial({ map: t.texture, vertexColors: true }), metres: t.metres };
+      const mat = patchMaterial(
+        new THREE.MeshBasicMaterial({ map: t.texture, vertexColors: true, transparent, depthWrite: !transparent }),
+      );
+      return { mat, metres: t.metres };
     };
     this.byKey.set('wall', mk(p.wallTex));
     this.byKey.set('pillar', mk(p.wallTex));
     this.byKey.set('floor', mk(p.floorTex));
     this.byKey.set('ceiling', mk(p.ceilingTex));
     this.byKey.set('outlet', mk('outlet'));
+    this.byKey.set('wall-manila', mk('wallpaper-manila'));
+    this.byKey.set('chalk-graffiti', mk('chalk-graffiti', true));
     this.lightOn = new THREE.MeshBasicMaterial({ color: p.lightColor });
     this.lightFlicker = new THREE.MeshBasicMaterial({ color: p.lightColor });
     this.lightOff = new THREE.MeshBasicMaterial({ color: 0x5a5648 });
+    this.lightWarm = new THREE.MeshBasicMaterial({ color: 0xffa860 });
   }
 
   get(key: string) {
@@ -39,6 +47,7 @@ export class LevelMaterials {
     this.lightOn.dispose();
     this.lightFlicker.dispose();
     this.lightOff.dispose();
+    this.lightWarm.dispose();
     // Textures are cached globally and reused across levels; not disposed here.
   }
 
@@ -167,11 +176,19 @@ export function buildChunkMesh(data: ChunkData, mats: LevelMaterials, sampler: L
     const offz = fmod(oz, m);
     gbFor('floor').quad([0, 0, 0], [0, 0, S], [S, 0, 0], [0, 1, 0], S, S, (x, _y, z) => [(x + offx) / m, (z + offz) / m]);
   }
-  if (data.ceiling) {
+  {
     const m = mats.get('ceiling').metres;
     const offx = fmod(ox, m);
     const offz = fmod(oz, m);
-    gbFor('ceiling').quad([0, H, 0], [S, 0, 0], [0, 0, S], [0, -1, 0], S, S, (x, _y, z) => [(x + offx) / m, (z + offz) / m]);
+    for (const c of data.ceilings) {
+      const w = c.x1 - c.x0;
+      const d = c.z1 - c.z0;
+      if (w <= 0 || d <= 0) continue;
+      gbFor('ceiling').quad([c.x0, c.y, c.z0], [w, 0, 0], [0, 0, d], [0, -1, 0], segs(w), segs(d), (x, _y, z) => [
+        (x + offx) / m,
+        (z + offz) / m,
+      ]);
+    }
   }
   for (const b of data.solids) {
     const m = mats.get(b.mat).metres;
@@ -187,7 +204,7 @@ export function buildChunkMesh(data: ChunkData, mats: LevelMaterials, sampler: L
   }
 
   // Light panels: emissive quads, grouped by state.
-  const panelGeo: Record<number, number[]> = { 0: [], 1: [], 2: [] };
+  const panelGeo: Record<number, number[]> = { 0: [], 1: [], 2: [], 3: [] };
   for (const l of data.lights) {
     const arr = panelGeo[l.state];
     const x0 = l.x - l.w / 2;
@@ -196,8 +213,8 @@ export function buildChunkMesh(data: ChunkData, mats: LevelMaterials, sampler: L
     const z1 = l.z + l.d / 2;
     arr.push(x0, l.y, z0, x1, l.y, z0, x1, l.y, z1, x0, l.y, z0, x1, l.y, z1, x0, l.y, z1);
   }
-  const panelMats = [mats.lightOff, mats.lightOn, mats.lightFlicker];
-  for (const s of [0, 1, 2]) {
+  const panelMats = [mats.lightOff, mats.lightOn, mats.lightFlicker, mats.lightWarm];
+  for (const s of [0, 1, 2, 3]) {
     if (!panelGeo[s].length) continue;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(panelGeo[s], 3));
@@ -231,7 +248,10 @@ function primeUpload(group: THREE.Group): void {
 
 export function disposeChunkMesh(group: THREE.Group): void {
   group.traverse((o) => {
-    if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose();
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    if (!m.userData.sharedGeo) m.geometry.dispose();
+    if (m.userData.ownMat) (m.material as THREE.Material).dispose();
   });
   group.removeFromParent();
 }

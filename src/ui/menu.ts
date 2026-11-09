@@ -90,7 +90,7 @@ export class Menu {
     this.body.appendChild(row);
   }
 
-  private toggle(label: string, key: 'invertY' | 'fullscreen'): void {
+  private toggle(label: string, key: 'invertY' | 'fullscreen' | 'showHud'): void {
     const row = document.createElement('label');
     row.className = 'br-row';
     const name = document.createElement('span');
@@ -107,7 +107,30 @@ export class Menu {
     this.body.appendChild(row);
   }
 
+  private select(label: string, key: 'difficulty', options: string[]): void {
+    const row = document.createElement('label');
+    row.className = 'br-row';
+    const name = document.createElement('span');
+    name.textContent = label;
+    const sel = document.createElement('select');
+    sel.style.cssText = 'background:#1d1a0c;color:#e9dfae;border:1px solid #5d5225;padding:3px;';
+    for (const o of options) {
+      const opt = document.createElement('option');
+      opt.value = o;
+      opt.textContent = t(key + '.' + o);
+      sel.appendChild(opt);
+    }
+    sel.value = this.settings[key];
+    sel.onchange = () => {
+      (this.settings as unknown as Record<string, string>)[key] = sel.value;
+      this.cb.onChange(this.settings);
+    };
+    row.append(name, sel, document.createElement('span'));
+    this.body.appendChild(row);
+  }
+
   private buildRows(): void {
+    this.select(t('settings.difficulty'), 'difficulty', ['easy', 'normal', 'hard']);
     this.slider(t('settings.sensX'), 'sensitivityX', 0.1, 10, 0.1);
     this.slider(t('settings.sensY'), 'sensitivityY', 0.1, 10, 0.1);
     this.toggle(t('settings.invertY'), 'invertY');
@@ -117,6 +140,7 @@ export class Menu {
     this.slider(t('settings.hum'), 'humStrength', 0, 1, 0.05);
     this.slider(t('settings.headBob'), 'headBob', 0, 1, 0.05);
     this.toggle(t('settings.fullscreen'), 'fullscreen');
+    this.toggle(t('settings.showHud'), 'showHud');
   }
 
   show(paused: boolean): void {

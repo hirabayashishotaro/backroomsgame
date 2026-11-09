@@ -7,6 +7,7 @@ export class Input {
   private pressedThisFrame = new Set<string>();
   mouseDX = 0;
   mouseDY = 0;
+  wheel = 0;
   locked = false;
   private spikeFilter = new MouseSpikeFilter();
 
@@ -31,6 +32,13 @@ export class Input {
       this.mouseDX += m.dx;
       this.mouseDY += m.dy;
     });
+    window.addEventListener(
+      'wheel',
+      (e) => {
+        if (this.locked) this.wheel += Math.sign(e.deltaY);
+      },
+      { passive: true },
+    );
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.target;
       if (this.locked) this.spikeFilter.reset();
@@ -62,5 +70,6 @@ export class Input {
     this.pressedThisFrame.clear();
     this.mouseDX = 0;
     this.mouseDY = 0;
+    this.wheel = 0;
   }
 }

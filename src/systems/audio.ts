@@ -112,6 +112,109 @@ export class AudioSystem {
     this.noiseFilter.frequency.value = a.noiseCutoff;
   }
 
+  /** Short tonal blip (UI / pickup). */
+  blip(freq = 880, dur = 0.08, gain = 0.12): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.value = freq;
+    const g = ctx.createGain();
+    const t = ctx.currentTime;
+    g.gain.setValueAtTime(gain, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g).connect(this.sfxBus);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+
+  pickup(): void {
+    this.blip(660, 0.06, 0.08);
+    setTimeout(() => this.blip(990, 0.08, 0.06), 60);
+  }
+
+  click(): void {
+    this.noiseBurst(2500, 0.03, 0.15, 'highpass');
+  }
+
+  /** Chalk scratching on a wall. */
+  noiseScratch(): void {
+    for (let i = 0; i < 4; i++) setTimeout(() => this.noiseBurst(3200 + i * 300, 0.07, 0.06, 'bandpass'), i * 70);
+  }
+
+  /** A few low gulps. */
+  drink(): void {
+    for (let i = 0; i < 3; i++) setTimeout(() => this.noiseBurst(300 + i * 40, 0.12, 0.25, 'lowpass'), i * 260);
+  }
+
+  private noiseBurst(freq: number, dur: number, gain: number, type: BiquadFilterType, pan = 0): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const f = ctx.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    const g = ctx.createGain();
+    const p = ctx.createStereoPanner();
+    p.pan.value = pan;
+    const t = ctx.currentTime;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(gain, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(f).connect(g).connect(p).connect(this.sfxBus);
+    src.start(t, (t * 0.37) % 1.5, dur + 0.05);
+  }
+
+  /** Hallucinated whisper: breathy formant noise with syllable-like modulation. */
+  whisper(pan: number, gain = 0.06): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const dur = 1.2 + (t % 1);
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    src.loop = true;
+    const out = ctx.createGain();
+    out.gain.value = 0;
+    const p = ctx.createStereoPanner();
+    p.pan.value = pan;
+    for (const [f, q] of [[700, 6], [1200, 8], [2600, 10]]) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = f;
+      bp.Q.value = q;
+      src.connect(bp).connect(out);
+    }
+    // Syllables
+    const syll = 5 + Math.floor((t * 7) % 4);
+    for (let i = 0; i < syll; i++) {
+      const st = t + (i / syll) * dur;
+      out.gain.setValueAtTime(0, st);
+      out.gain.linearRampToValueAtTime(gain, st + 0.04);
+      out.gain.linearRampToValueAtTime(0, st + (dur / syll) * 0.8);
+    }
+    out.connect(p).connect(this.sfxBus);
+    src.start(t);
+    src.stop(t + dur + 0.1);
+  }
+
+  /** Distant footsteps that are not yours. */
+  distantSteps(pan: number, count = 5): void {
+    for (let i = 0; i < count; i++) setTimeout(() => this.noiseBurst(260, 0.12, 0.07 * (1 - i * 0.1), 'lowpass', pan), i * 520);
+  }
+
+  /** Brief dip of the hum (used as an omen / hallucination). */
+  humDip(seconds = 1.5): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.ambience) return;
+    const t = ctx.currentTime;
+    const g = this.humGain.gain;
+    g.cancelScheduledValues(t);
+    g.setTargetAtTime(0.0, t, 0.05);
+    g.setTargetAtTime(this.ambience.humGain * this.humStrength, t + seconds, 0.3);
+  }
+
   /** Soft carpet footstep. */
   footstep(intensity = 1): void {
     const ctx = this.ctx;

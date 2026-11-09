@@ -1,4 +1,5 @@
 import { getStore } from './storage';
+import type { Difficulty } from '../player/stats';
 
 export type Action =
   | 'forward'
@@ -12,7 +13,15 @@ export type Action =
   | 'use'
   | 'drop'
   | 'inventory'
-  | 'pause';
+  | 'pause'
+  | 'slot1'
+  | 'slot2'
+  | 'slot3'
+  | 'slot4'
+  | 'slot5'
+  | 'slot6'
+  | 'slot7'
+  | 'slot8';
 
 export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   forward: ['KeyW'],
@@ -27,6 +36,14 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   drop: ['KeyG'],
   inventory: ['Tab'],
   pause: ['Escape'],
+  slot1: ['Digit1'],
+  slot2: ['Digit2'],
+  slot3: ['Digit3'],
+  slot4: ['Digit4'],
+  slot5: ['Digit5'],
+  slot6: ['Digit6'],
+  slot7: ['Digit7'],
+  slot8: ['Digit8'],
 };
 
 export interface Settings {
@@ -42,6 +59,8 @@ export interface Settings {
   headBob: number; // 0 - 1
   fullscreen: boolean;
   worldSeed: string; // empty = random
+  difficulty: Difficulty;
+  showHud: boolean;
   bindings: Record<Action, string[]>;
 }
 
@@ -58,6 +77,8 @@ export const DEFAULT_SETTINGS: Settings = {
   headBob: 0.6,
   fullscreen: false,
   worldSeed: '',
+  difficulty: 'normal',
+  showHud: true,
   bindings: DEFAULT_BINDINGS,
 };
 
@@ -92,6 +113,8 @@ export function sanitizeSettings(raw: Partial<Settings> | null | undefined): Set
     headBob: clamp(r.headBob, 0, 1, d.headBob),
     fullscreen: typeof r.fullscreen === 'boolean' ? r.fullscreen : d.fullscreen,
     worldSeed: typeof r.worldSeed === 'string' ? r.worldSeed : d.worldSeed,
+    difficulty: r.difficulty === 'easy' || r.difficulty === 'hard' || r.difficulty === 'normal' ? r.difficulty : d.difficulty,
+    showHud: typeof r.showHud === 'boolean' ? r.showHud : d.showHud,
     bindings,
   };
 }

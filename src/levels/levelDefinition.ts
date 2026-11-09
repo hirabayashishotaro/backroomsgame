@@ -3,6 +3,7 @@
  * Fields not used yet by the engine are optional and filled in by later phases.
  */
 import type { ChunkData } from '../world/chunkData';
+import type { LootTable } from '../items/lootTables';
 
 export interface Palette {
   /** Procedural texture keys (see src/proc-tex). */
@@ -43,6 +44,8 @@ export type LightSamplerFactory = (ctx: GenContext, cx: number, cz: number) => L
 export interface SetPieceDef {
   id: string;
   name: string;
+  /** Short description for the journal (self-written). */
+  desc: string;
 }
 
 export interface LevelDefinition {
@@ -56,6 +59,13 @@ export interface LevelDefinition {
   generator: ChunkGenerator;
   lightSampler: LightSamplerFactory;
   setPieces: SetPieceDef[];
+  lootTable: LootTable;
+  /** Per-level stat modifiers (SPEC §4.1 statModifiers). */
+  statModifiers: { hydrationMul: number; sanityDrain: number; staminaRegenMul: number };
+  /** Hallucination frequency multiplier (Level 0 is high, SPEC §9.3). */
+  hallucination: number;
+  /** Footstep surface. */
+  footstep: 'carpet' | 'concrete' | 'tile' | 'water' | 'metal';
   ambience: AmbienceDef;
   environment: 'enclosed' | 'open-sky';
   /** Spawn point in world coordinates. */

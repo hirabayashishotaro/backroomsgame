@@ -10,6 +10,7 @@ export class AudioSystem {
   private master!: GainNode;
   private ambienceBus!: GainNode;
   private sfxBus!: GainNode;
+  private entityBus!: GainNode;
   private humGain!: GainNode;
   private noiseGain!: GainNode;
   private noiseFilter!: BiquadFilterNode;
@@ -32,6 +33,8 @@ export class AudioSystem {
     this.ambienceBus.connect(this.master);
     this.sfxBus = ctx.createGain();
     this.sfxBus.connect(this.master);
+    this.entityBus = ctx.createGain();
+    this.entityBus.connect(this.master);
 
     // Noise buffer (seeded LCG; audio is not world generation but keep it deterministic).
     const len = ctx.sampleRate * 2;
@@ -75,6 +78,7 @@ export class AudioSystem {
     this.master.gain.value = s.masterVolume;
     this.ambienceBus.gain.value = s.ambienceVolume;
     this.sfxBus.gain.value = s.sfxVolume;
+    this.entityBus.gain.value = s.entityVolume;
     this.humStrength = s.humStrength;
     if (this.ambience) this.setAmbience(this.ambience);
   }
@@ -237,7 +241,7 @@ export class AudioSystem {
       out.gain.linearRampToValueAtTime(gain, st + 0.04);
       out.gain.linearRampToValueAtTime(0, st + (dur / syll) * 0.8);
     }
-    out.connect(p).connect(this.sfxBus);
+    out.connect(p).connect(this.entityBus);
     src.start(t);
     src.stop(t + dur + 0.1);
   }

@@ -4,6 +4,17 @@ import * as path from 'node:path';
 
 const userData = () => app.getPath('userData');
 
+// V-Sync (SPEC §10.2): read before the app is ready; takes effect after a restart.
+try {
+  const st = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
+  if (st && st.vsync === false) {
+    app.commandLine.appendSwitch('disable-gpu-vsync');
+    app.commandLine.appendSwitch('disable-frame-rate-limit');
+  }
+} catch {
+  /* no settings yet */
+}
+
 function fileFor(key: string): string {
   // settings -> settings.json, save:1 -> saves/save_1.json
   const safe = key.replace(/[^a-zA-Z0-9_-]/g, '_');

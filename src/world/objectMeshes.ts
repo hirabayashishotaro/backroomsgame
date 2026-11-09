@@ -18,7 +18,7 @@ function geo(key: string, make: () => THREE.BufferGeometry): THREE.BufferGeometr
 
 function mat(color: number | THREE.Color, brightness: number, map?: THREE.Texture, opts: Partial<THREE.MeshBasicMaterialParameters> = {}) {
   const c = new THREE.Color(color).multiplyScalar(brightness);
-  return patchMaterial(new THREE.MeshBasicMaterial({ color: c, map, ...opts }));
+  return patchMaterial(new THREE.MeshBasicMaterial({ color: c, ...(map ? { map } : {}), ...opts }));
 }
 
 function part(g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh {

@@ -22,7 +22,10 @@ import { Hallucinations } from './systems/hallucination';
 import { SkyDome } from './systems/sky';
 import { DebugOverlay } from './ui/debugOverlay';
 import { Hud } from './ui/hud';
-import { Menu } from './ui/menu';
+import { Screens } from './ui/screens';
+import { SettingsScreen } from './ui/settingsScreen';
+import { PostFX } from './systems/postfx';
+import { readSlot, writeSlot, SAVE_VERSION, type SaveData } from './core/save';
 import { LevelSelect } from './ui/levelSelect';
 import { t } from './ui/i18n';
 
@@ -124,7 +127,19 @@ export class Game {
   level!: LevelDefinition;
   private ctx!: GenContext;
   private mats!: LevelMaterials;
-  private menu: Menu;
+  private screens: Screens;
+  private settingsScreen: SettingsScreen;
+  private levelSelect: LevelSelect;
+  private post = new PostFX();
+  /** Save slot of the current run (null = not saving, e.g. developer jump from the title). */
+  private slot: number | null = null;
+  private playTime = 0;
+  private autosaveTimer = 0;
+  private paused = false;
+  private sprintLatched = false;
+  private crouchLatched = false;
+  private lastFrameAt = 0;
+  private launchLevel: string;
   private hud: Hud;
   private halluc: Hallucinations;
   private sky = new SkyDome();
@@ -170,31 +185,148 @@ export class Game {
     this.hud = new Hud(container, this.inventory);
     this.hud.setVisible(this.settings.showHud);
     this.halluc = new Hallucinations(this.fxRoot, this.audio);
+    this.halluc.onSound = (k) => {
+      if (this.settings.subtitles) this.hud.subtitle(t('sub.' + k));
+    };
     if (opts.debug) {
       this.debug = new DebugOverlay(container);
       (window as unknown as { __game: Game }).__game = this; // debug/test hook
     }
 
-    const levelSelect = new LevelSelect(container, (id) => this.devJump(id));
-    this.menu = new Menu(container, this.settings, {
+    this.levelSelect = new LevelSelect(container, (id) => this.devJump(id));
+    this.settingsScreen = new SettingsScreen(container, this.settings, this.input, (st) => this.applySettings(st));
+    this.screens = new Screens(container, {
+      onNewGame: (slot) => this.newGame(slot),
+      onLoad: (slot) => this.loadGame(slot),
       onResume: () => this.resume(),
-      onLevelSelect: () => levelSelect.show(),
-      onChange: (s) => this.applySettings(s),
-      onFullscreen: (on) => this.setFullscreen(on),
+      onToTitle: () => this.toTitle(),
+      onSettings: () => this.settingsScreen.show(() => this.screens.refresh()),
+      onLevelSelect: () => this.levelSelect.show(),
+      onQuit: () => {
+        this.saveNow();
+        getNative()?.quit?.();
+      },
     });
-    this.menu.show(false);
 
     document.addEventListener('pointerlockchange', () => {
       if (document.pointerLockElement === this.renderer.domElement) return;
-      if (this.deadTimer > 0) return;
-      this.menu.show(this.started);
+      if (this.deadTimer > 0 || !this.started || this.paused) return;
+      this.pause();
     });
     window.addEventListener('resize', () => this.onResize());
+    window.addEventListener('beforeunload', () => this.saveNow());
 
-    // Start with one bottle.
-    this.inventory.add('almond_water');
+    // The title screen shows Level 0 in the background.
+    this.launchLevel = opts.levelId;
     this.enterLevel(opts.levelId);
+    this.applySettings(this.settings, false);
+    this.screens.show('title');
+    this.paused = true;
     this.renderer.setAnimationLoop(() => this.frame());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Runs, saving and loading (SPEC §10.5)
+  // ---------------------------------------------------------------------------
+
+  /** Reset everything that belongs to a run. */
+  private resetRun(seed: number): void {
+    this.worldSeed = seed;
+    this.rng = new Rng(seed ^ 0x5eed);
+    this.inventory.load({ slots: [], selected: 0 });
+    this.inventory.add('almond_water');
+    this.stats.load({ health: 100, stamina: 100 });
+    this.deltas.load({});
+    for (const a of Object.values(this.anchors).flat()) if (a.mesh) disposeObject(a.mesh);
+    this.anchors = {};
+    this.history.length = 0;
+    this.playTime = 0;
+    this.autosaveTimer = 0;
+  }
+
+  private newGame(slot: number): void {
+    const seedStr = this.settings.worldSeed.trim();
+    this.resetRun(seedStr ? parseWorldSeed(seedStr) : hashString(String(Date.now())));
+    this.slot = slot;
+    this.enterLevel(this.launchLevel);
+    this.titleShown = false;
+    this.start();
+    this.saveNow();
+  }
+
+  private loadGame(slot: number): void {
+    const d = readSlot(slot);
+    if (!d) return;
+    this.resetRun(d.worldSeed);
+    this.slot = slot;
+    this.inventory.load(d.inventory);
+    this.stats.load(d.stats);
+    this.deltas.load(d.deltas);
+    this.playTime = d.playTime;
+    this.history.push(...d.history);
+    for (const [lid, list] of Object.entries(d.anchors)) this.anchors[lid] = list.map((a) => ({ ...a, back: { ...a.back } }));
+    this.enterLevel(d.levelId, d.player);
+    this.player.pitch = d.player.pitch;
+    this.entryPoint = { ...d.entry };
+    this.titleShown = false;
+    this.start();
+  }
+
+  /** Snapshot of the current run. */
+  snapshot(): SaveData {
+    const anchors: SaveData['anchors'] = {};
+    for (const [lid, list] of Object.entries(this.anchors))
+      anchors[lid] = list.map((a) => ({ x: a.x, y: a.y, z: a.z, rotY: a.rotY, back: { ...a.back } }));
+    return {
+      version: SAVE_VERSION,
+      savedAt: Date.now(),
+      playTime: Math.round(this.playTime),
+      worldSeed: this.worldSeed,
+      levelId: this.level.id,
+      levelTitle: this.level.title,
+      levelName: this.level.subtitle ?? this.level.name,
+      player: { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw, pitch: this.player.pitch },
+      entry: { ...this.entryPoint },
+      stats: this.stats.toJSON(),
+      inventory: this.inventory.toJSON(),
+      deltas: this.deltas.toJSON(),
+      anchors,
+      history: this.history.slice(-50),
+    };
+  }
+
+  /** Write the current run to its slot (autosave). */
+  saveNow(showMessage = false): void {
+    if (this.slot === null || !this.started || this.deadTimer > 0 || this.transition) return;
+    writeSlot(this.slot, this.snapshot());
+    this.autosaveTimer = 0;
+    if (showMessage) this.hud.message(t('menu.saved'), 1.5);
+    this.screens.refresh();
+  }
+
+  private start(): void {
+    this.started = true;
+    this.paused = false;
+    this.screens.hide();
+    this.audio.start();
+    this.audio.applySettings(this.settings);
+    this.audio.setAmbience(this.level.ambience);
+    this.input.requestLock();
+    if (!this.titleShown) this.showLevelTitle();
+  }
+
+  private pause(): void {
+    this.paused = true;
+    if (document.pointerLockElement) document.exitPointerLock();
+    this.saveNow();
+    this.screens.show('pause');
+  }
+
+  private toTitle(): void {
+    this.saveNow();
+    this.started = false;
+    this.paused = true;
+    this.screens.show('title');
   }
 
   // ---------------------------------------------------------------------------
@@ -202,22 +334,17 @@ export class Game {
   // ---------------------------------------------------------------------------
 
   private resume(): void {
-    this.started = true;
-    this.audio.start();
-    this.audio.applySettings(this.settings);
-    this.audio.setAmbience(this.level.ambience);
-    this.menu.hide();
-    this.input.requestLock();
-    if (!this.titleShown) this.showLevelTitle();
+    this.start();
   }
 
   /** Developer level select: start (or jump) directly into a level. */
   private devJump(id: string): void {
+    if (!this.started && this.slot === null) this.resetRun(this.worldSeed);
     this.enterLevel(id, resolveLevel(id).arrival(makeGenContext(this.worldSeed, resolveLevel(id)), 1));
     this.player.yaw = this.pickOpenYaw(this.player.yaw);
     this.entryPoint = { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw };
     this.titleShown = false;
-    this.resume();
+    this.start();
   }
 
   private showLevelTitle(): void {
@@ -232,13 +359,22 @@ export class Game {
     else if (document.fullscreenElement) void document.exitFullscreen();
   }
 
-  private applySettings(s: Settings): void {
-    saveSettings(s);
+  private appliedDisplay = '';
+  private applySettings(s: Settings, persist = true): void {
+    if (persist) saveSettings(s);
     this.camera.fov = s.fov;
     this.camera.updateProjectionMatrix();
     if (this.chunks && this.chunks.radius !== s.renderDistance) this.chunks.radius = s.renderDistance;
     this.audio.applySettings(s);
     this.hud.setVisible(s.showHud);
+    this.hud.setScale(s.hudScale);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5) * s.resolutionScale);
+    this.post.configure({ ...s, multisample: s.quality !== 'low' });
+    if (s.displayMode !== this.appliedDisplay) {
+      // Leaving fullscreen is always allowed; entering needs a user gesture (settings change or start).
+      if (this.appliedDisplay || s.displayMode !== 'window') this.setFullscreen(s.displayMode !== 'window');
+      this.appliedDisplay = s.displayMode;
+    }
   }
 
   private onResize(): void {
@@ -552,6 +688,8 @@ export class Game {
     this.hud.fadeTo(0, 0.7, tr.color);
     this.showLevelTitle();
     if (tr.back) setTimeout(() => this.hud.message(t('msg.returnHere'), 4), 4500);
+    // Always autosave on level transitions (SPEC §10.5).
+    this.saveNow();
   }
 
   /** Place a return anchor behind the arrival point, against a wall if one is close. */
@@ -578,6 +716,10 @@ export class Game {
     this.startTransition({ levelId: a.back.levelId, at: { ...a.back }, color: '#000' });
   }
 
+  private doorSubtitle(): void {
+    if (this.settings.subtitles) this.hud.subtitle(t('sub.door'), 2);
+  }
+
   private openProp(p: WorldProp): void {
     const rule = this.findExit('door', (r) => r.prop === p.kind);
     if (!rule) {
@@ -586,6 +728,7 @@ export class Game {
       return;
     }
     this.audio.door();
+    this.doorSubtitle();
     // Come back out standing in front of the door, facing away from it.
     const fx = Math.sin(p.rotY);
     const fz = Math.cos(p.rotY);
@@ -723,13 +866,20 @@ export class Game {
   // Frame
   // ---------------------------------------------------------------------------
 
-  private handleActions(): void {
+  private handleActions(active: boolean): void {
     const inp = this.input;
-    if (!this.input.locked || this.transition) return;
+    if (inp.wasPressed('pause') && this.input.padConnected && !this.input.locked) {
+      // Gamepad Start: toggle pause without a mouse.
+      if (this.paused && this.started && !this.settingsScreen.visible) this.start();
+      else if (!this.paused && this.started) this.pause();
+      return;
+    }
+    if (!active) return;
     SLOT_ACTIONS.forEach((a, i) => {
       if (inp.wasPressed(a)) this.inventory.select(i);
     });
-    if (inp.wheel) this.inventory.select(this.inventory.selected + inp.wheel);
+    if (inp.wasPressed('prevSlot')) this.inventory.select(this.inventory.selected - 1);
+    if (inp.wasPressed('nextSlot')) this.inventory.select(this.inventory.selected + 1);
     if (inp.wasPressed('interact') && this.target) {
       const tg = this.target;
       if (tg.type === 'item') this.pickUp(tg.item);
@@ -741,12 +891,24 @@ export class Game {
 
   private frame(): void {
     const now = performance.now();
+    const s = this.settings;
+    // Frame-rate cap (SPEC §10.2): skip display refreshes until the budget is used up.
+    if (s.fpsLimit > 0 && now - this.lastFrameAt < 1000 / s.fpsLimit - 1) return;
+    this.lastFrameAt = now;
     const realDt = Math.min(0.5, (now - this.last) / 1000);
     const dt = Math.min(0.05, realDt);
     this.last = now;
     this.time += dt;
-    const s = this.settings;
-    const active = this.input.locked && this.deadTimer <= 0 && !this.transition;
+    this.input.pollGamepad();
+    const overlay = this.paused || this.settingsScreen.visible;
+    const active =
+      this.started && !overlay && (this.input.locked || this.input.padConnected) && this.deadTimer <= 0 && !this.transition;
+
+    if (this.started && !overlay) {
+      this.playTime += realDt;
+      this.autosaveTimer += realDt;
+      if (s.autosaveMinutes > 0 && this.autosaveTimer > s.autosaveMinutes * 60) this.saveNow(true);
+    }
 
     if (this.deadTimer > 0) {
       this.deadTimer -= realDt;
@@ -754,7 +916,7 @@ export class Game {
     }
     if (this.transition && this.hud.fadeDone) this.finishTransition();
 
-    this.handleActions();
+    this.handleActions(active);
 
     let running = false;
     let moving = false;
@@ -762,16 +924,27 @@ export class Game {
     if (active) {
       const k = 0.0022;
       const inv = s.invertY ? -1 : 1;
-      this.player.look(this.input.mouseDX * k * s.sensitivityX, this.input.mouseDY * k * s.sensitivityY * inv);
-      forward = (this.input.isDown('forward') ? 1 : 0) - (this.input.isDown('back') ? 1 : 0);
-      const r = (this.input.isDown('right') ? 1 : 0) - (this.input.isDown('left') ? 1 : 0);
-      moving = forward !== 0 || r !== 0;
-      running = this.input.isDown('sprint') && this.stats.canRun && forward > 0;
-      this.player.step(
-        dt,
-        { forward, strafe: r, sprint: running, crouch: this.input.isDown('crouch'), jump: this.input.wasPressed('jump') },
-        this.world,
+      const pinv = s.padInvertY ? -1 : 1;
+      const pk = s.padSensitivity * 1.1 * dt;
+      this.player.look(
+        this.input.mouseDX * k * s.sensitivityX + this.input.padLook.x * pk,
+        this.input.mouseDY * k * s.sensitivityY * inv + this.input.padLook.y * pk * pinv,
       );
+      forward = (this.input.isDown('forward') ? 1 : 0) - (this.input.isDown('back') ? 1 : 0) - this.input.padMove.y;
+      let r = (this.input.isDown('right') ? 1 : 0) - (this.input.isDown('left') ? 1 : 0) + this.input.padMove.x;
+      forward = Math.max(-1, Math.min(1, forward));
+      r = Math.max(-1, Math.min(1, r));
+      moving = Math.abs(forward) > 0.05 || Math.abs(r) > 0.05;
+      // Hold or toggle (SPEC §10.1)
+      if (s.sprintToggle) {
+        if (this.input.wasPressed('sprint')) this.sprintLatched = !this.sprintLatched;
+        if (forward <= 0) this.sprintLatched = false;
+      }
+      if (s.crouchToggle && this.input.wasPressed('crouch')) this.crouchLatched = !this.crouchLatched;
+      const sprintHeld = s.sprintToggle ? this.sprintLatched : this.input.isDown('sprint');
+      const crouch = s.crouchToggle ? this.crouchLatched : this.input.isDown('crouch');
+      running = sprintHeld && this.stats.canRun && forward > 0;
+      this.player.step(dt, { forward, strafe: r, sprint: running, crouch, jump: this.input.wasPressed('jump') }, this.world);
       // Hard landings hurt.
       if (this.player.landingSpeed < -11) {
         this.stats.damage((-this.player.landingSpeed - 11) * 6);
@@ -828,18 +1001,20 @@ export class Game {
     }
 
     // Flickering tubes: bounded rate and depth (photosensitivity, SPEC §9.3).
-    const slot = Math.floor(this.time * 7);
+    // "Reduce flicker" lowers both the rate and the depth.
+    const slot = Math.floor(this.time * (s.reduceFlicker ? 2.5 : 7));
     const fl = (Math.sin(slot * 12.9898) * 43758.5453) % 1;
-    this.mats.lightFlicker.color.setHex(this.level.palette.lightColor).multiplyScalar(Math.abs(fl) > 0.3 ? 1 : 0.4);
+    this.mats.lightFlicker.color.setHex(this.level.palette.lightColor).multiplyScalar(Math.abs(fl) > 0.3 ? 1 : s.reduceFlicker ? 0.8 : 0.4);
 
     // Noclippable walls and floors breathe slowly so attentive players can spot them.
-    const pulse = 1 + Math.sin(this.time * 2.1) * 0.07;
+    const pulse = 1 + Math.sin(this.time * 2.1) * (s.reduceFlicker ? 0.04 : 0.07);
     this.mats.thinMats.forEach((m, i) => m.color.copy(this.mats.thinBase[i]).multiplyScalar(pulse));
     // A floor patch that is giving way sinks under the player.
     const sink = Math.min(0.5, this.sinkTime * 0.45);
 
     // Camera: low health sways the view; pushing a thin wall warps it.
-    const sway = this.stats.health < 20 ? (20 - this.stats.health) * 0.0015 : 0;
+    const shakeK = s.reduceShake ? 0.25 : 1;
+    const sway = (this.stats.health < 20 ? (20 - this.stats.health) * 0.0015 : 0) * shakeK;
     const warp = Math.min(1, this.pushTime / 2.5);
     const bob = Math.sin(this.player.bobPhase) * 0.035 * s.headBob;
     this.camera.position.set(
@@ -850,9 +1025,9 @@ export class Game {
     this.camera.rotation.set(
       this.player.pitch + Math.sin(this.time * 1.3) * sway,
       this.player.yaw + Math.sin(this.time * 0.9) * sway,
-      Math.sin(this.time * 0.7) * sway + Math.sin(this.time * 9) * warp * 0.03,
+      Math.sin(this.time * 0.7) * sway + Math.sin(this.time * 9) * warp * 0.03 * shakeK,
     );
-    const fov = s.fov + warp * 18;
+    const fov = s.fov + warp * 18 * shakeK;
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
@@ -876,7 +1051,7 @@ export class Game {
 
     this.hud.update(realDt, this.stats);
     if (this.level.sky) this.sky.update(this.camera, this.time);
-    this.renderer.render(this.scene, this.camera);
+    this.post.render(this.renderer, this.scene, this.camera, this.time);
 
     if (this.debug) {
       const S = this.level.chunkSize;

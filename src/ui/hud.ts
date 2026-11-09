@@ -39,6 +39,8 @@ const CSS = `
   flex-direction: column; background: rgba(0,0,0,0.92); color: #efe6bf; font-size: 24px; letter-spacing: 0.15em; }
 .hud-overlay small { margin-top: 12px; font-size: 13px; opacity: 0.6; letter-spacing: 0.05em; }
 .hud-fade { position: fixed; inset: 0; z-index: 28; pointer-events: none; background: #000; opacity: 0; }
+.hud-subs { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 21; pointer-events: none;
+  font-size: 15px; background: rgba(0,0,0,0.55); padding: 3px 12px; border-radius: 3px; color: #f4ecd0; transition: opacity 0.4s; opacity: 0; }
 .hud-vignette { position: fixed; inset: 0; pointer-events: none; z-index: 10;
   background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.75) 100%); opacity: 0.45; }
 .hud-hurt { position: fixed; inset: 0; pointer-events: none; z-index: 11;
@@ -58,6 +60,8 @@ export class Hud {
   private fade: HTMLDivElement;
   private hurt: HTMLDivElement;
   private deadOverlay: HTMLDivElement;
+  private subs: HTMLDivElement;
+  private subTimer = 0;
   private msgTimer = 0;
   private titleTime = -1;
   private lastInvKey = '';
@@ -108,7 +112,8 @@ export class Hud {
     this.title = this.div('hud-title');
     this.fade = this.div('hud-fade');
     this.deadOverlay = this.div('hud-overlay');
-    parent.append(vignette, this.hurt, this.root, this.title, this.fade, this.deadOverlay);
+    this.subs = this.div('hud-subs');
+    parent.append(vignette, this.hurt, this.root, this.title, this.fade, this.deadOverlay, this.subs);
     setTimeout(() => (this.hint.style.opacity = '0'), 45000);
   }
 
@@ -120,6 +125,24 @@ export class Hud {
 
   setVisible(v: boolean): void {
     this.root.style.display = v ? '' : 'none';
+  }
+
+  /** HUD size (SPEC §10.4). Scales the bars and item bar around their corners. */
+  setScale(k: number): void {
+    const bars = this.root.querySelector('.hud-bars') as HTMLElement;
+    const slots = this.root.querySelector('.hud-slots') as HTMLElement;
+    bars.style.transformOrigin = 'left bottom';
+    bars.style.transform = `scale(${k})`;
+    slots.style.transform = `translateX(-50%) scale(${k})`;
+    slots.style.transformOrigin = 'center bottom';
+    this.held.style.bottom = `${Math.round(26 + 66 * k)}px`;
+  }
+
+  /** Subtitle for sounds (SPEC §11 字幕). */
+  subtitle(text: string, seconds = 3): void {
+    this.subs.textContent = text;
+    this.subs.style.opacity = '1';
+    this.subTimer = seconds;
   }
 
   message(text: string, seconds = 2.5): void {
@@ -189,6 +212,10 @@ export class Hud {
     const h = this.inv.held;
     this.held.textContent = h ? ITEMS[h].name : '';
 
+    if (this.subTimer > 0) {
+      this.subTimer -= dt;
+      if (this.subTimer <= 0) this.subs.style.opacity = '0';
+    }
     if (this.msgTimer > 0) {
       this.msgTimer -= dt;
       if (this.msgTimer <= 0) this.msg.style.opacity = '0';

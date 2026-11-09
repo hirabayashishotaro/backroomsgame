@@ -39,6 +39,9 @@ export class Hallucinations {
   private headGeo = new THREE.SphereGeometry(0.17, 10, 8);
   private doorGeo = new THREE.BoxGeometry(0.95, 2.05, 0.04);
 
+  /** Called with 'whisper' | 'steps' | 'humDip' when a sound plays (for subtitles). */
+  onSound: (kind: 'whisper' | 'steps' | 'humDip') => void = () => {};
+
   constructor(private root: THREE.Object3D, private audio: AudioSystem) {}
 
   /** Intensity 0..1 from sanity. */
@@ -77,11 +80,19 @@ export class Hallucinations {
     this.cooldown = 6 + this.rng.range(0, 10) / Math.max(0.3, k);
     const roll = this.rng.float();
     const pan = this.rng.range(-1, 1);
-    if (roll < 0.3) this.audio.whisper(pan, 0.03 + k * 0.05);
-    else if (roll < 0.55) this.audio.distantSteps(pan, 3 + this.rng.int(0, 4));
+    if (roll < 0.3) {
+      this.audio.whisper(pan, 0.03 + k * 0.05);
+      this.onSound('whisper');
+    } else if (roll < 0.55) {
+      this.audio.distantSteps(pan, 3 + this.rng.int(0, 4));
+      this.onSound('steps');
+    }
     else if (roll < 0.8) this.spawnFigure(env);
     else if (roll < 0.92) this.spawnDoor(env);
-    else this.audio.humDip(1 + this.rng.float() * 1.5);
+    else {
+      this.audio.humDip(1 + this.rng.float() * 1.5);
+      this.onSound('humDip');
+    }
   }
 
   private spawnFigure(env: HallucinationEnv): void {

@@ -31,7 +31,7 @@ export function readLaunchOptions(): LaunchOptions {
   const args = getNative()?.args ?? [];
   const arg = (name: string) => args.find((a) => a.startsWith(`--${name}=`))?.split('=')[1];
   return {
-    debug: q.get('debug') === '1' || args.includes('--debug'),
+    debug: q.get('debug') === '1' || args.includes('--dev'),
     levelId: q.get('level') ?? arg('level') ?? '0',
     seed: q.get('seed') ?? arg('seed') ?? undefined,
   };

@@ -6,12 +6,12 @@
 - シード付き RNG(mulberry32、整数ハッシュ)`src/core/rng.ts`
 - デバッグオーバーレイ `?debug=1`(FPS・レベル・座標・チャンク・ロード数・原点・歩行距離)
 - 設定の保存(感度XY・Y反転・FOV・描画距離・音量・ハム音・揺れ・フルスクリーン)。ブラウザは localStorage、Electron は userData/settings.json
-- 起動パラメータ: `?level=<id>` `?seed=<seed>` `?debug=1`(exe 版は `--level=` `--seed=` `--debug`)
+- 起動パラメータ: `?level=<id>` `?seed=<seed>` `?debug=1`(exe 版は `--level=` `--seed=` `--dev`(デバッグ表示))
 
 ## Phase 2 — Electron 化・exe 配布 ✅(Actions 実行は要確認)
 - `electron/main.ts` / `preload.ts`(esbuild で `dist-electron/*.cjs` に束ねる)。contextIsolation 有効
 - 設定・セーブは IPC 経由で `userData/settings.json` と `userData/saves/*.json` に保存
-- フルスクリーン(設定画面・F11)、起動引数 `--level=` `--seed=` `--debug`
+- フルスクリーン(設定画面・F11)、起動引数 `--level=` `--seed=` `--dev`(デバッグ表示)
 - electron-builder: portable と nsis。`.github/workflows/build.yml`(windows-latest で npm ci → test → build → dist、Artifacts へアップロード、`v*` タグで Releases に添付)
 
 ## Phase 3(前倒しで実装)— チャンク管理・Level 0 ✅
@@ -24,6 +24,10 @@
 
 ## 修正履歴
 - 視点移動のかくつき対策: ①ポインタロックを `unadjustedMovement`(生入力)で要求、②Windows の Chromium がカーソル再センタリング時に出す孤立した巨大な移動量を `MouseSpikeFilter` で破棄、③チャンクのジオメトリを生成フレームで GPU に転送(視界に入った瞬間の転送でかくつかないように)
+
+- `起動.bat`: git pull → npm install → Electron で起動するランチャー
+- Electron の起動引数 `--debug` が Electron/Node 自身のフラグと衝突して起動できなかったため `--dev` に変更(Electron 上で起動・描画を確認済み)
+- WebGL を作れない環境ではエラー画面を表示
 
 ## 動作確認
 ```

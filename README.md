@@ -5,6 +5,10 @@
 
 仕様書: [SPEC_v0.3.md](SPEC_v0.3.md) / 進捗: [PROGRESS.md](PROGRESS.md)
 
+## いちばん簡単な遊び方(Windows・常に最新版)
+Node.js と Git を入れて `git clone` した後は、フォルダ内の **`起動.bat` をダブルクリック**するだけです。
+自動で「最新版の取得 → 部品の更新 → ゲームウィンドウで起動」を行います。
+
 ## 遊び方(ブラウザ・開発用)
 ```
 npm install
@@ -39,7 +43,7 @@ Inspired by the Backrooms Wiki community (backrooms.fandom.com)
 
 > **注意**: コード署名をしていないため、初回起動時に Windows SmartScreen の警告が出ます。「詳細情報」→「実行」で起動できます。
 
-exe 版の起動引数: `--level=<id>` `--seed=<seed>` `--debug`。F11 でフルスクリーン切り替え。
+exe 版の起動引数: `--level=<id>` `--seed=<seed>` `--dev`(デバッグ表示)。F11 でフルスクリーン切り替え。
 設定とセーブは `%APPDATA%/backrooms-endless/` に保存されます。
 
 ## 自分の PC でビルドする場合

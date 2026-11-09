@@ -49,7 +49,7 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      additionalArguments: process.argv.filter((a) => a.startsWith('--level=') || a.startsWith('--seed=') || a === '--debug').map((a) => '--br-arg' + a),
+      additionalArguments: process.argv.filter((a) => a.startsWith('--level=') || a.startsWith('--seed=') || a === '--dev').map((a) => '--br-arg' + a),
     },
   });
   win.setMenu(null);

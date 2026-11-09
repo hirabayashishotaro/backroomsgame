@@ -4,6 +4,7 @@ import { ALL_GRID_PIECES, GRID_PIECES } from '../src/levels/gridPieces';
 import { LEVEL1_PARAMS } from '../src/levels/hand/level1';
 import { LEVEL2_PARAMS } from '../src/levels/hand/level2';
 import { gridWallX, gridWallZ } from '../src/levels/gridLevel';
+import { genomeOf } from '../src/levels/procedural/generated';
 
 const SEED = 99;
 
@@ -28,7 +29,9 @@ describe('grid set pieces', () => {
   });
 
   it('generated levels have their own structures, and different levels differ', () => {
-    const sets = ['101', '202', '303', '404', '505'].map((id) => [...pieceIdsIn(id)].sort().join(','));
+    const gridIds: string[] = [];
+    for (let n = 100; n < 400 && gridIds.length < 5; n++) if (['grid', 'ruins'].includes(genomeOf(String(n)).grammar)) gridIds.push(String(n));
+    const sets = gridIds.map((id) => [...pieceIdsIn(id)].sort().join(','));
     for (const s of sets) expect(s.split(',').filter(Boolean).length).toBeGreaterThanOrEqual(3);
     expect(new Set(sets).size).toBeGreaterThanOrEqual(3);
   });

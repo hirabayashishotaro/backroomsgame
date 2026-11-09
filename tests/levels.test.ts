@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { makeGenContext, resolveExitTarget, resolveLevel, entryHash } from '../src/levels/registry';
 import type { LevelDefinition } from '../src/levels/levelDefinition';
+import { groundHeight } from '../src/world/collision';
+import { genomeOf } from '../src/levels/procedural/generated';
 
 const SEED = 4242;
 
@@ -10,21 +12,36 @@ function arrivalIsFree(level: LevelDefinition, h: number): boolean {
   const S = level.chunkSize;
   const cx = Math.floor(a.x / S);
   const cz = Math.floor(a.z / S);
+  const boxes = [];
+  const floors = [];
   for (let dx = -1; dx <= 1; dx++)
     for (let dz = -1; dz <= 1; dz++) {
       const d = level.generator(ctx, cx + dx, cz + dz);
       const ox = (cx + dx) * S;
       const oz = (cz + dz) * S;
-      for (const b of d.solids) {
-        if (b.minY > 1.7) continue;
-        if (a.x > b.minX + ox - 0.3 && a.x < b.maxX + ox + 0.3 && a.z > b.minZ + oz - 0.3 && a.z < b.maxZ + oz + 0.3) return false;
-      }
+      for (const b of d.solids) boxes.push({ ...b, minX: b.minX + ox, maxX: b.maxX + ox, minZ: b.minZ + oz, maxZ: b.maxZ + oz });
+      for (const f of d.floors) floors.push({ x0: f.x0 + ox, x1: f.x1 + ox, z0: f.z0 + oz, z1: f.z1 + oz, y: f.y });
     }
-  return true;
+  // Nothing blocks the body...
+  for (const b of boxes) {
+    if (b.maxY <= a.y + 0.45 || b.minY >= a.y + 1.7) continue;
+    if (a.x > b.minX - 0.3 && a.x < b.maxX + 0.3 && a.z > b.minZ - 0.3 && a.z < b.maxZ + 0.3) return false;
+  }
+  // ...and there is ground under the feet (groundless levels arrive on a platform).
+  return Math.abs(groundHeight(a.x, a.z, 0.2, a.y + 0.45, floors, boxes) - a.y) < 0.05;
 }
 
 describe('levels', () => {
-  const ids = ['0', '1', '2', '13', '14', '139', '482', '33.7', '-3', '4.3'];
+  const ids = ['0', '1', '2', 'u1', 'u2', 'u3', 'void', '13', '14', '139', '482', '33.7', '-3', '4.3', '57', '88', '404', '999'];
+  // plus one example of every generated grammar
+  const seen = new Set<string>();
+  for (let n = 3; n < 600; n++) {
+    const g = genomeOf(String(n)).grammar;
+    if (!seen.has(g)) {
+      seen.add(g);
+      ids.push(String(n));
+    }
+  }
 
   it('resolve: hand-made 0/1/2, everything else generated deterministically', () => {
     expect(resolveLevel('1').subtitle).toBe('The Habitable Zone');
@@ -67,6 +84,35 @@ describe('levels', () => {
       const L = resolveLevel(id);
       for (let k = 0; k < 12; k++) expect(arrivalIsFree(L, entryHash('x', 'e' + k)), `${id}#${k}`).toBe(true);
     }
+  });
+
+  it('generated levels use many kinds of worlds (indoor, outdoor, groundless) and skies', () => {
+    const grammars = new Set<string>();
+    const skies = new Set<string>();
+    for (let n = 3; n < 400; n++) {
+      const g = genomeOf(String(n));
+      grammars.add(g.grammar);
+      if (g.sky) skies.add(g.sky);
+    }
+    expect(grammars.size).toBeGreaterThanOrEqual(8);
+    expect(skies.size).toBeGreaterThanOrEqual(5);
+    // outdoor levels have a sky, groundless ones fall into another level
+    for (let n = 3; n < 120; n++) {
+      const L = resolveLevel(String(n));
+      if (L.environment === 'open-sky') expect(L.sky, L.id).toBeTruthy();
+      if (L.groundless) expect(L.fall?.mode).toBe('transition');
+    }
+  });
+
+  it('U1-U3 and the Void follow SPEC 4.2.1 (sky, groundless U1 with a fall transition)', () => {
+    const u1 = resolveLevel('u1');
+    expect(u1.groundless).toBe(true);
+    expect(u1.fall?.mode).toBe('transition');
+    expect(u1.sky?.kind).toBe('dawn');
+    expect(u1.setPieces.length).toBeGreaterThanOrEqual(4);
+    expect(resolveLevel('u2').setPieces.length).toBeGreaterThanOrEqual(3);
+    expect(resolveLevel('u3').setPieces.length).toBeGreaterThanOrEqual(5);
+    expect(resolveLevel('void').groundless).toBe(true);
   });
 
   it('generated levels produce at least 10 distinct themes', () => {

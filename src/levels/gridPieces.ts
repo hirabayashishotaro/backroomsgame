@@ -54,6 +54,8 @@ export interface GridPieceDef {
   /** Ceiling height for this piece given the level's normal height. */
   ceiling: (H: number) => number;
   border: Border;
+  /** No ceiling at all: open to the sky (U2 bridges and gardens). */
+  open?: boolean;
   build: (c: PieceCtx) => void;
 }
 
@@ -456,7 +458,122 @@ export const GRID_PIECES: Record<string, GridPieceDef> = {
   },
 };
 
-export const ALL_GRID_PIECES = Object.keys(GRID_PIECES);
+/** Moat or pit with water: floor hole, basin floor, stone sides and steps out in a corner. */
+function waterBasin(c: PieceCtx, inset: number, depth: number, waterMat: string): { hx0: number; hz0: number; hx1: number; hz1: number } {
+  const hx0 = c.x0 + inset;
+  const hz0 = c.z0 + inset;
+  const hx1 = c.x1 - inset;
+  const hz1 = c.z1 - inset;
+  c.out.holes.push({ x0: hx0, z0: hz0, x1: hx1, z1: hz1 });
+  c.out.floors.push({ x0: hx0, z0: hz0, x1: hx1, z1: hz1, y: -depth });
+  const s = c.out.solids;
+  const t = 0.2;
+  box(s, hx0 - t, -depth, hz0 - t, hx1 + t, 0, hz0, 'stone');
+  box(s, hx0 - t, -depth, hz1, hx1 + t, 0, hz1 + t, 'stone');
+  box(s, hx0 - t, -depth, hz0, hx0, 0, hz1, 'stone');
+  box(s, hx1, -depth, hz0, hx1 + t, 0, hz1, 'stone');
+  box(c.out.decor, hx0, -depth * 0.45, hz0, hx1, -depth * 0.45 + 0.04, hz1, waterMat);
+  for (let k = 0; k < 4; k++) box(s, hx0, -depth, hz1 - (k + 1) * 0.45, hx0 + 1.1, -depth + (k + 1) * (depth / 4), hz1 - k * 0.45, 'stone');
+  return { hx0, hz0, hx1, hz1 };
+}
+
+function stoneLantern(c: PieceCtx, x: number, z: number): void {
+  box(c.out.solids, x - 0.25, 0, z - 0.25, x + 0.25, 0.9, z + 0.25, 'stone');
+  box(c.out.decor, x - 0.2, 0.9, z - 0.2, x + 0.2, 1.25, z + 0.2, 'lantern');
+  box(c.out.solids, x - 0.35, 1.25, z - 0.35, x + 0.35, 1.4, z + 0.35, 'stone');
+  c.out.lights.push({ x, y: 1.1, z, I: 1.6 });
+}
+
+Object.assign(GRID_PIECES, {
+  'taiko-bridge': {
+    id: 'taiko-bridge',
+    name: '太鼓橋',
+    desc: '黒い水の上に、朱塗りの太鼓橋が弧を描いて架かっている。頂上から遠くの灯りが見える。',
+    metres: [14, 12],
+    ceiling: (H: number) => H,
+    border: 'open',
+    open: true,
+    build(c: PieceCtx) {
+      const b = waterBasin(c, 1.0, 1.8, 'water-dark');
+      const bz = czOf(c);
+      const w = 0.9;
+      const len = b.hx1 - b.hx0;
+      const n = 9;
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) / n;
+        const top = Math.sin(t * Math.PI) * 1.3;
+        const x0 = b.hx0 + (k / n) * len;
+        box(c.out.solids, x0, top - 0.25, bz - w, x0 + len / n, top, bz + w, 'wood-red');
+      }
+      for (const x of [b.hx0 - 0.5, b.hx1 + 0.5]) for (const z of [bz - 1.4, bz + 1.4]) stoneLantern(c, x, z);
+      item(c, b.hx1 - 0.6, -1.8, b.hz0 + 0.6);
+    },
+  },
+  'tea-island': {
+    id: 'tea-island',
+    name: '池の茶室',
+    desc: '暗い池の真ん中の小島に、小さな茶室が建っている。障子の向こうに灯りがともる。',
+    metres: [16, 16],
+    ceiling: (H: number) => H,
+    border: 'open',
+    open: true,
+    build(c: PieceCtx) {
+      const b = waterBasin(c, 0.9, 1.8, 'water-dark');
+      const mx = cxOf(c);
+      const mz = czOf(c);
+      const r = Math.min(3.2, (b.hx1 - b.hx0) / 2 - 1.5);
+      box(c.out.solids, mx - r, -1.8, mz - r, mx + r, 0, mz + r, 'stone');
+      // Bridge from the west rim to the island
+      box(c.out.solids, b.hx0, -0.2, mz - 0.6, mx - r, 0, mz + 0.6, 'wood-dark');
+      // Tea house: posts, shoji walls on three sides, roof
+      const q = r - 0.6;
+      for (const [sx, sz] of [
+        [-1, -1],
+        [1, -1],
+        [-1, 1],
+        [1, 1],
+      ])
+        box(c.out.solids, mx + sx * q - 0.1, 0, mz + sz * q - 0.1, mx + sx * q + 0.1, 2.3, mz + sz * q + 0.1, 'wood-dark');
+      box(c.out.solids, mx + q - 0.05, 0, mz - q, mx + q + 0.05, 2.1, mz + q, 'shoji');
+      box(c.out.solids, mx - q, 0, mz - q - 0.05, mx + q, 2.1, mz - q + 0.05, 'shoji');
+      box(c.out.solids, mx - q, 0, mz + q - 0.05, mx + q, 2.1, mz + q + 0.05, 'shoji');
+      box(c.out.solids, mx - q - 0.6, 2.3, mz - q - 0.6, mx + q + 0.6, 2.55, mz + q + 0.6, 'wood-dark');
+      box(c.out.decor, mx - q + 0.05, 0.01, mz - q + 0.05, mx + q - 0.05, 0.04, mz + q - 0.05, 'tatami');
+      box(c.out.decor, mx - 0.2, 0.04, mz - 0.2, mx + 0.2, 0.5, mz + 0.2, 'lantern');
+      c.out.lights.push({ x: mx, y: 0.8, z: mz, I: 2.2 });
+      item(c, mx + 0.6, 0.04, mz + 0.4);
+    },
+  },
+  'lantern-path': {
+    id: 'lantern-path',
+    name: '灯籠の小径',
+    desc: '砂利の小径に石灯籠が並ぶ。竹が風に揺れる音がする。',
+    metres: [16, 8],
+    ceiling: (H: number) => H,
+    border: 'open',
+    open: true,
+    build(c: PieceCtx) {
+      box(c.out.decor, c.x0 + 0.3, 0.003, c.z0 + 0.3, c.x1 - 0.3, 0.015, c.z1 - 0.3, 'path');
+      const alongX = c.w >= c.d;
+      const len = alongX ? c.w : c.d;
+      for (let a = 1.5; a < len - 1; a += 3.2)
+        for (const side of [-1, 1]) {
+          const along = (alongX ? c.x0 : c.z0) + a;
+          const across = (alongX ? czOf(c) : cxOf(c)) + side * 1.8;
+          stoneLantern(c, alongX ? along : across, alongX ? across : along);
+        }
+      for (let k = 0; k < 14; k++) {
+        const x = c.x0 + 0.4 + c.rng.float() * (c.w - 0.8);
+        const z = c.rng.chance(0.5) ? c.z0 + 0.3 + c.rng.float() * 0.6 : c.z1 - 0.9 + c.rng.float() * 0.6;
+        box(c.out.solids, x - 0.06, 0, z - 0.06, x + 0.06, 4 + c.rng.float() * 2, z + 0.06, 'leaves-lime');
+      }
+      item(c, c.x1 - 1.0, 0, czOf(c));
+    },
+  },
+} as Record<string, GridPieceDef>);
+
+/** Generic pool used by generated grid levels (excludes the U2-specific open-air pieces). */
+export const ALL_GRID_PIECES = Object.keys(GRID_PIECES).filter((k) => !GRID_PIECES[k].open);
 
 // ---------------------------------------------------------------------------
 // Placement
@@ -489,7 +606,7 @@ export function gridPieceForChunk(seed: number, p: GridParams, cx: number, cz: n
   if (hit !== undefined) return hit;
   if (cache.size > 4096) cache.clear();
 
-  const F = PIECE_FEATURE_CELL;
+  const F = p.featureCell ?? PIECE_FEATURE_CELL;
   const fx = Math.floor(cx / F);
   const fz = Math.floor(cz / F);
   const n = F * F;

@@ -46,7 +46,7 @@ export type EdgeKind = 0 | 1 | 2; // open | wall | wall with doorway
 // Set pieces
 // ---------------------------------------------------------------------------
 
-export type PieceKind = Exclude<ZoneKind, 'spawn' | 'thin-floor' | 'piece'>;
+export type PieceKind = Exclude<ZoneKind, 'spawn' | 'thin-floor' | 'piece' | 'gate'>;
 
 export interface Piece {
   kind: PieceKind;

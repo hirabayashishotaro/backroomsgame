@@ -48,6 +48,28 @@ export class LevelMaterials {
     this.byKey.set('shelf', mk('gen:wood:7a5a36:84'));
     this.byKey.set('metal', mk('gen:metal:8a8e92:85'));
     this.byKey.set('fabric', mk('gen:carpet:5a3a3a:86'));
+    // Outdoor / special worlds
+    this.byKey.set('hedge', mk('gen:leaves:3f6a2e:90'));
+    this.byKey.set('path', mk('gen:paving:a49c88:91'));
+    this.byKey.set('bark', mk('bark'));
+    this.byKey.set('leaves-green', mk('gen:leaves:4f8a3a:92'));
+    this.byKey.set('leaves-dark', mk('gen:leaves:2f5a2a:93'));
+    this.byKey.set('leaves-autumn', mk('gen:leaves:c8742e:94'));
+    this.byKey.set('leaves-pink', mk('gen:leaves:f0a8c0:95'));
+    this.byKey.set('leaves-lime', mk('gen:leaves:8fd14f:96'));
+    this.byKey.set('flowers-0', mk('gen:flowers:e84a5a:97'));
+    this.byKey.set('flowers-1', mk('gen:flowers:f4d24a:98'));
+    this.byKey.set('flowers-2', mk('gen:flowers:a87ae8:99'));
+    this.byKey.set('flowers-3', mk('gen:flowers:3cc8e8:100'));
+    this.byKey.set('aero-white', mk('aero-tile'));
+    this.byKey.set('road-x', mk('road:x'));
+    this.byKey.set('road-z', mk('road:z'));
+    this.byKey.set('grate', mk('grate'));
+    this.byKey.set('shoji', mk('shoji'));
+    this.byKey.set('tatami', mk('tatami'));
+    this.byKey.set('wood-red', mk('gen:panel:b8382a:101'));
+    this.byKey.set('sign-green', { mat: new THREE.MeshBasicMaterial({ color: 0x1f7a4a }), metres: 1 });
+    this.byKey.set('lantern', { mat: new THREE.MeshBasicMaterial({ color: 0xffc070 }), metres: 1 });
     // Transparent and self-lit materials.
     const clear = (color: number, opacity: number) => ({
       mat: patchMaterial(new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide })),
@@ -55,6 +77,7 @@ export class LevelMaterials {
     });
     this.byKey.set('water', clear(0x4fb6d0, 0.55));
     this.byKey.set('glass', clear(0x9fd8f0, 0.22));
+    this.byKey.set('water-dark', clear(0x0c1c26, 0.85));
     this.byKey.set('glow', { mat: new THREE.MeshBasicMaterial({ color: 0xfff6e0 }), metres: 1 });
     this.byKey.set('glow-blue', { mat: new THREE.MeshBasicMaterial({ color: 0x8fe0ff }), metres: 1 });
     // Floor that gives way: the floor texture, slightly cooler and pulsing (animated by the game).

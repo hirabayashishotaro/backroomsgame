@@ -3,6 +3,7 @@
  */
 import type { ChunkData, PropKind, ZoneKind } from '../world/chunkData';
 import type { LootTable } from '../items/lootTables';
+import type { SkyDef } from '../systems/skyPresets';
 
 export interface Palette {
   /** Procedural texture keys (see src/proc-tex). */
@@ -107,6 +108,10 @@ export interface LevelDefinition {
    * from different exits lands in different places). Must be walkable.
    */
   arrival: (ctx: GenContext, entryHash: number) => SpawnPoint;
+  /** Open-sky levels: sky dome settings (SPEC §3.6). */
+  sky?: SkyDef;
   groundless?: boolean;
   fall?: { killY: number; mode: 'transition' | 'death' | 'respawn' };
+  /** Short label for the developer level select. */
+  kindLabel?: string;
 }

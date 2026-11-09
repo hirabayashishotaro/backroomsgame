@@ -5,7 +5,10 @@
 import { hashString, Rng } from '../../core/rng';
 import { ALMOND_ONLY } from '../../items/lootTables';
 import { generateGrid, gridArrival, gridLightSampler, type GridParams } from '../gridLevel';
-import type { ExitTarget, LevelDefinition } from '../levelDefinition';
+import type { ExitRule, ExitTarget, LevelDefinition } from '../levelDefinition';
+import type { SkyKind } from '../../systems/skyPresets';
+import { makeGardenLevel, makeRoadLevel, makeTatamiLevel, makeWalkwayLevel, type WorldOpts } from '../worlds';
+import { SKY_PRESETS } from '../../systems/skyPresets';
 import { ALL_GRID_PIECES, GRID_PIECES } from '../gridPieces';
 
 const ADJ = ['沈黙の', '黄昏の', '湿った', '終わらない', '色褪せた', '眠れる', '忘れられた', '傾いた', '冷たい', '遠い', '濁った', '白い', '錆びた', '静かな', '薄暗い', '誰もいない', '反響する', '夜明けの'];
@@ -35,8 +38,8 @@ const THEMES: Theme[] = [
 ];
 
 /** Hints so known Wiki ids look like their connection (contents remain original). */
-const HINTS: Record<string, Partial<{ theme: number; structure: number }>> = {
-  '13': { theme: 7, structure: 1 },
+const HINTS: Record<string, Partial<{ theme: number; structure: number; grammar: Grammar; sky: SkyKind }>> = {
+  '13': { grammar: 'garden', sky: 'day' },
   '14': { theme: 9, structure: 2 },
   '139': { theme: 4, structure: 0 },
   '27': { theme: 2, structure: 2 },
@@ -44,6 +47,10 @@ const HINTS: Record<string, Partial<{ theme: number; structure: number }>> = {
   '5': { theme: 8, structure: 3 },
   '4': { theme: 3, structure: 3 },
   '4.3': { theme: 5, structure: 2 },
+  '57': { grammar: 'tatami', sky: 'night' },
+  '88': { grammar: 'garden', sky: 'night' },
+  '404': { grammar: 'narrow', sky: 'void' },
+  '999': { grammar: 'walkways', sky: 'night' },
   '3': { theme: 2, structure: 0 },
   '8': { theme: 2, structure: 0 },
 };
@@ -70,9 +77,127 @@ function pickPieces(rng: Rng, n: number): string[] {
   return out;
 }
 
+export type Grammar = 'grid' | 'ruins' | 'garden' | 'aero' | 'walkways' | 'narrow' | 'roads' | 'tatami';
+
+const GRAMMARS: Array<[Grammar, number, SkyKind[]]> = [
+  ['grid', 24, []],
+  ['ruins', 10, ['day', 'dusk', 'night', 'overcast', 'dawn']],
+  ['garden', 16, ['day', 'dusk', 'night', 'dawn', 'overcast']],
+  ['aero', 7, ['day', 'dawn']],
+  ['walkways', 12, ['night', 'dawn', 'dusk', 'day', 'void']],
+  ['narrow', 7, ['void', 'night']],
+  ['roads', 7, ['dawn', 'day', 'dusk', 'night']],
+  ['tatami', 8, ['night', 'dusk']],
+];
+
+export const GRAMMAR_LABEL: Record<Grammar, string> = {
+  grid: '屋内迷路',
+  ruins: '空の下の廃墟',
+  garden: '庭園',
+  aero: 'エアロ広場',
+  walkways: '空中通路',
+  narrow: '極細の足場',
+  roads: '浮遊道路',
+  tatami: '座敷と橋',
+};
+
+export const SKY_LABEL: Record<SkyKind, string> = { day: '昼', dusk: '夕暮れ', night: '夜空', dawn: '夜明け', void: '虚無', overcast: '曇り' };
+
+const WORLD_NOUN: Partial<Record<Grammar, string[]>> = {
+  ruins: ['廃墟', '中庭', '遺構', '回廊跡'],
+  garden: ['庭園', '植物園', '花園', '中庭'],
+  aero: ['広場', 'テラス', 'アトリウム', '未来都市'],
+  walkways: ['足場', '吊り通路', '空中回廊', '桟橋'],
+  narrow: ['奈落', '細道', '綱渡り', '深淵'],
+  roads: ['高速道路', '環状線', '高架', 'インターチェンジ'],
+  tatami: ['座敷', '離れ', '渡り廊下', '屋敷'],
+};
+
+/** The grammar and sky a generated id resolves to (for the developer level list). */
+export function genomeOf(id: string): { grammar: Grammar; sky: SkyKind | null } {
+  const rng = new Rng(hashString('grammar:' + id));
+  const hint = HINTS[id] ?? {};
+  let grammar = hint.grammar;
+  if (!grammar) {
+    if (hint.theme !== undefined) grammar = 'grid';
+    else {
+      const total = GRAMMARS.reduce((s, g) => s + g[1], 0);
+      let x = rng.float() * total;
+      for (const g of GRAMMARS) {
+        x -= g[1];
+        if (x < 0) {
+          grammar = g[0];
+          break;
+        }
+      }
+    }
+  }
+  grammar ??= 'grid';
+  const skies = GRAMMARS.find((g) => g[0] === grammar)![2];
+  const sky = hint.sky ?? (skies.length ? rng.pick(skies) : null);
+  return { grammar, sky };
+}
+
+function genericExits(id: string, rng: Rng, grammar: Grammar): ExitRule[] {
+  const exits: ExitRule[] = [
+    { kind: 'door', prop: 'plain-door', targets: neighbours(id, rng), discovery: 'ありふれた扉の向こうは、まったく別の場所だった。' },
+    {
+      kind: 'floor',
+      targets: [
+        { levelId: String(rng.int(5, 999)), weight: 3 },
+        { levelId: rng.chance(0.5) ? 'void' : '0', weight: 1 },
+      ],
+      discovery: grammar === 'walkways' || grammar === 'narrow' || grammar === 'roads' ? '足を踏み外し、下へ下へと落ちていった。' : '床が抜けて、どこかへ落ちていった。',
+    },
+    { kind: 'walk', distance: 1200 + rng.int(0, 800), targets: neighbours(id, rng), discovery: '歩き続けるうちに、景色が別のものに変わっていた。' },
+  ];
+  if (grammar === 'grid' || grammar === 'ruins' || grammar === 'tatami')
+    exits.push({ kind: 'wall', push: 2.5, targets: [{ levelId: String(rng.int(5, 999)), weight: 1 }], discovery: '壁をすり抜けると、知らない場所にいた。' });
+  if (grammar === 'garden' || grammar === 'aero' || grammar === 'roads')
+    exits.push({
+      kind: 'special',
+      zone: 'gate',
+      seconds: 0.4,
+      targets: [
+        { levelId: rng.pick(['u1', 'u2', 'u3']), weight: 1 },
+        { levelId: String(rng.int(5, 999)), weight: 2 },
+      ],
+      discovery: '光の中へ足を踏み入れると、別の場所に立っていた。',
+    });
+  return exits;
+}
+
 export function makeGeneratedLevel(id: string): LevelDefinition {
   const hit = cache.get(id);
   if (hit) return hit;
+  const { grammar, sky } = genomeOf(id);
+  let def: LevelDefinition;
+  if (grammar === 'grid' || grammar === 'ruins') def = makeGridGenerated(id, grammar === 'ruins' ? sky! : null);
+  else {
+    const rng = new Rng(hashString('world:' + id));
+    const name = rng.pick(ADJ) + rng.pick(WORLD_NOUN[grammar]!);
+    const o: WorldOpts = {
+      id,
+      title: 'Level ' + id,
+      name,
+      threat: (grammar === 'narrow' ? 3 : rng.int(0, 2)) as 0 | 1 | 2 | 3,
+      sky: sky!,
+      exits: genericExits(id, rng, grammar),
+      kindLabel: `${GRAMMAR_LABEL[grammar]}・${SKY_LABEL[sky!]}`,
+    };
+    if (grammar === 'garden') def = makeGardenLevel(o, 'garden', rng);
+    else if (grammar === 'aero') def = makeGardenLevel(o, 'aero', rng);
+    else if (grammar === 'walkways') def = makeWalkwayLevel(o, rng);
+    else if (grammar === 'narrow') {
+      def = makeWalkwayLevel(o, rng, true);
+    } else if (grammar === 'roads') def = makeRoadLevel(o, rng);
+    else def = makeTatamiLevel(o, rng);
+  }
+  cache.set(id, def);
+  return def;
+}
+
+function makeGridGenerated(id: string, openSky: SkyKind | null): LevelDefinition {
   const seed = hashString('genome:' + id);
   const rng = new Rng(seed);
   const hint = HINTS[id] ?? {};
@@ -112,7 +237,9 @@ export function makeGeneratedLevel(id: string): LevelDefinition {
     pieces: pickPieces(rng, 4),
     pieceRate: 0.55,
     thinFloorP: 0.006,
+    noCeiling: !!openSky,
   };
+  if (openSky) params.lightP = 0;
   const tex = (k: string, n: number) => `${k}:${(seed + n) % 9973}`;
   const name = rng.pick(ADJ) + rng.pick(NOUN);
   const def: LevelDefinition = {
@@ -147,10 +274,16 @@ export function makeGeneratedLevel(id: string): LevelDefinition {
     hallucination: 1,
     footstep: 'concrete',
     ambience: { humFreq: rng.pick([0, 50, 60, 120]), humGain: 0.05, noiseGain: 0.02 + rng.float() * 0.04, noiseCutoff: 300 + rng.int(0, 900) },
-    environment: 'enclosed',
+    environment: openSky ? 'open-sky' : 'enclosed',
+    sky: openSky ? { kind: openSky } : undefined,
+    kindLabel: openSky ? `空の下の廃墟・${SKY_LABEL[openSky]}` : '屋内迷路',
     spawn: { x: cell / 2, y: 0, z: cell / 2, yaw: 0 },
     arrival: (ctx, h) => gridArrival(ctx, params, h),
   };
-  cache.set(id, def);
+  if (openSky) {
+    const sk = SKY_PRESETS[openSky];
+    def.palette = { ...def.palette, fogColor: sk.horizon, fogDensity: 0.016, ambient: { day: 0.95, dusk: 0.55, night: 0.2, dawn: 0.65, void: 0.1, overcast: 0.7 }[openSky] };
+    def.exits = genericExits(id, rng, 'ruins');
+  }
   return def;
 }

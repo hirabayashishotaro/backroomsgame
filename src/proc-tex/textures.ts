@@ -420,6 +420,218 @@ function genTexture(type: string, hex: string, seed: number): ProcTexture {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Outdoor / special-world textures (gardens, roads, tatami, aero).
+// ---------------------------------------------------------------------------
+
+function grass(hex: string, seed: number): ProcTexture {
+  const S = 256;
+  const [c, ctx] = canvas(S);
+  const rng = new Rng(seed);
+  ctx.fillStyle = rgb(hex);
+  ctx.fillRect(0, 0, S, S);
+  noiseFill(ctx, rng, S, 30);
+  for (let i = 0; i < 2200; i++) {
+    const x = rng.float() * S;
+    const y = rng.float() * S;
+    ctx.strokeStyle = rgb(hex, rng.range(0.7, 1.35));
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + rng.range(-2, 2), y - rng.range(3, 8));
+    ctx.stroke();
+  }
+  return finish(c, 2);
+}
+
+function leaves(hex: string, seed: number): ProcTexture {
+  const S = 128;
+  const [c, ctx] = canvas(S);
+  const rng = new Rng(seed);
+  ctx.fillStyle = rgb(hex, 0.7);
+  ctx.fillRect(0, 0, S, S);
+  for (let i = 0; i < 420; i++) {
+    ctx.fillStyle = rgb(hex, rng.range(0.6, 1.4));
+    ctx.beginPath();
+    ctx.ellipse(rng.float() * S, rng.float() * S, rng.range(2, 6), rng.range(1.5, 4), rng.range(0, 3), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return finish(c, 1.5);
+}
+
+function bark(): ProcTexture {
+  const S = 64;
+  const [c, ctx] = canvas(S);
+  const rng = new Rng(611);
+  ctx.fillStyle = '#5a4030';
+  ctx.fillRect(0, 0, S, S);
+  for (let i = 0; i < 40; i++) {
+    ctx.fillStyle = `rgba(${rng.chance(0.5) ? '30,20,12' : '120,95,70'},0.4)`;
+    ctx.fillRect(rng.float() * S, 0, rng.range(1, 3), S);
+  }
+  return finish(c, 1);
+}
+
+function paving(hex: string, seed: number): ProcTexture {
+  const S = 256;
+  const [c, ctx] = canvas(S);
+  const rng = new Rng(seed);
+  ctx.fillStyle = rgb(hex, 0.55);
+  ctx.fillRect(0, 0, S, S);
+  const rows = 6;
+  const h = S / rows;
+  for (let r = 0; r < rows; r++) {
+    let x = -rng.float() * 40;
+    while (x < S) {
+      const w = rng.range(28, 60);
+      ctx.fillStyle = rgb(hex, rng.range(0.85, 1.12));
+      ctx.fillRect(x + 2, r * h + 2, w - 4, h - 4);
+      x += w;
+    }
+  }
+  stains(ctx, rng, S, 5, '40,40,30');
+  return finish(c, 2);
+}
+
+function flowers(hex: string, seed: number): ProcTexture {
+  const S = 128;
+  const [c, ctx] = canvas(S);
+  const rng = new Rng(seed);
+  ctx.fillStyle = '#2f5a24';
+  ctx.fillRect(0, 0, S, S);
+  noiseFill(ctx, rng, S, 25);
+  for (let i = 0; i < 160; i++) {
+    const x = rng.float() * S;
+    const y = rng.float() * S;
+    ctx.fillStyle = rgb(hex, rng.range(0.85, 1.2));
+    for (let k = 0; k < 5; k++) {
+      ctx.beginPath();
+      ctx.arc(x + Math.cos((k * Math.PI * 2) / 5) * 2.2, y + Math.sin((k * Math.PI * 2) / 5) * 2.2, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#f4e27a';
+    ctx.beginPath();
+    ctx.arc(x, y, 1.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return finish(c, 1);
+}
+
+/** Asphalt for the floating roads; lane markings run along x ('x') or z ('z'). Covers one 32m chunk. */
+function road(dir: string): ProcTexture {
+  const S = 512;
+  const [c, ctx] = canvas(S);
+  const rng = new Rng(dir === 'x' ? 701 : 702);
+  ctx.fillStyle = '#3a3a3c';
+  ctx.fillRect(0, 0, S, S);
+  noiseFill(ctx, rng, S, 22);
+  // cracks and patches
+  for (let i = 0; i < 18; i++) {
+    ctx.fillStyle = `rgba(${rng.chance(0.5) ? '20,20,22' : '70,70,72'},0.5)`;
+    ctx.fillRect(rng.float() * S, rng.float() * S, rng.range(10, 60), rng.range(6, 30));
+  }
+  const m = S / 32; // pixels per metre
+  const line = (pos: number, color: string, dashed: boolean, width = 0.15) => {
+    ctx.fillStyle = color;
+    for (let t = 0; t < S; t += dashed ? 9 * m : S) {
+      const len = dashed ? 4 * m : S;
+      if (dir === 'x') ctx.fillRect(t, pos * m - (width * m) / 2, len, width * m);
+      else ctx.fillRect(pos * m - (width * m) / 2, t, width * m, len);
+    }
+  };
+  // Road deck spans 11..21m across the chunk centre: edge lines, centre line, lane dashes.
+  line(11.4, '#e8e4d8', false);
+  line(20.6, '#e8e4d8', false);
+  line(16, '#e2b23a', false, 0.12);
+  line(16.25, '#e2b23a', false, 0.12);
+  line(13.7, '#e8e4d8', true);
+  line(18.3, '#e8e4d8', true);
+  return finish(c, 32);
+}
+
+function tatami(): ProcTexture {
+  const S = 256;
+  const [c, ctx] = canvas(S);
+  const rng = new Rng(731);
+  ctx.fillStyle = '#b9b276';
+  ctx.fillRect(0, 0, S, S);
+  for (let y = 0; y < S; y += 2) {
+    ctx.fillStyle = `rgba(${rng.chance(0.5) ? '120,115,60' : '215,210,150'},0.25)`;
+    ctx.fillRect(0, y, S, 1);
+  }
+  // Mats: 0.9 x 1.8 in a 3.6m tile, staggered so corners never meet in a cross.
+  const u = S / 4; // 0.9m
+  ctx.strokeStyle = '#3a3426';
+  ctx.lineWidth = 4;
+  const mats = [
+    [0, 0, 2, 1],
+    [2, 0, 1, 2],
+    [3, 0, 1, 2],
+    [0, 1, 1, 2],
+    [1, 1, 1, 2],
+    [2, 2, 2, 1],
+    [0, 3, 2, 1],
+    [2, 3, 2, 1],
+  ];
+  for (const [x, y, w, h] of mats) ctx.strokeRect(x * u + 2, y * u + 2, w * u - 4, h * u - 4);
+  return finish(c, 3.6);
+}
+
+function shoji(): ProcTexture {
+  const S = 128;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = '#efe7d2';
+  ctx.fillRect(0, 0, S, S);
+  ctx.fillStyle = '#6a4a2c';
+  for (let i = 0; i <= 4; i++) {
+    ctx.fillRect((i * S) / 4 - 2, 0, 4, S);
+    ctx.fillRect(0, (i * S) / 4 - 2, S, 4);
+  }
+  return finish(c, 1.2);
+}
+
+function aeroTile(): ProcTexture {
+  const S = 256;
+  const [c, ctx] = canvas(S);
+  const g = ctx.createLinearGradient(0, 0, S, S);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.5, '#eef9fd');
+  g.addColorStop(1, '#ffffff');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, S, S);
+  ctx.strokeStyle = 'rgba(120,190,215,0.35)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo((i * S) / 2, 0);
+    ctx.lineTo((i * S) / 2, S);
+    ctx.moveTo(0, (i * S) / 2);
+    ctx.lineTo(S, (i * S) / 2);
+    ctx.stroke();
+  }
+  // Soft specular streak (fake gloss)
+  const hl = ctx.createLinearGradient(0, S * 0.2, S, S * 0.6);
+  hl.addColorStop(0, 'rgba(255,255,255,0)');
+  hl.addColorStop(0.5, 'rgba(255,255,255,0.6)');
+  hl.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = hl;
+  ctx.fillRect(0, 0, S, S);
+  return finish(c, 2);
+}
+
+function grate(): ProcTexture {
+  const S = 64;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = '#2a2c30';
+  ctx.fillRect(0, 0, S, S);
+  ctx.fillStyle = '#6a6e74';
+  for (let i = 0; i < S; i += 8) {
+    ctx.fillRect(i, 0, 3, S);
+    ctx.fillRect(0, i, S, 2);
+  }
+  return finish(c, 0.5);
+}
+
 function doorTexture(hex: string, window: boolean): ProcTexture {
   const S = 128;
   const [c, ctx] = canvas(S);
@@ -467,6 +679,11 @@ const FACTORIES: Record<string, () => ProcTexture> = {
   'metal-door': metalDoor,
   'frosted-green': frostedGreen,
   'label-almond': almondLabelTexture,
+  bark,
+  tatami,
+  shoji,
+  'aero-tile': aeroTile,
+  grate,
 
   white: () => flat('#ffffff'),
 };
@@ -476,7 +693,14 @@ export function getTexture(key: string): ProcTexture {
   if (!t) {
     if (key.startsWith('gen:')) {
       const [, type, hex, seed] = key.split(':');
-      t = genTexture(type, hex, Number(seed) || 1);
+      const n = Number(seed) || 1;
+      if (type === 'grass') t = grass(hex, n);
+      else if (type === 'leaves') t = leaves(hex, n);
+      else if (type === 'paving') t = paving(hex, n);
+      else if (type === 'flowers') t = flowers(hex, n);
+      else t = genTexture(type, hex, n);
+    } else if (key.startsWith('road:')) {
+      t = road(key.split(':')[1]);
     } else if (key.startsWith('door:')) {
       const [, hex, win] = key.split(':');
       t = doorTexture(hex, win === '1');

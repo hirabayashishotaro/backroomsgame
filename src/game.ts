@@ -19,9 +19,11 @@ import { Stats, type DeathCause } from './player/stats';
 import { ITEMS, type ItemId } from './items/itemDefs';
 import { AudioSystem } from './systems/audio';
 import { Hallucinations } from './systems/hallucination';
+import { SkyDome } from './systems/sky';
 import { DebugOverlay } from './ui/debugOverlay';
 import { Hud } from './ui/hud';
 import { Menu } from './ui/menu';
+import { LevelSelect } from './ui/levelSelect';
 import { t } from './ui/i18n';
 
 interface WorldItem {
@@ -37,6 +39,7 @@ interface WorldProp {
   uid: string;
   kind: PropKind;
   x: number;
+  y: number;
   z: number;
   rotY: number;
   key: string;
@@ -65,6 +68,7 @@ interface ChunkHandle {
 /** A glowing doorway back to where the player came from (SPEC §5.4.4). */
 interface Anchor {
   x: number;
+  y: number;
   z: number;
   rotY: number;
   back: { levelId: string } & SpawnPoint;
@@ -123,6 +127,7 @@ export class Game {
   private menu: Menu;
   private hud: Hud;
   private halluc: Hallucinations;
+  private sky = new SkyDome();
   private debug: DebugOverlay | null = null;
   private worldSeed: number;
   private rng: Rng;
@@ -138,6 +143,7 @@ export class Game {
   private pushTime = 0;
   private walkWarned = false;
   private sinkTime = 0;
+  private gateTime = 0;
   private lastWarp = 0;
   private deadTimer = 0;
   private lastStep = 0;
@@ -169,8 +175,10 @@ export class Game {
       (window as unknown as { __game: Game }).__game = this; // debug/test hook
     }
 
+    const levelSelect = new LevelSelect(container, (id) => this.devJump(id));
     this.menu = new Menu(container, this.settings, {
       onResume: () => this.resume(),
+      onLevelSelect: () => levelSelect.show(),
       onChange: (s) => this.applySettings(s),
       onFullscreen: (on) => this.setFullscreen(on),
     });
@@ -201,6 +209,15 @@ export class Game {
     this.menu.hide();
     this.input.requestLock();
     if (!this.titleShown) this.showLevelTitle();
+  }
+
+  /** Developer level select: start (or jump) directly into a level. */
+  private devJump(id: string): void {
+    this.enterLevel(id, resolveLevel(id).arrival(makeGenContext(this.worldSeed, resolveLevel(id)), 1));
+    this.player.yaw = this.pickOpenYaw(this.player.yaw);
+    this.entryPoint = { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw };
+    this.titleShown = false;
+    this.resume();
   }
 
   private showLevelTitle(): void {
@@ -243,6 +260,10 @@ export class Game {
     const p = this.level.palette;
     this.scene.background = new THREE.Color(p.fogColor);
     this.scene.fog = new THREE.FogExp2(p.fogColor, p.fogDensity);
+    if (this.level.sky) {
+      this.sky.set(this.level.sky);
+      this.scene.add(this.sky.mesh);
+    } else this.sky.mesh.removeFromParent();
 
     const ctx = this.ctx;
     this.chunks = new ChunkManager<ChunkHandle>({
@@ -295,7 +316,7 @@ export class Game {
     const props: WorldProp[] = [];
     for (const p of data.props) {
       group.add(buildPropMesh(p, sampler(p.x + ox, 1.5, p.z + oz, 0, 1, 0)));
-      props.push({ uid: p.uid, kind: p.kind, x: p.x + ox, z: p.z + oz, rotY: p.rotY, key });
+      props.push({ uid: p.uid, kind: p.kind, x: p.x + ox, y: p.y, z: p.z + oz, rotY: p.rotY, key });
     }
     this.placeChunk(group);
     this.worldRoot.add(group);
@@ -367,7 +388,7 @@ export class Game {
   private rayWall = (x: number, z: number, dx: number, dz: number, max: number) => {
     let best: { t: number; nx: number; nz: number; box: WBox & { thin?: boolean } } | null = null;
     for (const b of this.boxesNear(x + (dx * max) / 2, z + (dz * max) / 2, max / 2 + 1)) {
-      const h = rayBox(x, 1.2, z, dx, 0, dz, b, max);
+      const h = rayBox(x, this.player.y + 1.2, z, dx, 0, dz, b, max);
       if (h && (!best || h.t < best.t)) best = { t: h.t, nx: h.nx, nz: h.nz, box: b };
     }
     return best;
@@ -395,7 +416,8 @@ export class Game {
   private roomZoneAt(x: number, z: number): WorldZone | null {
     const c = this.chunkAt(x, z);
     if (!c) return null;
-    for (const zn of c.zones) if (zn.kind !== 'thin-floor' && x >= zn.x0 && x <= zn.x1 && z >= zn.z0 && z <= zn.z1) return zn;
+    for (const zn of c.zones)
+      if (zn.kind !== 'thin-floor' && zn.kind !== 'gate' && x >= zn.x0 && x <= zn.x1 && z >= zn.z0 && z <= zn.z1) return zn;
     return null;
   }
 
@@ -440,12 +462,12 @@ export class Game {
           // Aim at the door's centre, slightly in front of the wall.
           const fx = Math.sin(p.rotY) * 0.15;
           const fz = Math.cos(p.rotY) * 0.15;
-          const sc = this.aimScore(p.x + fx, 1.1, p.z + fz, 2.6, 0.82);
+          const sc = this.aimScore(p.x + fx, p.y + 1.1, p.z + fz, 2.6, 0.82);
           if (sc > bestScore) (bestScore = sc), (best = { type: 'prop', prop: p });
         }
       }
     for (const a of this.anchors[this.level.id] ?? []) {
-      const sc = this.aimScore(a.x, 1.1, a.z, 2.8, 0.8);
+      const sc = this.aimScore(a.x, a.y + 1.1, a.z, 2.8, 0.8);
       if (sc > bestScore) (bestScore = sc), (best = { type: 'anchor', anchor: a });
     }
     return best;
@@ -539,7 +561,7 @@ export class Game {
     const bz = Math.cos(yaw);
     const hit = this.rayWall(this.player.x, this.player.z, bx, bz, 1.8);
     const d = hit ? Math.max(0.6, hit.t - 0.12) : 1.8;
-    const a: Anchor = { x: this.player.x + bx * d, z: this.player.z + bz * d, rotY: yaw, back };
+    const a: Anchor = { x: this.player.x + bx * d, y: this.player.y, z: this.player.z + bz * d, rotY: yaw, back };
     (this.anchors[this.level.id] ??= []).push(a);
     this.showAnchor(a);
   }
@@ -567,7 +589,7 @@ export class Game {
     // Come back out standing in front of the door, facing away from it.
     const fx = Math.sin(p.rotY);
     const fz = Math.cos(p.rotY);
-    const back: SpawnPoint = { x: p.x + fx * 1.0, y: 0, z: p.z + fz * 1.0, yaw: p.rotY };
+    const back: SpawnPoint = { x: p.x + fx * 1.0, y: p.y, z: p.z + fz * 1.0, yaw: p.rotY };
     this.takeExit(rule, `${p.key}:${p.uid}`, back, p.kind === 'white-door' || p.kind === 'glass-door' ? '#fff' : '#000');
   }
 
@@ -603,11 +625,23 @@ export class Game {
         return;
       }
     } else this.sinkTime = 0;
-    if (this.player.y < -4) {
+    if (this.player.y < (this.level.fall?.killY ?? -4)) {
       if (floorRule) this.takeExit(floorRule, `fall:${Math.round(this.player.x / 8)},${Math.round(this.player.z / 8)}`, this.entryPoint);
       else this.respawnAfterFall();
       return;
     }
+
+    // special: stepping into a gate of light (waterfall, stone circle, gantry).
+    const gate = this.zoneAt(this.player.x, this.player.z, 'gate');
+    if (gate) {
+      this.gateTime += dt;
+      const rule = this.findExit('special', (r) => r.zone === 'gate');
+      if (rule && this.gateTime > (rule.seconds ?? 0.4)) {
+        const back: SpawnPoint = { x: this.player.x - this.player.dirX * 2.5, y: this.player.y, z: this.player.z - this.player.dirZ * 2.5, yaw: this.player.yaw + Math.PI };
+        this.takeExit(rule, `${Math.round(gate.x0)},${Math.round(gate.z0)}`, back, '#fff');
+        return;
+      }
+    } else this.gateTime = 0;
 
     // special: staying in a zone (manila room).
     const zone = this.roomZoneAt(this.player.x, this.player.z);
@@ -763,7 +797,7 @@ export class Game {
     }
     for (const a of this.anchors[this.level.id] ?? []) {
       if (!a.mesh) continue;
-      a.mesh.position.set(this.origin.toRenderX(a.x), 0, this.origin.toRenderZ(a.z));
+      a.mesh.position.set(this.origin.toRenderX(a.x), a.y, this.origin.toRenderZ(a.z));
       const glow = a.mesh.children[3] as THREE.Mesh;
       (glow.material as THREE.MeshBasicMaterial).opacity = 0.45 + Math.sin(this.time * 2) * 0.12;
     }
@@ -841,12 +875,13 @@ export class Game {
     }
 
     this.hud.update(realDt, this.stats);
+    if (this.level.sky) this.sky.update(this.camera, this.time);
     this.renderer.render(this.scene, this.camera);
 
     if (this.debug) {
       const S = this.level.chunkSize;
       this.debug.update(dt, {
-        level: `${this.level.id} (${this.level.subtitle ?? this.level.name})`,
+        level: `${this.level.id} (${this.level.subtitle ?? this.level.name}) ${this.level.kindLabel ?? ''}`,
         seed: this.worldSeed,
         pos: `${this.player.x.toFixed(1)}, ${this.player.y.toFixed(1)}, ${this.player.z.toFixed(1)}`,
         chunk: `${Math.floor(this.player.x / S)}, ${Math.floor(this.player.z / S)}`,

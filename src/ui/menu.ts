@@ -4,6 +4,7 @@ import { t } from './i18n';
 
 export interface MenuCallbacks {
   onResume: () => void;
+  onLevelSelect: () => void;
   onChange: (s: Settings) => void;
   onFullscreen: (on: boolean) => void;
 }
@@ -53,7 +54,12 @@ export class Menu {
     const credit = document.createElement('div');
     credit.className = 'br-credit';
     credit.textContent = 'Inspired by the Backrooms Wiki community (backrooms.fandom.com)';
-    panel.append(this.title, sub, this.body, this.resumeBtn, hint, credit);
+    const dev = document.createElement('button');
+    dev.className = 'br-btn';
+    dev.style.cssText = 'margin-top:8px;background:#2e2912;color:#e9dfae;font-size:13px;padding:9px;';
+    dev.textContent = t('dev.open');
+    dev.onclick = () => this.cb.onLevelSelect();
+    panel.append(this.title, sub, this.body, this.resumeBtn, dev, hint, credit);
     this.root.appendChild(panel);
     parent.appendChild(this.root);
     this.buildRows();

@@ -4,12 +4,20 @@ import { level0 } from './hand/level0';
 import { level1 } from './hand/level1';
 import { level2 } from './hand/level2';
 import { makeGeneratedLevel } from './procedural/generated';
+import { levelU1, levelU2, levelU3, levelVoid } from './hand/special';
 
 const HAND_LEVELS: Record<string, LevelDefinition> = {
   [level0.id]: level0,
   [level1.id]: level1,
   [level2.id]: level2,
+  [levelU1.id]: levelU1,
+  [levelU2.id]: levelU2,
+  [levelU3.id]: levelU3,
+  [levelVoid.id]: levelVoid,
 };
+
+/** Hand-made levels in display order (developer level select). */
+export const HAND_LEVEL_IDS = ['0', '1', '2', 'u1', 'u2', 'u3', 'void'];
 
 export function hasHandLevel(id: string): boolean {
   return id in HAND_LEVELS;

@@ -46,5 +46,13 @@
   "prompt.locked": "[E] 扉を開ける(鍵がかかっているようだ)",
   "msg.locked": "鍵がかかっている",
   "msg.floorGives": "床が……沈んでいく",
-  "msg.hardLanding": "強く着地した"
+  "msg.hardLanding": "強く着地した",
+  "dev.open": "開発者:レベルを選ぶ",
+  "dev.title": "レベル選択(開発者用)",
+  "dev.help": "選んだレベルからすぐに始めます。生成レベルは番号ごとに中身が決まっていて、同じ番号なら毎回同じ世界です。",
+  "dev.hand": "手作りレベル",
+  "dev.generated": "生成レベルの見本(タイプ別)",
+  "dev.any": "番号を指定",
+  "dev.go": "移動",
+  "dev.close": "閉じる"
 }

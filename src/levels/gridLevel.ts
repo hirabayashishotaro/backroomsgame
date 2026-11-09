@@ -52,6 +52,10 @@ export interface GridParams {
   pieceRate?: number;
   /** Chance per cell of a floor patch that gives way. */
   thinFloorP?: number;
+  /** Feature cell size in chunks for set pieces (default 3). */
+  featureCell?: number;
+  /** No ceiling at all: walls under the open sky (ruins). */
+  noCeiling?: boolean;
 }
 
 const enum Salt {
@@ -275,7 +279,9 @@ export function generateGrid(ctx: GenContext, p: GridParams, cx: number, cz: num
     const x1 = (piece.gx1 + 1 - gx0) * C;
     const z1 = (piece.gz1 + 1 - gz0) * C;
     const top = piece.def.ceiling(H);
-    if (top > H + 0.01) {
+    if (piece.def.open) {
+      ceilings.push(...frame(S, x0, z0, x1, z1, H));
+    } else if (top > H + 0.01) {
       ceilings.push(...frame(S, x0, z0, x1, z1, H), { x0, z0, x1, z1, y: top });
       const y0 = H - 0.01;
       solids.push({ minX: x0 - t, maxX: x1 + t, minZ: z0 - t, maxZ: z0 + t, minY: y0, maxY: top, mat: 'wall' });
@@ -299,6 +305,7 @@ export function generateGrid(ctx: GenContext, p: GridParams, cx: number, cz: num
     floors.push({ x0: 0, z0: 0, x1: S, z1: S, y: 0 });
   }
 
+  if (p.noCeiling) ceilings.length = 0;
   return { levelId: ctx.level.id, cx, cz, size: S, solids, decor, lights, floors, ceilings, items, props, zones };
 }
 

@@ -68,7 +68,9 @@ export type ZoneKind =
   /** A floor patch that gives way (SPEC §5.2 floor). */
   | 'thin-floor'
   /** A named set piece in a grid level (journal / messages). */
-  | 'piece';
+  | 'piece'
+  /** Stepping in here leads elsewhere (waterfall, stone circle, gantry light). */
+  | 'gate';
 
 export interface Zone {
   kind: ZoneKind;

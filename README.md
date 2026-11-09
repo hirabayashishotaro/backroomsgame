@@ -27,3 +27,24 @@ npm run dev
 
 ## クレジット
 Inspired by the Backrooms Wiki community (backrooms.fandom.com)
+
+## exe(Windows)の入手方法
+1. GitHub リポジトリの **Actions** タブを開く
+2. 「build」ワークフローの最新の実行(緑のチェック)を開く
+   - main ブランチ以外で試す場合は「Run workflow」から手動実行できます
+3. ページ下部の **Artifacts** から `BackroomsEndless-windows` をダウンロードして解凍
+4. `BackroomsEndless-x.y.z-portable.exe` をダブルクリック(インストール不要)。`-setup.exe` はインストーラ版
+
+`v*` タグ(例 `v0.1.0`)を push すると、GitHub Releases にも exe が添付されます。
+
+> **注意**: コード署名をしていないため、初回起動時に Windows SmartScreen の警告が出ます。「詳細情報」→「実行」で起動できます。
+
+exe 版の起動引数: `--level=<id>` `--seed=<seed>` `--debug`。F11 でフルスクリーン切り替え。
+設定とセーブは `%APPDATA%/backrooms-endless/` に保存されます。
+
+## 自分の PC でビルドする場合
+```
+npm install
+npm run electron   # Electron で起動
+npm run dist       # release/ に exe を出力(Windows 上で実行)
+```

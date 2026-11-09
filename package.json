@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "build:electron": "node scripts/build-electron.mjs",
-    "dist": "npm run build && npm run build:electron && electron-builder --win portable nsis"
+    "dist": "npm run build && npm run build:electron && electron-builder --win portable nsis --publish never",
+    "electron": "npm run build && npm run build:electron && electron ."
   },
   "dependencies": {
     "three": "^0.187.0"
@@ -24,5 +25,32 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.6",
     "vitest": "^5.1.0"
+  },
+  "build": {
+    "appId": "com.backrooms.endless",
+    "productName": "Backrooms Endless",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "artifactName": "${productName}-${version}-${arch}-${target}.${ext}"
+    },
+    "portable": {
+      "artifactName": "BackroomsEndless-${version}-portable.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "BackroomsEndless-${version}-setup.exe"
+    }
   }
 }

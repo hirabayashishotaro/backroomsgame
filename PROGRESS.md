@@ -8,6 +8,12 @@
 - 設定の保存(感度XY・Y反転・FOV・描画距離・音量・ハム音・揺れ・フルスクリーン)。ブラウザは localStorage、Electron は userData/settings.json
 - 起動パラメータ: `?level=<id>` `?seed=<seed>` `?debug=1`(exe 版は `--level=` `--seed=` `--debug`)
 
+## Phase 2 — Electron 化・exe 配布 ✅(Actions 実行は要確認)
+- `electron/main.ts` / `preload.ts`(esbuild で `dist-electron/*.cjs` に束ねる)。contextIsolation 有効
+- 設定・セーブは IPC 経由で `userData/settings.json` と `userData/saves/*.json` に保存
+- フルスクリーン(設定画面・F11)、起動引数 `--level=` `--seed=` `--debug`
+- electron-builder: portable と nsis。`.github/workflows/build.yml`(windows-latest で npm ci → test → build → dist、Artifacts へアップロード、`v*` タグで Releases に添付)
+
 ## Phase 3(前倒しで実装)— チャンク管理・Level 0 ✅
 - `ChunkManager`: 半径 R 内を時間予算(4ms/フレーム)付きキューで生成、進行方向を優先、R+1 外を破棄(geometry dispose)
 - `FloatingOrigin`: 原点から 1000m 離れたらチャンク境界に揃えて原点を移動
@@ -25,6 +31,6 @@ npm run build
 ```
 
 ## 未解決 / 次にやること
-- Phase 2: Electron 化 + GitHub Actions で exe 出力
+- Phase 2 の exe 生成は GitHub Actions 上で要確認(クラウド環境では Electron バイナリを取得できないため未実行)
 - Phase 4: ステータス・インベントリ・アイテム・HUD・Level 0 のセットピース・幻覚
 - 照明: 壁による遮蔽を考慮していない(光が壁越しに床へ漏れる)。必要なら後で改善

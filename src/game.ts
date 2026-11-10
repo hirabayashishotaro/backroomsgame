@@ -24,7 +24,7 @@ import { AudioSystem } from './systems/audio';
 import { Hallucinations } from './systems/hallucination';
 import { SkyDome } from './systems/sky';
 import { waterTime } from './systems/water';
-import { ENDING_LEVEL, ESCAPE_GOALS, EscapeProgress } from './systems/escape';
+import { ENDING_LEVEL, ESCAPE_GOALS, EscapeProgress, type EscapeStage } from './systems/escape';
 import { Crowd } from './world/crowd';
 import { missingMat } from './entities/models';
 import { Journal } from './systems/journal';
@@ -205,6 +205,7 @@ export class Game {
   /** Escape-mode progress (conditions, the Bug, the way home). */
   private escape = new EscapeProgress();
   private bugT = 5;
+  private arrivedStage: EscapeStage | null = null;
   private crowd: Crowd | null = null;
   private endingTimer = -1;
   private creditsShown = false;
@@ -301,10 +302,12 @@ export class Game {
           this.hud.message(t('entity.seen', { name: ENTITIES[kind].name }), 2.5);
         }
       },
-      onKilled: (kind) => {
+      onKilled: (kind, at) => {
         this.hud.message(t('entity.killed', { name: ENTITIES[kind].name }), 2);
         if (this.mode === 'escape') {
           if (this.escape.recordKill(kind) === 'return') {
+            // A door appears where the Bug fell: the first way home.
+            this.spawnDoorAt(at.x, at.y, at.z, Math.atan2(this.player.x - at.x, this.player.z - at.z));
             this.hud.showBanner(t('escape.returnBanner'), t('escape.returnSub'));
             this.updateRealityAudio();
           } else if (this.escape.check(this.journal.data.order) === 'bug') this.onBugStage();
@@ -544,7 +547,8 @@ export class Game {
   /** Escape-mode bookkeeping and the ending trigger. */
   private onArrive(): void {
     if (this.mode === 'escape') {
-      const changed = this.escape.arrive(this.level.id);
+      const changed = this.arrivedStage ?? this.escape.arrive(this.level.id);
+      this.arrivedStage = null;
       if (changed === 'home') setTimeout(() => this.hud.message(t('escape.home'), 6), 2500);
       if (this.escape.check(this.journal.data.order) === 'bug') this.onBugStage();
     }
@@ -646,6 +650,20 @@ export class Game {
 
   private get inArena(): boolean {
     return this.level.id === ARENA_ID;
+  }
+
+  /** Stand a door in the world at (x, y, z), its front facing `rotY` (added to the chunk there). */
+  private spawnDoorAt(x: number, y: number, z: number, rotY: number): void {
+    const S = this.level.chunkSize;
+    const cx = Math.floor(x / S);
+    const cz = Math.floor(z / S);
+    const c = this.chunks.column(cx, cz, this.chunks.slabCoord(y)).map((h) => h.handle)[0];
+    if (!c) return;
+    const prop: Prop = { uid: 'bug-door', kind: 'plain-door', x: x - c.ox, y, z: z - c.oz, rotY, color: 0x8a8f94 };
+    const mesh = buildPropMesh(prop, c.sampler(x, y + 1.5, z, 0, 1, 0));
+    c.group.add(mesh);
+    c.props.push({ uid: prop.uid, kind: prop.kind, x, y, z, rotY, key: c.key });
+    this.audio.door();
   }
 
   /** Developer mode 3: an escape run already at the Bug stage, in Level 0, armed. */
@@ -1429,6 +1447,8 @@ export class Game {
     const tr = this.transition!;
     const next = resolveLevel(tr.levelId);
     const ctx = makeGenContext(this.worldSeed, next);
+    // Advance the escape stage before the level is built, so Level 0 is built "home" (glitched doors).
+    this.arrivedStage = this.mode === 'escape' ? this.escape.arrive(tr.levelId) : null;
     const at = tr.at ?? next.arrival(ctx, tr.entry ?? 0);
     this.enterLevel(tr.levelId, at);
     if (!tr.at && next.topology !== 'closed') this.player.yaw = this.pickOpenYaw(at.yaw);
@@ -1476,10 +1496,10 @@ export class Game {
   }
 
   private openProp(p: WorldProp): void {
-    // Home at last: any door in Level 0 opens onto the real world.
-    const home = this.mode === 'escape' && this.escape.stage === 'home' && this.level.id === '0';
-    const rule: ExitRule | undefined = home
-      ? { kind: 'door', prop: p.kind, targets: [{ levelId: ENDING_LEVEL, weight: 1 }], discovery: t('escape.discovery') }
+    // After the Bug every door opens: it leads home, and from home (Level 0) out into the real world.
+    const forced = this.mode === 'escape' ? this.escape.doorTarget(this.level.id) : null;
+    const rule: ExitRule | undefined = forced
+      ? { kind: 'door', prop: p.kind, targets: [{ levelId: forced, weight: 1 }], discovery: forced === ENDING_LEVEL ? t('escape.discovery') : t('escape.doorHome') }
       : this.findExit('door', (r) => r.prop === p.kind);
     if (!rule) {
       this.audio.click();

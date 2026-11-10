@@ -106,8 +106,15 @@ export class EscapeProgress {
     return null;
   }
 
-  /** Level 0 shows glitched doors and the sounds of the city (stage return/home). */
+  /** Level 0 shows glitched doors and the sounds of the city - once you are back home. */
   realityLeaking(levelId: string): boolean {
-    return levelId === '0' && (this.data.stage === 'return' || this.data.stage === 'home');
+    return levelId === '0' && this.data.stage === 'home';
+  }
+
+  /** After the Bug, every door opens (even locked ones): they lead home, and from home, out. */
+  doorTarget(from: string): string | null {
+    if (this.data.stage === 'return') return '0';
+    if (this.data.stage === 'home') return from === '0' ? ENDING_LEVEL : '0';
+    return null;
   }
 }

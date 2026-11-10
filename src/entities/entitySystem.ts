@@ -30,7 +30,7 @@ export interface Host {
   /** Hit by a ranged attack (bullet, lightning): damage without the jump scare. */
   onRangedHit: (kind: EntityKind, damage: number) => void;
   onSeen: (kind: EntityKind) => void;
-  onKilled: (kind: EntityKind) => void;
+  onKilled: (kind: EntityKind, at: { x: number; y: number; z: number }) => void;
   onHit: (head: boolean, kill: boolean) => void;
 }
 
@@ -483,7 +483,7 @@ export class EntitySystem {
     e.flash = 1;
     this.host.audio.impact(true, this.panTo(at[0], at[2]), Math.hypot(at[0] - this.host.player.x, at[2] - this.host.player.z));
     this.host.onHit(head, dead);
-    if (dead) this.host.onKilled(e.kind);
+    if (dead) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z });
     this.spark(at[0], at[1], at[2], 0xa01010);
   }
 
@@ -647,7 +647,7 @@ export class EntitySystem {
       const k = 1 - d / radius;
       const dead = hurt(e.brain, damage * (0.25 + 0.75 * k));
       e.flash = 1;
-      if (dead) this.host.onKilled(e.kind);
+      if (dead) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z });
       if (e.kind !== 'giant') e.body.knock(e.body.x - x || 0.01, e.body.z - z, knock * (0.4 + 0.6 * k), 3 + 4 * k);
     }
   }

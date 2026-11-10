@@ -26,8 +26,14 @@ describe('escape mode', () => {
     // Any exit, from anywhere, leads to Level 0
     expect(e.overrideTarget('37', 'floor')).toBe('0');
     expect(e.overrideTarget('0', 'door')).toBe('0');
-    expect(e.realityLeaking('0')).toBe(true);
+    // Every door opens now (even locked ones) and leads home
+    expect(e.doorTarget('0')).toBe('0');
+    expect(e.doorTarget('37')).toBe('0');
+    // The glitched doors only appear once you are back in Level 0
+    expect(e.realityLeaking('0')).toBe(false);
     expect(e.arrive('0')).toBe('home');
+    expect(e.realityLeaking('0')).toBe(true);
+    expect(e.doorTarget('0')).toBe(ENDING_LEVEL);
     // From home, a door leads out; other ways keep you in Level 0
     expect(e.overrideTarget('0', 'door')).toBe(ENDING_LEVEL);
     expect(e.overrideTarget('0', 'wall')).toBe('0');

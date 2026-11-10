@@ -10,7 +10,7 @@ const X0 = 12;
 const X1 = 20;
 const Z0 = 12;
 const Z1 = 18;
-const H = 2.7;
+const H = 3.7;
 
 function box(list: Box[], x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, mat: string): void {
   list.push({ minX: x0, minY: y0, minZ: z0, maxX: x1, maxY: y1, maxZ: z1, mat });

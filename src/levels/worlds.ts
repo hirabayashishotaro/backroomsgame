@@ -236,7 +236,7 @@ export function makeTatamiLevel(o: WorldOpts, _rng: Rng): LevelDefinition {
     wallP: 0.42,
     doorwayP: 0.6,
     regions: true,
-    ceiling: 2.5,
+    ceiling: 3.5,
     wallT: 0.12,
     pillarP: 0.35,
     pillarHalf: 0.08,

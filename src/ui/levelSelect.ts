@@ -2,8 +2,8 @@
  * Developer level select (SPEC §5.3 debug start, extended per user request):
  * hand-made levels plus one example of every generated world type.
  */
-import { HAND_LEVEL_IDS, resolveLevel } from '../levels/registry';
-import { genomeOf, GRAMMAR_LABEL, SKY_LABEL } from '../levels/procedural/generated';
+import { HAND_LEVEL_IDS, hasHandLevel, resolveLevel } from '../levels/registry';
+import { genomeOf, GRAMMAR_LABEL, makeGeneratedLevel, SKY_LABEL } from '../levels/procedural/generated';
 import { t } from './i18n';
 
 export interface LevelEntry {
@@ -19,18 +19,18 @@ export function handLevelEntries(): LevelEntry[] {
   });
 }
 
-/** First generated id for each grammar x sky combination. */
+/** First generated id for each kind of world (grammar x variant x sky). */
 export function generatedExamples(): LevelEntry[] {
   const seen = new Set<string>();
   const out: LevelEntry[] = [];
-  for (let n = 3; n < 1500 && out.length < 40; n++) {
+  for (let n = 3; n < 3000 && out.length < 90; n++) {
     const id = String(n);
-    if (['0', '1', '2'].includes(id)) continue;
+    if (['0', '1', '2'].includes(id) || hasHandLevel(id)) continue;
     const g = genomeOf(id);
-    const key = g.grammar + ':' + (g.sky ?? '');
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({ id, label: `Level ${id}`, sub: `${GRAMMAR_LABEL[g.grammar]}${g.sky ? '・' + SKY_LABEL[g.sky] : ''}` });
+    const sub = makeGeneratedLevel(id).kindLabel ?? `${GRAMMAR_LABEL[g.grammar]}${g.sky ? '・' + SKY_LABEL[g.sky] : ''}`;
+    if (seen.has(sub)) continue;
+    seen.add(sub);
+    out.push({ id, label: `Level ${id}`, sub });
   }
   return out.sort((a, b) => a.sub.localeCompare(b.sub, 'ja'));
 }

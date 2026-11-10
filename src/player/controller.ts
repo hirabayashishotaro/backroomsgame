@@ -1,5 +1,5 @@
 /** First-person movement with collision, stepping, jumping and falling (renderer-independent). */
-import { ceilingHeight, groundHeight, resolveCylinder, type FloorRect, type WBox } from '../world/collision';
+import { ceilingHeight, groundHeight, rectCeiling, resolveCylinder, type FloorRect, type WBox } from '../world/collision';
 
 export interface MoveInput {
   forward: number; // -1..1
@@ -16,6 +16,8 @@ export interface WorldQuery {
   floors: (x: number, z: number) => FloorRect[];
   /** Smooth terrain height at a point (null = none there). */
   terrain?: (x: number, z: number) => number | null;
+  /** Ceiling rectangles near a point: solid from below (you bump your head). */
+  ceilings?: (x: number, z: number) => FloorRect[];
 }
 
 /** Steepest walkable terrain slope (rise / run): about 47 degrees. */
@@ -155,7 +157,10 @@ export class PlayerController {
       this.vy -= GRAVITY * dt;
       let ny = this.y + this.vy * dt;
       if (this.vy > 0) {
-        const ceil = ceilingHeight(this.x, this.z, PLAYER_RADIUS * 0.9, this.y + BODY_HEIGHT - 0.05, boxes);
+        const head = this.y + BODY_HEIGHT - 0.05;
+        let ceil = ceilingHeight(this.x, this.z, PLAYER_RADIUS * 0.9, head, boxes);
+        // Ceilings, and floors of the storey above, are solid from below.
+        ceil = Math.min(ceil, rectCeiling(this.x, this.z, head, world.ceilings?.(this.x, this.z) ?? []), rectCeiling(this.x, this.z, head, world.floors(this.x, this.z)));
         if (ny + BODY_HEIGHT > ceil) {
           ny = ceil - BODY_HEIGHT;
           this.vy = 0;

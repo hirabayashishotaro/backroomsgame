@@ -145,6 +145,16 @@ export function groundHeight(x: number, z: number, r: number, maxY: number, floo
   return g;
 }
 
+/** Lowest horizontal rectangle at or above `y` covering (x, z), or Infinity. */
+export function rectCeiling(x: number, z: number, y: number, rects: Iterable<FloorRect>): number {
+  let c = Infinity;
+  for (const f of rects) {
+    if (f.y < y || f.y >= c) continue;
+    if (x >= f.x0 && x <= f.x1 && z >= f.z0 && z <= f.z1) c = f.y;
+  }
+  return c;
+}
+
 /** Lowest box bottom above `y` overlapping the circle (head bump), or Infinity. */
 export function ceilingHeight(x: number, z: number, r: number, y: number, boxes: Iterable<WBox>): number {
   let c = Infinity;

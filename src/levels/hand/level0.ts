@@ -19,7 +19,7 @@ export const CELLS_PER_CHUNK = 8; // 32m chunk
 export const WALL_T = 0.2; // wall thickness
 export const FEATURE_CELL = 4; // chunks per feature cell side
 export const HIGH_CEILING = 9;
-const H0 = 3; // normal ceiling height
+const H0 = 4; // normal ceiling height (raised 1 m: room for jumps)
 const DOOR_W = 1.3;
 const DOOR_H = 2.2;
 

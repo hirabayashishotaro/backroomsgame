@@ -10,7 +10,7 @@ export const LEVEL1_PARAMS: GridParams = {
   wallP: 0.2,
   doorwayP: 0.35,
   regions: true,
-  ceiling: 5.5,
+  ceiling: 6.5,
   wallT: 0.35,
   pillarP: 0.85,
   pillarHalf: 0.45,

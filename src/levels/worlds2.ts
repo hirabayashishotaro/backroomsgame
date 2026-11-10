@@ -297,16 +297,28 @@ export function makeGlassVoid(o: ShapeOpts): LevelDefinition {
 
 // --- Terrain ------------------------------------------------------------------
 
-export function makeMountain(o: ShapeOpts, rng: Rng): LevelDefinition {
+/** Ground/tree materials for a mountain (default: snow and pines). */
+export interface MountainLook {
+  ground: string;
+  cliff: string;
+  tree: string;
+  treeP?: number;
+  tex: string;
+}
+
+export function makeMountain(o: ShapeOpts, rng: Rng, v?: MountainLook): LevelDefinition {
   const p: T.MountainParams = { slope: rng.pick([0.18, 0.2, 0.22]), rough: rng.pick([10, 14, 18]), snowMat: 'snow', cliffMat: 'rock', treeMat: 'pine' };
+  if (v) Object.assign(p, { snowMat: v.ground, cliffMat: v.cliff, treeMat: v.tree, treeP: v.treeP });
   const sky = o.sky ?? 'day';
+  const ambient = { day: 0.2, dusk: 0.14, dawn: 0.16, night: 0.08, overcast: 0.18, void: 0.06 }[sky];
+  const sun = { day: 1, dusk: 0.6, dawn: 0.7, night: 0.25, overcast: 0.75, void: 0.15 }[sky];
   return {
     ...common(o),
     meshDetail: 2,
     chunkSize: T.TERRAIN_S,
-    palette: look('gen:snow:eef4fb:201', 'gen:snow:eef4fb:201', 'white', SKY_PRESETS[sky].horizon, 0.008, 0.2),
+    palette: look(v?.tex ?? 'gen:snow:eef4fb:201', v?.tex ?? 'gen:snow:eef4fb:201', 'white', SKY_PRESETS[sky].horizon, 0.008, v ? ambient : 0.2),
     generator: (ctx, cx, cz) => T.generateMountain(ctx, p, cx, cz),
-    lightSampler: () => sampler(1, SKY_PRESETS[sky].sunDir, []),
+    lightSampler: () => sampler(v ? sun : 1, SKY_PRESETS[sky].sunDir, []),
     setPieces: pieces([
       ['hut', '山小屋', '登山道の脇に小屋がある。扉は開く。'],
       ['stone-gate', '石の門', '登山道の途中に立つ石の門。その下の光は……。'],
@@ -325,13 +337,16 @@ export function makeMountain(o: ShapeOpts, rng: Rng): LevelDefinition {
   };
 }
 
-export function makeSwamp(o: ShapeOpts, rng: Rng): LevelDefinition {
-  const p: T.SwampParams = { capMats: rng.pick([['cap-teal', 'cap-purple'], ['cap-purple'], ['cap-teal']]), amp: rng.pick([7, 9, 11]) };
+export function makeSwamp(o: ShapeOpts, rng: Rng, v?: { water?: string; ground?: string; day?: boolean }): LevelDefinition {
+  const p: T.SwampParams = { capMats: rng.pick([['cap-teal', 'cap-purple'], ['cap-purple'], ['cap-teal']]), amp: rng.pick([7, 9, 11]), ...v };
+  const daySky = v?.day ? (o.sky && o.sky !== 'night' && o.sky !== 'void' ? o.sky : 'day') : null;
   return {
     ...common(o),
     meshDetail: 2,
     chunkSize: T.TERRAIN_S,
-    palette: look('gen:moss:3a5a2a:220', 'gen:moss:3a5a2a:220', 'white', 0x050a07, 0.07, 0.05),
+    palette: daySky
+      ? look('gen:moss:3a5a2a:220', 'gen:moss:3a5a2a:220', 'white', SKY_PRESETS[daySky].horizon, 0.012, 0.25)
+      : look('gen:moss:3a5a2a:220', 'gen:moss:3a5a2a:220', 'white', 0x050a07, 0.07, 0.05),
     generator: (ctx, cx, cz) => T.generateSwamp(ctx, p, cx, cz),
     lightSampler: (ctx, cx, cz) => T.swampSampler(ctx, p, cx, cz),
     setPieces: pieces([
@@ -344,21 +359,26 @@ export function makeSwamp(o: ShapeOpts, rng: Rng): LevelDefinition {
     footstep: 'water',
     ambience: { humFreq: 0, humGain: 0, noiseGain: 0.05, noiseCutoff: 380 },
     environment: 'open-sky',
-    sky: { kind: 'night' },
+    sky: { kind: daySky ?? 'night' },
     spawn: { x: 1, y: 3, z: 1, yaw: 0 },
     arrival: (ctx, h) => T.swampArrival(ctx, p, h),
-    hallucination: 1.4,
+    hallucination: daySky ? 0.6 : 1.4,
   };
 }
 
-export function makeVolcano(o: ShapeOpts): LevelDefinition {
+export function makeVolcano(o: ShapeOpts, v: T.VolcanoParams = T.VOLCANO_LAVA): LevelDefinition {
+  const lava = v.liquid === 'lava';
+  const sky = o.sky ?? 'dusk';
+  const sun = { day: 1, dusk: 0.6, dawn: 0.7, night: 0.25, overcast: 0.75, void: 0.15 }[sky];
   return {
     ...common(o),
     meshDetail: 2,
     chunkSize: T.TERRAIN_S,
-    palette: look('gen:rock:2e2a28:203', 'gen:rock:2e2a28:203', 'white', 0x2a0804, 0.03, 0.08, 0xffa060, [1, 0.6, 0.4]),
-    generator: (ctx, cx, cz) => T.generateVolcano(ctx, cx, cz),
-    lightSampler: () => sampler(0.18, [0.2, 0.5, 0.3], [], { y: T.LAVA_Y, I: 0.8 }),
+    palette: lava
+      ? look('gen:rock:2e2a28:203', 'gen:rock:2e2a28:203', 'white', 0x2a0804, 0.03, 0.08, 0xffa060, [1, 0.6, 0.4])
+      : look('gen:rock:6e6a66:202', 'gen:rock:6e6a66:202', 'white', SKY_PRESETS[sky].horizon, 0.014, 0.18),
+    generator: (ctx, cx, cz) => T.generateVolcano(ctx, cx, cz, v),
+    lightSampler: () => (lava ? sampler(0.18, [0.2, 0.5, 0.3], [], { y: T.LAVA_Y, I: 0.8 }) : sampler(sun, SKY_PRESETS[sky].sunDir, [])),
     setPieces: pieces([
       ['ridge', '玄武岩の尾根', '溶岩の海に細く延びる黒い尾根。歩ける道はここだけだ。'],
       ['obsidian-door', '黒曜石の扉', '尾根の上に、黒曜石の扉が立っている。'],
@@ -367,23 +387,23 @@ export function makeVolcano(o: ShapeOpts): LevelDefinition {
       ['island', '岩の島', '少しだけ広い岩場。休むならここだ。'],
     ]),
     footstep: 'concrete',
-    ambience: { humFreq: 30, humGain: 0.05, noiseGain: 0.07, noiseCutoff: 200 },
+    ambience: lava ? { humFreq: 30, humGain: 0.05, noiseGain: 0.07, noiseCutoff: 200 } : { humFreq: 0, humGain: 0, noiseGain: 0.07, noiseCutoff: 700 },
     environment: 'open-sky',
-    sky: { kind: o.sky ?? 'dusk' },
-    lava: { y: T.LAVA_Y, damage: 35 },
+    sky: { kind: sky },
+    lava: lava ? { y: T.LAVA_Y, damage: 35 } : undefined,
     spawn: { x: 1, y: 2, z: 1, yaw: 0 },
     arrival: (ctx, h) => T.volcanoArrival(ctx, h),
     drainMul: 1.2,
   };
 }
 
-export function makeIsland(o: ShapeOpts): LevelDefinition {
+export function makeIsland(o: ShapeOpts, v: T.IslandParams = T.ISLAND_SAND): LevelDefinition {
   return {
     ...common(o),
     meshDetail: 2,
     chunkSize: T.TERRAIN_S,
     palette: look('gen:sand:d8c690:205', 'gen:sand:d8c690:205', 'white', SKY_PRESETS.day.horizon, 0.012, 0.2),
-    generator: (ctx, cx, cz) => T.generateIsland(ctx, cx, cz),
+    generator: (ctx, cx, cz) => T.generateIsland(ctx, cx, cz, v),
     lightSampler: (_ctx, cx, cz) =>
       sampler({ day: 1, dusk: 0.6, dawn: 0.7, night: 0.25, overcast: 0.75, void: 0.15 }[o.sky ?? 'day'], SKY_PRESETS[o.sky ?? 'day'].sunDir, Math.abs(cx + 0.5) < 1 && Math.abs(cz + 0.5) < 1 ? [{ x: 0, y: 1, z: 2, I: 2 }] : []),
     setPieces: pieces([
@@ -491,7 +511,7 @@ export function makeHospital(o: ShapeOpts): LevelDefinition {
     wallP: 0.55,
     doorwayP: 0.5,
     regions: true,
-    ceiling: 2.8,
+    ceiling: 3.8,
     wallT: 0.15,
     pillarP: 0,
     pillarHalf: 0,

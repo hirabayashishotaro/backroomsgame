@@ -50,7 +50,7 @@ export const level4_3 = makeGridLevel(
       { kind: 'walk', distance: 1200, targets: [{ levelId: '4', weight: 1 }], discovery: '白い廊下の果てに、事務所の匂いがした。' },
     ],
   },
-  gp({ cell: 3, cellsPerChunk: 10, ceiling: 3.2, wallP: 0.62, doorwayP: 0.38, regions: false, lightP: 0.45, lightIntensity: 0.9, lightDeadP: 0, lightFlickerP: 0, doorKinds: [{ kind: 'plain-door', weight: 1, color: 0xf4f4f0 }], pieces: ['door-row', 'light-well', 'pillar-forest', 'reception', 'statue'] }),
+  gp({ cell: 3, cellsPerChunk: 10, ceiling: 4.2, wallP: 0.62, doorwayP: 0.38, regions: false, lightP: 0.45, lightIntensity: 0.9, lightDeadP: 0, lightFlickerP: 0, doorKinds: [{ kind: 'plain-door', weight: 1, color: 0xf4f4f0 }], pieces: ['door-row', 'light-well', 'pillar-forest', 'reception', 'statue'] }),
   { wall: 'gen:panel:f2f2ee:301', floor: 'gen:tile:e8e8e4:302', ceiling: 'gen:panel:fafaf8:303', light: 0xffffff, tint: [1, 1, 1], fog: 0xdcdcda, fogDensity: 0.03, ambient: 0.16 },
   { hallucination: 0.7 },
 );
@@ -96,7 +96,7 @@ export const level14 = makeGridLevel(
       { kind: 'walk', distance: 1000, targets: [{ levelId: '1', weight: 1 }], discovery: '非常口の表示に従って進み続けると、倉庫に出た。' },
     ],
   },
-  gp({ cell: 2.8, cellsPerChunk: 11, ceiling: 2.6, wallP: 0.6, doorwayP: 0.4, regions: false, lightP: 0.08, lightIntensity: 0.6, signP: 0.25, pieces: ['stair-tower', 'door-row', 'platforms', 'pit-bridge', 'pillar-forest'] }),
+  gp({ cell: 2.8, cellsPerChunk: 11, ceiling: 3.6, wallP: 0.6, doorwayP: 0.4, regions: false, lightP: 0.08, lightIntensity: 0.6, signP: 0.25, pieces: ['stair-tower', 'door-row', 'platforms', 'pit-bridge', 'pillar-forest'] }),
   { wall: 'gen:concrete:5d675f:311', floor: 'gen:floor-concrete:3c423e:312', ceiling: 'gen:concrete:2c302d:313', light: 0x7aff9a, tint: [0.55, 1, 0.7], fog: 0x050a07, fogDensity: 0.07, ambient: 0.06 },
   { hallucination: 1.2, drainMul: 1.1 },
 );
@@ -118,7 +118,7 @@ export const level27 = makeGridLevel(
       { kind: 'walk', distance: 900, targets: [{ levelId: '37', weight: 1 }], discovery: '這うように進み続けると、塩素の匂いがした。' },
     ],
   },
-  gp({ cell: 3, cellsPerChunk: 10, ceiling: 2.15, wallP: 0.5, doorwayP: 0.5, pipes: true, lightP: 0.12, lightW: 0.25, lightD: 0.25, lightIntensity: 0.8, pieces: ['pit-bridge', 'water-tanks', 'pool', 'shelves', 'door-row'] }),
+  gp({ cell: 3, cellsPerChunk: 10, ceiling: 3.15, wallP: 0.5, doorwayP: 0.5, pipes: true, lightP: 0.12, lightW: 0.25, lightD: 0.25, lightIntensity: 0.8, pieces: ['pit-bridge', 'water-tanks', 'pool', 'shelves', 'door-row'] }),
   { wall: 'gen:concrete:5a5248:321', floor: 'gen:floor-concrete:3a352f:322', ceiling: 'gen:wood:4a3a28:323', light: 0xffb060, tint: [1, 0.75, 0.5], fog: 0x0a0806, fogDensity: 0.08, ambient: 0.05 },
   { hallucination: 1.3, drainMul: 1.15 },
 );
@@ -160,7 +160,7 @@ export const level139 = makeGridLevel(
       { kind: 'walk', distance: 900, targets: [{ levelId: '1', weight: 1 }], discovery: '壁の裏をずっと進むと、コンクリートの倉庫に出た。' },
     ],
   },
-  gp({ cell: 2.4, cellsPerChunk: 13, ceiling: 2.6, wallP: 0.58, doorwayP: 0.45, wallT: 0.15, lightP: 0.1, lightW: 0.2, lightD: 0.2, lightIntensity: 0.7, thinP: 0.03, pieces: ['shelves', 'door-row', 'platforms', 'pit-bridge', 'stair-tower'] }),
+  gp({ cell: 2.4, cellsPerChunk: 13, ceiling: 3.6, wallP: 0.58, doorwayP: 0.45, wallT: 0.15, lightP: 0.1, lightW: 0.2, lightD: 0.2, lightIntensity: 0.7, thinP: 0.03, pieces: ['shelves', 'door-row', 'platforms', 'pit-bridge', 'stair-tower'] }),
   { wall: 'studs', floor: 'gen:wood:6a5034:341', ceiling: 'studs', light: 0xffc890, tint: [1, 0.82, 0.6], fog: 0x0c0806, fogDensity: 0.07, ambient: 0.05 },
   { footstep: 'carpet', hallucination: 1.2 },
 );

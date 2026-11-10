@@ -108,3 +108,22 @@ describe('knockback', () => {
     expect(p.x - x).toBeLessThan(0.2);
   });
 });
+
+describe('ceilings', () => {
+  it('stop an upward launch at the ceiling (no passing through)', async () => {
+    const { PlayerController } = await import('../src/player/controller');
+    const floor = { x0: -100, z0: -100, x1: 100, z1: 100, y: 0 };
+    const ceiling = { x0: -100, z0: -100, x1: 100, z1: 100, y: 4 };
+    const world = { boxes: () => [], floors: () => [floor], ceilings: () => [ceiling] };
+    const p = new PlayerController();
+    p.vy = 15;
+    p.grounded = false;
+    let top = 0;
+    for (let i = 0; i < 120; i++) {
+      p.step(1 / 60, { forward: 0, strafe: 0, sprint: false, crouch: false, jump: false }, world as never);
+      top = Math.max(top, p.y);
+    }
+    expect(top + 1.8).toBeLessThanOrEqual(4.01);
+    expect(p.y).toBeCloseTo(0);
+  });
+});

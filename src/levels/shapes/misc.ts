@@ -294,6 +294,9 @@ export function booksArrival(ctx: GenContext, h: number): SpawnPoint {
     const gx = Math.floor(hash01(ctx.levelSeed, 537, h, k) * 60) - 30;
     const gz = Math.floor(hash01(ctx.levelSeed, 538, h, k) * 60) - 30;
     if (hash01(ctx.levelSeed, 531, gx, gz) < 0.12) continue;
+    // Not on a book with a door or an upright book standing in the middle.
+    const r = hash01(ctx.levelSeed, 536, gx, gz);
+    if (r >= 0.1 && r < 0.16) continue;
     const cx = Math.floor(gx / 5);
     const cz = Math.floor(gz / 5);
     const i = gx - cx * 5;

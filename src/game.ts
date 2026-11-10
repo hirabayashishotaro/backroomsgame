@@ -80,6 +80,7 @@ interface ChunkHandle {
   group: THREE.Group;
   boxes: WBox[];
   floors: FloorRect[];
+  ceilings: FloorRect[];
   terrain?: TerrainGrid;
   ox: number;
   oz: number;
@@ -814,6 +815,7 @@ export class Game {
       group,
       boxes: data.solids.map((b) => Object.assign(toWorldBox(b, ox, oz), { thin: b.thin })),
       floors: data.floors.map((f) => ({ x0: f.x0 + ox, z0: f.z0 + oz, x1: f.x1 + ox, z1: f.z1 + oz, y: f.y })),
+      ceilings: data.ceilings.map((f) => ({ x0: f.x0 + ox, z0: f.z0 + oz, x1: f.x1 + ox, z1: f.z1 + oz, y: f.y })),
       terrain: data.terrain,
       ox,
       oz,
@@ -881,6 +883,11 @@ export class Game {
     return col.length === 1 ? col[0].floors : col.flatMap((c) => c.floors);
   };
 
+  private ceilingsNear = (x: number, z: number): FloorRect[] => {
+    const col = this.columnAt(x, z);
+    return col.length === 1 ? col[0].ceilings : col.flatMap((c) => c.ceilings);
+  };
+
   /** Smooth terrain height at a world point (flat-topology levels only). */
   private terrainAt = (x: number, z: number): number | null => {
     const S = this.level.chunkSize;
@@ -892,6 +899,7 @@ export class Game {
     boxes: (x: number, z: number) => this.boxesNear(x, z),
     floors: (x: number, z: number) => this.floorsNear(x, z),
     terrain: (x: number, z: number) => this.terrainAt(x, z),
+    ceilings: (x: number, z: number) => this.ceilingsNear(x, z),
   };
 
   /**
@@ -1099,7 +1107,7 @@ export class Game {
         if (h && h.t < best) best = h.t;
       }
       if (Math.abs(dy) > 1e-5)
-        for (const f of this.floorsNear(sx + (dx * len) / 2, sz + (dz * len) / 2)) {
+        for (const f of [...this.floorsNear(sx + (dx * len) / 2, sz + (dz * len) / 2), ...this.ceilingsNear(sx + (dx * len) / 2, sz + (dz * len) / 2)]) {
           const tt = (f.y - sy) / dy;
           if (tt < 0 || tt > len || tt >= best) continue;
           const x = sx + dx * tt;

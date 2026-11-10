@@ -10,6 +10,7 @@ import type { SkyKind } from '../../systems/skyPresets';
 import { makeGardenLevel, makeRoadLevel, makeTatamiLevel, makeWalkwayLevel, type WorldOpts } from '../worlds';
 import { SKY_PRESETS } from '../../systems/skyPresets';
 import * as W from '../worlds2';
+import type * as T from '../shapes/terrain';
 import type { ShapeOpts } from '../worlds2';
 import { ALL_GRID_PIECES, GRID_PIECES } from '../gridPieces';
 
@@ -109,36 +110,75 @@ export type Grammar =
   | 'poolrooms'
   | 'waterpark';
 
+/**
+ * Grammar weights. Indoor mazes with a ceiling used to dominate; now terrain
+ * (mountains, volcanoes, islands, forests) and vertical worlds come up far more.
+ */
 const GRAMMARS: Array<[Grammar, number, SkyKind[]]> = [
-  ['grid', 24, []],
-  ['ruins', 10, ['day', 'dusk', 'night', 'overcast', 'dawn']],
-  ['garden', 16, ['day', 'dusk', 'night', 'dawn', 'overcast']],
-  ['aero', 7, ['day', 'dawn']],
-  ['walkways', 12, ['night', 'dawn', 'dusk', 'day', 'void']],
-  ['narrow', 7, ['void', 'night']],
-  ['roads', 7, ['dawn', 'day', 'dusk', 'night']],
-  ['tatami', 8, ['night', 'dusk']],
-  ['spiral', 6, []],
-  ['tunnel', 6, []],
+  ['grid', 7, []],
+  ['ruins', 5, ['day', 'dusk', 'night', 'overcast', 'dawn']],
+  ['garden', 9, ['day', 'dusk', 'night', 'dawn', 'overcast']],
+  ['aero', 5, ['day', 'dawn']],
+  ['walkways', 7, ['night', 'dawn', 'dusk', 'day', 'void']],
+  ['narrow', 4, ['void', 'night']],
+  ['roads', 5, ['dawn', 'day', 'dusk', 'night']],
+  ['tatami', 5, ['night', 'dusk']],
+  ['spiral', 8, []],
+  ['tunnel', 5, []],
   ['chaos', 4, []],
-  ['mountain', 6, ['day', 'dawn', 'overcast']],
-  ['volcano', 4, ['dusk', 'night', 'overcast']],
-  ['temple', 3, []],
-  ['island', 3, ['day', 'dusk', 'dawn', 'night']],
-  ['cave', 6, []],
-  ['mansion', 5, []],
-  ['swamp', 5, []],
+  ['mountain', 14, ['day', 'dawn', 'overcast', 'dusk', 'night']],
+  ['volcano', 11, ['dusk', 'night', 'overcast', 'day', 'dawn']],
+  ['temple', 2, []],
+  ['island', 7, ['day', 'dusk', 'dawn', 'night', 'overcast']],
+  ['cave', 9, []],
+  ['mansion', 8, []],
+  ['swamp', 11, ['day', 'dawn', 'overcast', 'dusk']],
   ['books', 4, []],
-  ['gullet', 3, []],
-  ['colossus', 3, ['dusk', 'void', 'day', 'night']],
+  ['gullet', 5, []],
+  ['colossus', 4, ['dusk', 'void', 'day', 'night']],
   ['glassvoid', 3, []],
-  ['rooftops', 4, []],
-  ['endisles', 4, []],
-  ['pooltower', 4, []],
-  ['hospital', 5, []],
-  ['poolrooms', 8, []],
-  ['waterpark', 3, []],
+  ['rooftops', 5, []],
+  ['endisles', 5, []],
+  ['pooltower', 7, []],
+  ['hospital', 4, []],
+  ['poolrooms', 7, []],
+  ['waterpark', 4, []],
 ];
+
+/** Terrain variants for random levels (the named levels keep their originals). */
+interface Variant {
+  label: string;
+  nouns: string[];
+}
+const MOUNTAIN_VARIANTS: Array<Variant & W.MountainLook> = [
+  { label: '雪山', nouns: ['雪山', '尾根', '氷河'], ground: 'snow', cliff: 'rock', tree: 'pine', tex: 'gen:snow:eef4fb:201' },
+  { label: '草原の山', nouns: ['高原', '丘陵', '草の尾根'], ground: 'grass', cliff: 'rock', tree: 'leaves-green', tex: 'gen:grass:5a8a3a:3' },
+  { label: '紅葉の山', nouns: ['紅葉の山', '秋の峠', '山道'], ground: 'grass', cliff: 'rock', tree: 'leaves-autumn', tex: 'gen:grass:5a8a3a:3' },
+  { label: '桜の丘', nouns: ['桜の丘', '花の斜面', '春の峠'], ground: 'grass', cliff: 'rock', tree: 'leaves-pink', tex: 'gen:grass:5a8a3a:3' },
+  { label: '砂丘', nouns: ['砂丘', '砂の斜面', '砂漠'], ground: 'sand', cliff: 'sand', tree: 'leaves-lime', treeP: 0.012, tex: 'gen:sand:d8c690:205' },
+  { label: '岩山', nouns: ['岩山', '断崖', '石の斜面'], ground: 'rock', cliff: 'basalt', tree: 'pine', treeP: 0.025, tex: 'gen:rock:6e6a66:202' },
+];
+const VOLCANO_VARIANTS: Array<Variant & T.VolcanoParams> = [
+  { label: '火山', nouns: ['火口', '溶岩原', 'カルデラ'], liquid: 'lava', ground: 'basalt', sea: 'lava' },
+  { label: '水没した火山', nouns: ['水没火口', '黒い入江', '沈んだカルデラ'], liquid: 'water', ground: 'basalt', sea: 'ocean' },
+  { label: '浅瀬の尾根', nouns: ['浅瀬', '干潟', '尾根の海'], liquid: 'water', ground: 'sand', sea: 'water-shallow' },
+  { label: '雪の火山', nouns: ['雪の火口', '凍てた溶岩原', '白いカルデラ'], liquid: 'lava', ground: 'snow', sea: 'lava' },
+];
+const SWAMP_VARIANTS: Array<Variant & { water?: string; ground?: string; day?: boolean; night?: boolean }> = [
+  { label: '夜のキノコの湿地', nouns: ['湿地', '菌の森', '沼地'], night: true },
+  { label: '昼のキノコの森', nouns: ['キノコの森', '菌の林', '胞子の谷'], day: true, water: 'water' },
+  { label: '草原のキノコ', nouns: ['キノコの野原', '胞子の草原', '菌の丘'], day: true, water: 'water-shallow', ground: 'grass' },
+];
+const ISLAND_VARIANTS: Array<Variant & T.IslandParams> = [
+  { label: '南の孤島', nouns: ['孤島', '小島', '砂州'], ground: 'sand', leaves: 'leaves-green', sea: 'ocean' },
+  { label: '氷の島', nouns: ['氷の島', '流氷', '凍った岬'], ground: 'snow', leaves: 'pine', sea: 'ocean' },
+  { label: '花の島', nouns: ['花の島', '草の小島', '春の岬'], ground: 'grass', leaves: 'leaves-pink', sea: 'water-shallow' },
+];
+
+/** Which variant a random level gets (deterministic per id). */
+function pickVariant<T>(id: string, list: T[]): T {
+  return list[hashString('variant:' + id) % list.length];
+}
 
 export const GRAMMAR_LABEL: Record<Grammar, string> = {
   spiral: '螺旋階段(縦)',
@@ -270,7 +310,9 @@ export function makeGeneratedLevel(id: string): LevelDefinition {
   if (grammar === 'grid' || grammar === 'ruins') def = makeGridGenerated(id, grammar === 'ruins' ? sky! : null);
   else {
     const rng = new Rng(hashString('world:' + id));
-    const name = rng.pick(ADJ) + rng.pick(WORLD_NOUN[grammar]!);
+    const variant = grammar === 'mountain' ? pickVariant(id, MOUNTAIN_VARIANTS) : grammar === 'volcano' ? pickVariant(id, VOLCANO_VARIANTS) : grammar === 'swamp' ? pickVariant(id, SWAMP_VARIANTS) : grammar === 'island' ? pickVariant(id, ISLAND_VARIANTS) : null;
+    const name = rng.pick(ADJ) + rng.pick(variant?.nouns ?? WORLD_NOUN[grammar]!);
+    const label = variant?.label ?? GRAMMAR_LABEL[grammar];
     const o: WorldOpts = {
       id,
       title: 'Level ' + id,
@@ -278,7 +320,7 @@ export function makeGeneratedLevel(id: string): LevelDefinition {
       threat: (grammar === 'narrow' ? 3 : rng.int(0, 2)) as 0 | 1 | 2 | 3,
       sky: sky ?? 'night',
       exits: genericExits(id, rng, grammar),
-      kindLabel: sky ? `${GRAMMAR_LABEL[grammar]}・${SKY_LABEL[sky]}` : GRAMMAR_LABEL[grammar],
+      kindLabel: sky && !(variant && 'night' in variant && variant.night) ? `${label}・${SKY_LABEL[sky]}` : label,
     };
     if (grammar === 'garden') def = makeGardenLevel(o, 'garden', rng);
     else if (grammar === 'aero') def = makeGardenLevel(o, 'aero', rng);
@@ -292,13 +334,16 @@ export function makeGeneratedLevel(id: string): LevelDefinition {
         spiral: () => W.makeSpiral(so, rng),
         tunnel: () => W.makeTunnel(so, rng),
         chaos: () => W.makeChaos(so, rng),
-        mountain: () => W.makeMountain(so, rng),
-        volcano: () => W.makeVolcano(so),
+        mountain: () => W.makeMountain(so, rng, pickVariant(id, MOUNTAIN_VARIANTS)),
+        volcano: () => W.makeVolcano(so, pickVariant(id, VOLCANO_VARIANTS)),
         temple: () => W.makeTemple(so),
-        island: () => W.makeIsland(so),
+        island: () => W.makeIsland(so, pickVariant(id, ISLAND_VARIANTS)),
         cave: () => W.makeCave(so),
         mansion: () => W.makeMansion(so, rng),
-        swamp: () => W.makeSwamp(so, rng),
+        swamp: () => {
+          const v = pickVariant(id, SWAMP_VARIANTS);
+          return W.makeSwamp(so, rng, v.night ? undefined : { water: v.water, ground: v.ground, day: v.day });
+        },
         books: () => W.makeBooks(so),
         gullet: () => W.makeGullet(so),
         colossus: () => W.makeColossus(so, sky ?? 'dusk'),
@@ -332,7 +377,8 @@ function makeGridGenerated(id: string, openSky: SkyKind | null): LevelDefinition
   const wallP = [0.55, 0.15, 0.62, 0.42][structure];
   const passable = 0.64;
   const doorwayP = Math.min(0.9, Math.max(0.2, (passable - (1 - wallP)) / wallP));
-  const ceiling = [2.6, 4 + rng.float() * 4, 2.5, 3 + rng.float()][structure];
+  // +1 m over the old heights: room to jump (rocket jumps) under a solid ceiling.
+  const ceiling = [3.6, 5 + rng.float() * 4, 3.5, 4 + rng.float()][structure];
   const params: GridParams = {
     cell,
     cellsPerChunk,

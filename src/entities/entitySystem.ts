@@ -93,6 +93,9 @@ interface Bomb {
 
 const BOMB_GRAVITY = 14;
 
+/** Max upward speed from your own rocket: v^2 / 2g = 15^2 / 32 = about 7 m of height. */
+export const ROCKET_JUMP_VY = 15;
+
 /** Enemy bullet speed (m/s): fast, but you can see it and step aside. */
 export const ENEMY_SHOT_SPEED = 55;
 
@@ -675,7 +678,7 @@ export class EntitySystem {
       p.kx += (dx / l) * S;
       p.kz += (dz / l) * S;
       if (up > 0.5) {
-        p.vy = Math.min(17, Math.max(p.vy, 0) + up);
+        p.vy = Math.min(ROCKET_JUMP_VY, Math.max(p.vy, 0) + up);
         p.grounded = false;
       }
       this.host.onSelfBlast();

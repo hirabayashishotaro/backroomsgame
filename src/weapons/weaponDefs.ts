@@ -121,7 +121,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     adsZoom: 0.8,
     headMultiplier: 1,
     range: 200,
-    explosive: { radius: 4.5, knock: 18, selfKnock: 21 },
+    explosive: { radius: 4.5, knock: 18, selfKnock: 18 },
   },
   axe: {
     id: 'axe',

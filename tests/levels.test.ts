@@ -116,6 +116,26 @@ describe('levels', () => {
     }
   });
 
+  it('random levels are mostly not ceilinged mazes, and terrain comes in variants', () => {
+    let indoorMaze = 0;
+    const labels = new Set<string>();
+    let waterVolcano = false;
+    let daySwamp = false;
+    for (let n = 3; n < 1500; n++) {
+      const id = String(n);
+      const g = genomeOf(id);
+      if (g.grammar === 'grid' || g.grammar === 'ruins') indoorMaze++;
+      const L = resolveLevel(id);
+      if (L.kindLabel) labels.add(L.kindLabel.split('・')[0]);
+      if (g.grammar === 'volcano' && !L.lava) waterVolcano = true;
+      if (g.grammar === 'swamp' && L.sky && L.sky.kind !== 'night') daySwamp = true;
+    }
+    expect(indoorMaze / 1497).toBeLessThan(0.12);
+    expect(waterVolcano).toBe(true);
+    expect(daySwamp).toBe(true);
+    expect(labels.size).toBeGreaterThanOrEqual(35);
+  });
+
   it('U1-U3 and the Void follow SPEC 4.2.1 (sky, groundless U1 with a fall transition)', () => {
     const u1 = resolveLevel('u1');
     expect(u1.groundless).toBe(true);

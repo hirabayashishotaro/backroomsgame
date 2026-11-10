@@ -8,6 +8,7 @@ import type { ItemId } from '../items/itemDefs';
 import type { DeltaData } from '../world/deltas';
 import type { JournalData } from '../systems/journal';
 import type { ArsenalData } from '../weapons/weaponLogic';
+import type { EscapeData } from '../systems/escape';
 
 export const SAVE_VERSION = 1;
 export const SLOT_COUNT = 3;
@@ -51,6 +52,8 @@ export interface SaveData {
   mode?: 'endless' | 'escape';
   /** Magazines and ammunition. */
   arsenal?: ArsenalData;
+  /** Escape-mode progress. */
+  escape?: EscapeData;
 }
 
 export interface SlotInfo {

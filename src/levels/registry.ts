@@ -8,6 +8,7 @@ import { levelU1, levelU2, levelU3, levelVoid } from './hand/special';
 import { level13, level139, level14, level27, level37, level4_3, level7_5 } from './hand/wikiLevels';
 import { levelFrontrooms } from './hand/frontrooms';
 import { levelArena } from './hand/arena';
+import { levelEnding } from './hand/ending';
 import { SHAPE_LEVELS } from './hand/shapeLevels';
 import { setLevelResolver } from './resolverHook';
 
@@ -28,6 +29,7 @@ const HAND_LEVELS: Record<string, LevelDefinition> = {
   [level139.id]: level139,
   [levelFrontrooms.id]: levelFrontrooms,
   [levelArena.id]: levelArena,
+  [levelEnding.id]: levelEnding,
 };
 
 /** Hand-made levels in display order (developer level select). */

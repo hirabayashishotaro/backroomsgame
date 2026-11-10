@@ -212,6 +212,10 @@ export function think(b: BrainState, p: Perception, dt: number): Decision {
       }
       return d;
     }
+    case 'bug': {
+      // Harmless: drifts around at a distance, sidestepping; never attacks, never leaves.
+      return keepRange(b, p, dt, 6, 16, def.walk, def.run);
+    }
     case 'giant': {
       // Slow, relentless; stomps when you are at its feet.
       if (b.mode === 'attack') {
@@ -249,7 +253,7 @@ export function hurt(b: BrainState, dmg: number): boolean {
   if ((b.kind === 'hound' || b.kind === 'skinstealer') && dmg >= 50) {
     b.mode = 'stagger';
     b.t = 0;
-  } else if (b.kind !== 'bloater' && b.kind !== 'giant' && b.kind !== 'gunman' && b.kind !== 'witch' && b.kind !== 'bomber' && b.mode !== 'stagger') {
+  } else if (b.kind !== 'bloater' && b.kind !== 'giant' && b.kind !== 'gunman' && b.kind !== 'witch' && b.kind !== 'bomber' && b.kind !== 'bug' && b.mode !== 'stagger') {
     // Shooting it wakes it up.
     if (b.mode !== 'chase') {
       b.mode = 'chase';

@@ -1,5 +1,5 @@
 /** Entities (SPEC §7). Behaviour is original; Wiki descriptions are not copied. */
-export type EntityKind = 'smiler' | 'hound' | 'duller' | 'faceling' | 'skinstealer' | 'bloater' | 'giant' | 'gunman' | 'witch' | 'bomber';
+export type EntityKind = 'smiler' | 'hound' | 'duller' | 'faceling' | 'skinstealer' | 'bloater' | 'giant' | 'gunman' | 'witch' | 'bomber' | 'bug';
 
 export interface EntityDef {
   kind: EntityKind;
@@ -125,6 +125,17 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
     life: 120,
     hint: '背中に袋を背負った人影。山なりに爆弾を投げてくる。爆弾は落ちてから少しして爆発し、周りのものを吹き飛ばす。赤い点滅から離れること。',
   },
+  bug: {
+    kind: 'bug',
+    name: 'バグ',
+    hp: 60 * HP_SCALE,
+    damage: 0,
+    walk: 2.2,
+    run: 4.6,
+    life: 100000,
+    hint: '黒と紫の格子模様の人型。テクスチャが読み込めなかったような姿で、ときどき跳ぶように位置がずれる。襲ってはこない。世界のほつれそのもの。',
+  },
 };
 
+/** Every ordinary kind (the escape condition counts these; the Bug is special). */
 export const ALL_ENTITIES: EntityKind[] = ['smiler', 'hound', 'duller', 'faceling', 'skinstealer', 'bloater', 'giant', 'gunman', 'witch', 'bomber'];

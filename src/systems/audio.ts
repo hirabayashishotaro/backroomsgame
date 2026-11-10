@@ -116,6 +116,140 @@ export class AudioSystem {
     this.noiseFilter.frequency.value = a.noiseCutoff;
   }
 
+  // --- The real world leaking in (escape mode) -------------------------------
+
+  private realityGain: GainNode | null = null;
+  private realityLevel = 0;
+  private carT = 4;
+  private chirpT = 9;
+  private stepT = 1;
+  private chatT = 2;
+
+  /**
+   * Sounds of a city: crowd murmur, footsteps, cars passing, the chirp of a
+   * pedestrian crossing. 0 = off, ~0.4 = faint (heard through Level 0), 1 = the street.
+   */
+  setReality(level: number): void {
+    const ctx = this.ctx;
+    this.realityLevel = level;
+    if (!ctx) return;
+    if (!this.realityGain) {
+      this.realityGain = ctx.createGain();
+      this.realityGain.gain.value = 0;
+      this.realityGain.connect(this.ambienceBus);
+      // Crowd murmur: a few band-passed noise layers, each swelling slowly.
+      for (const [f, rate] of [
+        [420, 0.23],
+        [780, 0.31],
+        [1250, 0.17],
+        [2100, 0.41],
+      ]) {
+        const src = ctx.createBufferSource();
+        src.buffer = this.noiseBuffer;
+        src.loop = true;
+        src.playbackRate.value = 0.9 + Math.random() * 0.2;
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = f;
+        bp.Q.value = 1.4;
+        const g = ctx.createGain();
+        g.gain.value = 0.06;
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = rate;
+        const lg = ctx.createGain();
+        lg.gain.value = 0.035;
+        lfo.connect(lg).connect(g.gain);
+        src.connect(bp).connect(g).connect(this.realityGain);
+        src.start();
+        lfo.start();
+      }
+    }
+    this.realityGain.gain.setTargetAtTime(level * 0.9, ctx.currentTime, 1.5);
+  }
+
+  /** Schedule the one-off city sounds; call every frame. */
+  updateReality(dt: number): void {
+    const ctx = this.ctx;
+    const L = this.realityLevel;
+    if (!ctx || L <= 0 || !this.realityGain) return;
+    const t = ctx.currentTime;
+    const out = this.realityGain;
+    const pan = () => {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.random() * 2 - 1;
+      p.connect(out);
+      return p;
+    };
+    // A car passing: a low swell that sweeps across.
+    this.carT -= dt;
+    if (this.carT <= 0) {
+      this.carT = (L > 0.7 ? 4 : 7) + Math.random() * 8;
+      const p = ctx.createStereoPanner();
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      p.pan.setValueAtTime(-dir, t);
+      p.pan.linearRampToValueAtTime(dir, t + 3.2);
+      p.connect(out);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.5, t + 1.6);
+      g.gain.linearRampToValueAtTime(0, t + 3.2);
+      const src = ctx.createBufferSource();
+      src.buffer = this.noiseBuffer;
+      src.loop = true;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(300, t);
+      lp.frequency.linearRampToValueAtTime(900, t + 1.6);
+      lp.frequency.linearRampToValueAtTime(260, t + 3.2);
+      src.connect(lp).connect(g).connect(p);
+      src.start(t);
+      src.stop(t + 3.3);
+      // Engine note with a doppler drop
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(92, t);
+      o.frequency.linearRampToValueAtTime(78, t + 3.2);
+      const og = ctx.createGain();
+      og.gain.setValueAtTime(0, t);
+      og.gain.linearRampToValueAtTime(0.05, t + 1.6);
+      og.gain.linearRampToValueAtTime(0, t + 3.2);
+      const olp = ctx.createBiquadFilter();
+      olp.type = 'lowpass';
+      olp.frequency.value = 400;
+      o.connect(olp).connect(og).connect(p);
+      o.start(t);
+      o.stop(t + 3.3);
+    }
+    // The pedestrian crossing's two-tone chirp.
+    this.chirpT -= dt;
+    if (this.chirpT <= 0) {
+      this.chirpT = 14 + Math.random() * 12;
+      const p = pan();
+      for (let i = 0; i < 8; i++) {
+        const tt = t + i * 0.42;
+        this.tone(tt, 'sine', 2400, 2900, 0.07, this.env(tt, 0.06, 0.005, 0.07), p);
+        this.tone(tt + 0.14, 'sine', 2900, 2200, 0.08, this.env(tt + 0.14, 0.05, 0.005, 0.08), p);
+      }
+    }
+    // Footsteps of passers-by
+    this.stepT -= dt;
+    if (this.stepT <= 0) {
+      this.stepT = 0.18 + Math.random() * 0.35;
+      this.noise(t, 0.06, 'bandpass', 900 + Math.random() * 1500, 2, pan(), this.env(t, 0.07 + Math.random() * 0.05, 0.003, 0.06));
+    }
+    // Snatches of voices (formant-like blips)
+    this.chatT -= dt;
+    if (this.chatT <= 0) {
+      this.chatT = 0.6 + Math.random() * 1.8;
+      const p = pan();
+      const n = 2 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < n; i++) {
+        const tt = t + i * 0.13;
+        this.noise(tt, 0.11, 'bandpass', 700 + Math.random() * 1600, 6, p, this.env(tt, 0.05, 0.02, 0.09));
+      }
+    }
+  }
+
   /** Short tonal blip (UI / pickup). */
   blip(freq = 880, dur = 0.08, gain = 0.12): void {
     const ctx = this.ctx;
@@ -250,7 +384,7 @@ export class AudioSystem {
   }
 
   /** Positional entity voice: growl, giggle, whisper "help", hum. */
-  entityVoice(kind: 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan' | 'shot' | 'zap' | 'thunder', pan: number, dist: number): void {
+  entityVoice(kind: 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan' | 'shot' | 'zap' | 'thunder' | 'glitch', pan: number, dist: number): void {
     const ctx = this.ctx;
     if (!ctx) return;
     const t = ctx.currentTime;
@@ -328,6 +462,13 @@ export class AudioSystem {
         this.tone(t, 'sine', 70, 30, 1.2, this.env(t, 0.6 * vv, 0.005, 1.1), p);
         break;
       }
+      case 'glitch':
+        // Broken, stuttering digital chirps.
+        for (let i = 0; i < 7; i++) {
+          const f = [180, 2400, 620, 3100, 90, 1400, 4100][i];
+          this.tone(t + i * 0.045, 'square', f, f * (0.5 + Math.random()), 0.04, this.env(t + i * 0.045, 0.1 * v, 0.001, 0.035), p);
+        }
+        break;
       case 'groan':
         this.tone(t, 'sawtooth', 48, 40, 2.2, this.env(t, 0.22 * Math.min(1, 30 / (dist + 6)), 0.5, 1.6), p);
         this.tone(t, 'sine', 72, 60, 2.2, this.env(t, 0.2 * Math.min(1, 30 / (dist + 6)), 0.5, 1.6), p);

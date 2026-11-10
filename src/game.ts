@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { Input } from './core/input';
 import { loadSettings, saveSettings, type Action, type Settings } from './core/settings';
 import { getNative } from './core/storage';
-import { hashString, Rng } from './core/rng';
+import { hash01, hashString, Rng } from './core/rng';
 import { entryHash, makeGenContext, parseWorldSeed, resolveExitTarget, resolveLevel } from './levels/registry';
 import type { ExitRule, GenContext, LevelDefinition, LightSampler, SpawnPoint } from './levels/levelDefinition';
 import { ChunkManager } from './world/chunkManager';
@@ -12,7 +12,7 @@ import { ChunkWorkerPool, type ChunkResult } from './world/chunkWorkerPool';
 import type { ChunkArrays } from './world/chunkGeometry';
 import { FloatingOrigin } from './world/floatingOrigin';
 import { rayBox, toWorldBox, type FloorRect, type WBox } from './world/collision';
-import { chunkKey, type ChunkData, type PropKind, type ZoneKind } from './world/chunkData';
+import { chunkKey, type ChunkData, type Prop, type PropKind, type ZoneKind } from './world/chunkData';
 import { WorldDeltas } from './world/deltas';
 import { sampleTerrain, type TerrainGrid } from './world/terrain';
 import { buildItemMesh, buildPropMesh, buildReturnAnchor, disposeObject } from './world/objectMeshes';
@@ -24,7 +24,9 @@ import { AudioSystem } from './systems/audio';
 import { Hallucinations } from './systems/hallucination';
 import { SkyDome } from './systems/sky';
 import { waterTime } from './systems/water';
-import { ESCAPE_ROUTE } from './escapeRoute';
+import { ENDING_LEVEL, ESCAPE_GOALS, EscapeProgress } from './systems/escape';
+import { Crowd } from './world/crowd';
+import { missingMat } from './entities/models';
 import { Journal } from './systems/journal';
 import { JournalScreen } from './ui/journalScreen';
 import { DebugOverlay } from './ui/debugOverlay';
@@ -89,6 +91,24 @@ interface ChunkHandle {
   zones: WorldZone[];
   sampler: LightSampler;
   key: string;
+}
+
+/**
+ * A free-standing door on open floor in this chunk (local coordinates), clear of
+ * walls, chosen deterministically - or null if the chunk has no room for one.
+ */
+function homeDoorFor(data: ChunkData, seed: number): Prop | null {
+  const S = data.size;
+  for (let k = 0; k < 24; k++) {
+    const x = 2 + hash01(seed, 9101, data.cx, data.cz, k) * (S - 4);
+    const z = 2 + hash01(seed, 9102, data.cx, data.cz, k) * (S - 4);
+    const onFloor = data.floors.some((f) => f.y === 0 && x > f.x0 + 1 && x < f.x1 - 1 && z > f.z0 + 1 && z < f.z1 - 1);
+    if (!onFloor) continue;
+    const clear = data.solids.every((b) => b.minY > 2.3 || b.maxY < 0.05 || x < b.minX - 1.3 || x > b.maxX + 1.3 || z < b.minZ - 1.3 || z > b.maxZ + 1.3);
+    if (!clear) continue;
+    return { uid: 'home-door', kind: 'plain-door', x, y: 0, z, rotY: Math.floor(hash01(seed, 9103, data.cx, data.cz) * 4) * (Math.PI / 2) };
+  }
+  return null;
 }
 
 /** Something drifting ashore on the eternal island: a door on a raft or a wormhole. */
@@ -182,7 +202,10 @@ export class Game {
   private launchLevel: string;
   /** Game mode (SPEC §1.1) and escape-mode progress. */
   private mode: 'endless' | 'escape' = 'endless';
-  private escapeStage = 0;
+  /** Escape-mode progress (conditions, the Bug, the way home). */
+  private escape = new EscapeProgress();
+  private bugT = 5;
+  private crowd: Crowd | null = null;
   private endingTimer = -1;
   private creditsShown = false;
   private hud: Hud;
@@ -280,6 +303,13 @@ export class Game {
       },
       onKilled: (kind) => {
         this.hud.message(t('entity.killed', { name: ENTITIES[kind].name }), 2);
+        if (this.mode === 'escape') {
+          if (this.escape.recordKill(kind) === 'return') {
+            this.hud.showBanner(t('escape.returnBanner'), t('escape.returnSub'));
+            this.updateRealityAudio();
+          } else if (this.escape.check(this.journal.data.order) === 'bug') this.onBugStage();
+          this.updateObjective();
+        }
         this.director.encounterOver({ rate: DIFFICULTY[this.settings.difficulty].entity, maxActive: 1 });
       },
       onHit: (head, kill) => {
@@ -327,6 +357,7 @@ export class Game {
       onSettings: () => this.settingsScreen.show(() => this.screens.refresh()),
       onLevelSelect: () => this.levelSelect.show(),
       onCombatLab: () => this.lab.show(),
+      onEndingTest: () => this.startEndingTest(),
       onJournal: () => this.journalScreen.show(() => {}),
       onQuit: () => {
         this.saveNow();
@@ -370,7 +401,7 @@ export class Game {
     this.history.length = 0;
     this.journal.load(null);
     this.mode = 'endless';
-    this.escapeStage = 0;
+    this.escape.reset();
     this.endingTimer = -1;
     this.hud.hideCredits();
     this.playTime = 0;
@@ -382,7 +413,7 @@ export class Game {
     this.resetRun(seedStr ? parseWorldSeed(seedStr) : hashString(String(Date.now())));
     this.slot = slot;
     this.mode = mode;
-    this.escapeStage = 0;
+    this.escape.reset();
     this.enterLevel(this.launchLevel);
     this.titleShown = false;
     this.start();
@@ -395,7 +426,7 @@ export class Game {
     this.resetRun(d.worldSeed);
     this.slot = slot;
     this.mode = d.mode ?? 'endless';
-    this.escapeStage = Math.max(0, ESCAPE_ROUTE.indexOf(d.levelId));
+    this.escape.load(d.escape);
     this.inventory.load(d.inventory);
     this.arsenal.load(d.arsenal);
     this.stats.load(d.stats);
@@ -434,6 +465,7 @@ export class Game {
       journal: this.journal.toJSON(),
       mode: this.mode,
       arsenal: this.arsenal.toJSON(),
+      escape: this.mode === 'escape' ? this.escape.toJSON() : undefined,
     };
   }
 
@@ -511,16 +543,49 @@ export class Game {
 
   /** Escape-mode bookkeeping and the ending trigger. */
   private onArrive(): void {
-    const idx = ESCAPE_ROUTE.indexOf(this.level.id);
-    if (idx > this.escapeStage) this.escapeStage = idx;
     if (this.mode === 'escape') {
-      const route = ESCAPE_ROUTE.slice(0, -1).join(' → ') + ' → 出口';
-      this.hud.setObjective(t('escape.objective', { route, now: this.level.id === 'frontrooms' ? '出口' : this.level.title }));
-    } else this.hud.setObjective('');
-    if (this.level.id === 'frontrooms' && this.endingTimer < 0) {
+      const changed = this.escape.arrive(this.level.id);
+      if (changed === 'home') setTimeout(() => this.hud.message(t('escape.home'), 6), 2500);
+      if (this.escape.check(this.journal.data.order) === 'bug') this.onBugStage();
+    }
+    this.updateObjective();
+    this.updateRealityAudio();
+    if (this.level.id === ENDING_LEVEL && this.endingTimer < 0) {
       this.endingTimer = 0;
       this.creditsShown = false;
     }
+  }
+
+  /** HUD line for escape mode: what is left to do. */
+  private updateObjective(): void {
+    if (this.mode !== 'escape') return this.hud.setObjective('');
+    const st = this.escape.status(this.journal.data.order);
+    const stage = this.escape.stage;
+    if (stage === 'collect')
+      this.hud.setObjective(
+        t('escape.collect', {
+          levels: Math.min(st.levels, ESCAPE_GOALS.levels),
+          goal: ESCAPE_GOALS.levels,
+          void: st.voidSeen ? '済' : '未',
+          kills: Math.min(st.kills, ESCAPE_GOALS.kills),
+          killGoal: ESCAPE_GOALS.kills,
+          kinds: st.kinds,
+          kindsTotal: st.kindsTotal,
+        }),
+      );
+    else this.hud.setObjective(t('escape.stage.' + stage));
+  }
+
+  /** The conditions are met: the Bug starts to appear. */
+  private onBugStage(): void {
+    this.bugT = 4;
+    this.hud.showBanner(t('escape.bugBanner'), t('escape.bugSub'));
+    this.updateObjective();
+  }
+
+  private updateRealityAudio(): void {
+    const level = this.level.id === ENDING_LEVEL ? 1 : this.mode === 'escape' && this.escape.realityLeaking(this.level.id) ? 0.4 : 0;
+    this.audio.setReality(level);
   }
 
   /** Journal: note arriving in the current level, and celebrate milestones (SPEC §12). */
@@ -581,6 +646,20 @@ export class Game {
 
   private get inArena(): boolean {
     return this.level.id === ARENA_ID;
+  }
+
+  /** Developer mode 3: an escape run already at the Bug stage, in Level 0, armed. */
+  private startEndingTest(): void {
+    this.resetRun(this.worldSeed || hashString(String(Date.now())));
+    this.slot = null;
+    this.mode = 'escape';
+    this.escape.reset('bug');
+    this.enterLevel('0');
+    this.labRefill();
+    this.bugT = 3;
+    this.titleShown = false;
+    this.start();
+    this.hud.showBanner(t('escape.bugBanner'), t('escape.bugSub'));
   }
 
   private enterArena(): void {
@@ -722,6 +801,15 @@ export class Game {
     for (const a of Object.values(this.anchors).flat()) if (a.mesh) disposeObject(a.mesh), (a.mesh = undefined);
     this.level = resolveLevel(id);
     this.ctx = makeGenContext(this.worldSeed, this.level);
+    this.crowd?.dispose();
+    this.crowd = null;
+    if (id === ENDING_LEVEL) {
+      this.crowd = new Crowd();
+      this.scene.add(this.crowd.root);
+    }
+    // The ending is a quiet walk: no weapon in hand, no gauges.
+    this.viewmodel.root.visible = id !== ENDING_LEVEL;
+    this.hud.setVisible(id !== ENDING_LEVEL && this.settings.showHud);
     this.mats = new LevelMaterials(this.ctx);
     this.origin.reset(this.level.chunkSize);
     const p = this.level.palette;
@@ -805,8 +893,17 @@ export class Game {
       items.set(it.uid, { uid: it.uid, id: it.id, mesh, x: it.x + ox, y: it.y, z: it.z + oz });
     }
     const props: WorldProp[] = [];
+    const glitchDoors = this.mode === 'escape' && this.escape.realityLeaking(this.level.id);
+    // Home again: Level 0 has doors everywhere now, standing in the open (one per chunk).
+    if (glitchDoors) {
+      const extra = homeDoorFor(data, ctx.levelSeed);
+      if (extra) data.props = [...data.props, extra];
+    }
     for (const p of data.props) {
-      group.add(buildPropMesh(p, sampler(p.x + ox, 1.5, p.z + oz, 0, 1, 0)));
+      const pm = buildPropMesh(p, sampler(p.x + ox, 1.5, p.z + oz, 0, 1, 0));
+      // Home again: every door in Level 0 shows the missing-texture checkerboard.
+      if (glitchDoors) pm.traverse((o) => ((o as THREE.Mesh).isMesh ? ((o as THREE.Mesh).material = missingMat(3)) : undefined));
+      group.add(pm);
       props.push({ uid: p.uid, kind: p.kind, x: p.x + ox, y: p.y, z: p.z + oz, rotY: p.rotY, key });
     }
     this.placeChunk(group);
@@ -1279,6 +1376,20 @@ export class Game {
     } else if (ev?.type === 'spawn') {
       if (!this.ents.trySpawn(ev.kind, () => this.rng.float())) this.director.retrySoon();
     }
+    // Escape mode: once the conditions are met, the Bug keeps turning up (one at a time).
+    if (this.mode === 'escape' && this.escape.stage === 'bug' && !this.transition && !this.inArena) {
+      const alive = this.ents.entities.some((e) => e.kind === 'bug' && e.brain.hp > 0);
+      if (!alive) {
+        this.bugT -= dt;
+        if (this.bugT <= 0) {
+          if (this.ents.trySpawn('bug', () => this.rng.float())) {
+            this.bugT = 10;
+            this.audio.entityVoice('glitch', 0, 20);
+            this.hud.subtitle(t('escape.bugNear'), 3.5);
+          } else this.bugT = 2;
+        }
+      }
+    }
     this.ents.update(dt);
   }
 
@@ -1293,12 +1404,8 @@ export class Game {
   /** Leave through an exit. `back` is where the return anchor in the new level leads. */
   private takeExit(rule: ExitRule, exitKey: string, back: SpawnPoint, color = '#000'): void {
     let levelId = resolveExitTarget(this.worldSeed, this.level.id, rule, exitKey);
-    if (this.mode === 'escape') {
-      // Escape mode: every exit moves one step along the fixed route (SPEC §1.1).
-      const idx = ESCAPE_ROUTE.indexOf(this.level.id);
-      const next = idx >= 0 ? idx + 1 : this.escapeStage;
-      levelId = ESCAPE_ROUTE[Math.min(ESCAPE_ROUTE.length - 1, next)];
-    }
+    // Escape mode: after the Bug, every way out leads home; from home, a door leads out.
+    if (this.mode === 'escape') levelId = this.escape.overrideTarget(this.level.id, rule.kind) ?? levelId;
     this.journal.travel(this.level.id, levelId, rule.kind, rule.discovery);
     this.startTransition({
       levelId,
@@ -1310,6 +1417,9 @@ export class Game {
 
   private startTransition(tr: Transition): void {
     if (this.transition) return;
+    // Falls, return doorways and the like also lead home once the Bug is gone.
+    if (this.mode === 'escape' && tr.levelId !== ENDING_LEVEL) tr.levelId = this.escape.overrideTarget(this.level.id, 'other') ?? tr.levelId;
+    if (tr.levelId === ENDING_LEVEL) tr.color = '#fff';
     this.transition = tr;
     this.hud.fadeTo(1, 1.6, tr.color);
     this.audio.whoosh();
@@ -1323,14 +1433,15 @@ export class Game {
     this.enterLevel(tr.levelId, at);
     if (!tr.at && next.topology !== 'closed') this.player.yaw = this.pickOpenYaw(at.yaw);
     this.entryPoint = { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw };
-    if (tr.back) this.placeAnchor(tr.back);
+    const ending = tr.levelId === ENDING_LEVEL;
+    if (tr.back && !ending) this.placeAnchor(tr.back);
     this.transition = null;
     this.lastWarp = 0;
-    this.hud.fadeTo(0, 0.7, tr.color);
-    this.showLevelTitle();
+    this.hud.fadeTo(0, ending ? 2.5 : 0.7, tr.color);
+    if (!ending) this.showLevelTitle();
     this.recordVisit();
     this.onArrive();
-    if (tr.back) setTimeout(() => this.hud.message(t('msg.returnHere'), 4), 4500);
+    if (tr.back && !ending) setTimeout(() => this.hud.message(t('msg.returnHere'), 4), 4500);
     // Always autosave on level transitions (SPEC §10.5).
     this.saveNow();
   }
@@ -1365,7 +1476,11 @@ export class Game {
   }
 
   private openProp(p: WorldProp): void {
-    const rule = this.findExit('door', (r) => r.prop === p.kind);
+    // Home at last: any door in Level 0 opens onto the real world.
+    const home = this.mode === 'escape' && this.escape.stage === 'home' && this.level.id === '0';
+    const rule: ExitRule | undefined = home
+      ? { kind: 'door', prop: p.kind, targets: [{ levelId: ENDING_LEVEL, weight: 1 }], discovery: t('escape.discovery') }
+      : this.findExit('door', (r) => r.prop === p.kind);
     if (!rule) {
       this.audio.click();
       this.hud.message(t('msg.locked'));
@@ -1587,11 +1702,11 @@ export class Game {
 
     if (this.endingTimer >= 0 && this.started && !overlay) {
       this.endingTimer += realDt;
-      if (this.endingTimer > 9 && !this.creditsShown) {
+      if (this.endingTimer > 12 && !this.creditsShown) {
         this.creditsShown = true;
         this.hud.showCredits(t('credits.roll'));
       }
-      if (this.endingTimer > 37) {
+      if (this.endingTimer > 44) {
         this.endingTimer = -1;
         this.hud.hideCredits();
         this.hud.message(t('escape.end'), 4);
@@ -1691,7 +1806,7 @@ export class Game {
       (glow.material as THREE.MeshBasicMaterial).opacity = 0.45 + Math.sin(this.time * 2) * 0.12;
     }
 
-    this.updateWeapons(dt, active);
+    this.updateWeapons(dt, active && this.level.id !== ENDING_LEVEL);
 
     // Interaction prompt
     this.target = active ? this.findTarget() : null;
@@ -1784,6 +1899,8 @@ export class Game {
     }
 
     this.hud.update(realDt, this.stats);
+    this.crowd?.update(realDt, this.player, (x, z) => [this.origin.toRenderX(x), this.origin.toRenderZ(z)]);
+    this.audio.updateReality(realDt);
     if (this.level.sky) this.sky.update(this.camera, this.time);
     waterTime.value = this.time;
     this.post.render(this.renderer, this.scene, this.camera, this.time);

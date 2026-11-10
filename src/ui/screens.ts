@@ -11,6 +11,7 @@ export interface ScreenCallbacks {
   onSettings: () => void;
   onLevelSelect: () => void;
   onCombatLab: () => void;
+  onEndingTest: () => void;
   onJournal: () => void;
   onQuit: () => void;
 }
@@ -117,6 +118,7 @@ export class Screens {
         this.btn(t('menu.settings'), () => this.cb.onSettings());
         this.btn(t('dev.open'), () => this.cb.onLevelSelect());
         this.btn(t('lab.open'), () => this.cb.onCombatLab());
+        this.btn(t('ending.open'), () => this.cb.onEndingTest(), { sub: t('ending.openSub') });
         this.btn(t('menu.credits'), () => this.render('credits'));
         if (isElectron) this.btn(t('menu.quit'), () => this.cb.onQuit());
         this.note(t('menu.controls'));
@@ -129,6 +131,7 @@ export class Screens {
         this.btn(t('menu.settings'), () => this.cb.onSettings());
         this.btn(t('dev.open'), () => this.cb.onLevelSelect());
         this.btn(t('lab.open'), () => this.cb.onCombatLab());
+        this.btn(t('ending.open'), () => this.cb.onEndingTest(), { sub: t('ending.openSub') });
         this.btn(t('menu.toTitle'), () => this.cb.onToTitle(), { sub: t('menu.toTitleSub') });
         if (isElectron) this.btn(t('menu.quit'), () => this.cb.onQuit(), { sub: t('menu.toTitleSub') });
         break;

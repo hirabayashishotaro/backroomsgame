@@ -70,6 +70,7 @@ export function entityTableFor(levelId: string, opts: { dark: boolean; safe: boo
     '0': [],
     frontrooms: [],
     arena: [],
+    shibuya: [],
     '1000': [],
     '1': ['hound', 'skinstealer', 'duller', 'bloater', 'gunman'],
     '2': ['hound', 'smiler', 'skinstealer', 'bloater', 'witch'],

@@ -149,6 +149,11 @@ export function buildEntityMesh(kind: EntityKind): THREE.Group {
       arm.add(held);
       break;
     }
+    case 'bug': {
+      // The "missing texture" look: a black and magenta checkerboard figure.
+      humanoid(g, missingMat(), 1.8);
+      break;
+    }
     case 'giant': {
       // A towering, stooped figure about 6.5 m tall.
       humanoid(g, m(0x3a3631), 1.8, 1);
@@ -170,6 +175,30 @@ export function buildEntityMesh(kind: EntityKind): THREE.Group {
   g.traverse((o) => ((o as THREE.Mesh).isMesh ? (o.userData.keep = false) : undefined));
   swapInGLB(g, 'entity_' + kind);
   return g;
+}
+
+let missingTex: THREE.CanvasTexture | null = null;
+/** Black/magenta checker material, the classic placeholder for a missing texture. */
+export function missingMat(repeat = 2): THREE.MeshBasicMaterial {
+  if (!missingTex) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 2;
+    const g = c.getContext('2d')!;
+    g.fillStyle = '#000000';
+    g.fillRect(0, 0, 2, 2);
+    g.fillStyle = '#ff00dc';
+    g.fillRect(0, 0, 1, 1);
+    g.fillRect(1, 1, 1, 1);
+    missingTex = new THREE.CanvasTexture(c);
+    missingTex.magFilter = THREE.NearestFilter;
+    missingTex.minFilter = THREE.NearestFilter;
+    missingTex.wrapS = missingTex.wrapT = THREE.RepeatWrapping;
+    missingTex.colorSpace = THREE.SRGBColorSpace;
+  }
+  const t = missingTex.clone();
+  t.repeat.set(repeat, repeat);
+  t.needsUpdate = true;
+  return new THREE.MeshBasicMaterial({ map: t, transparent: true });
 }
 
 /** A round black bomb with a short fuse and a blinking red light (named 'light'). */

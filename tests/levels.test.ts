@@ -5,7 +5,6 @@ import { groundHeight } from '../src/world/collision';
 import { sampleTerrain } from '../src/world/terrain';
 import { genomeOf } from '../src/levels/procedural/generated';
 import { HAND_LEVEL_IDS } from '../src/levels/registry';
-import { ESCAPE_ROUTE } from '../src/escapeRoute';
 
 const SEED = 4242;
 
@@ -154,8 +153,11 @@ describe('levels', () => {
     }
   });
 
-  it('escape route levels all resolve and the ending room has a bottle on the table', () => {
-    for (const id of ESCAPE_ROUTE) expect(resolveLevel(id).id).toBe(id);
+  it('the ending street resolves, has a walkable street, and the old break room still has its bottle', () => {
+    const E = resolveLevel('shibuya');
+    const e = E.generator(makeGenContext(SEED, E), 0, 1);
+    expect(e.floors.length).toBeGreaterThan(0);
+    expect(e.solids.length).toBeGreaterThan(5);
     const F = resolveLevel('frontrooms');
     const d = F.generator(makeGenContext(SEED, F), 0, 0);
     expect(d.items.some((i) => i.id === 'almond_water' && i.y > 0.5)).toBe(true);

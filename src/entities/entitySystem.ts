@@ -171,6 +171,10 @@ const HITBOXES: Record<EntityKind, Array<{ f: number; y0: number; y1: number; r:
     { f: 0, y0: 0, y1: 1.42, r: 0.36, head: false },
     { f: 0, y0: 1.42, y1: 1.76, r: 0.17, head: true },
   ],
+  bug: [
+    { f: 0, y0: 0, y1: 1.47, r: 0.3, head: false },
+    { f: 0, y0: 1.47, y1: 1.8, r: 0.16, head: true },
+  ],
 };
 
 /** Eye-level height used for line of sight. */
@@ -394,7 +398,7 @@ export class EntitySystem {
       }
       // Contact attack, then it leaves (SPEC: escapable encounters).
       const vertical = Math.abs(b.y - p.y) < 1.6;
-      if (!this.aiStopped && e.kind !== 'bloater' && e.kind !== 'giant' && e.kind !== 'gunman' && e.kind !== 'witch' && e.kind !== 'bomber' && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
+      if (!this.aiStopped && e.kind !== 'bloater' && e.kind !== 'giant' && e.kind !== 'gunman' && e.kind !== 'witch' && e.kind !== 'bomber' && e.kind !== 'bug' && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
         this.host.onPlayerHit(e.kind, ENTITIES[e.kind].damage);
         e.brain.mode = 'flee';
         e.brain.t = 0;
@@ -403,7 +407,7 @@ export class EntitySystem {
       e.voiceT -= dt;
       if (e.voiceT <= 0 && e.brain.alpha > 0.3) {
         const pan = this.panTo(b.x, b.z);
-        const kind = e.kind === 'hound' ? 'growl' : e.kind === 'smiler' ? 'giggle' : e.kind === 'skinstealer' ? 'help' : e.kind === 'duller' ? 'hum' : e.kind === 'giant' ? 'groan' : 'step';
+        const kind = e.kind === 'bug' ? 'glitch' : e.kind === 'hound' ? 'growl' : e.kind === 'smiler' ? 'giggle' : e.kind === 'skinstealer' ? 'help' : e.kind === 'duller' ? 'hum' : e.kind === 'giant' ? 'groan' : 'step';
         if (e.kind !== 'bloater') this.host.audio.entityVoice(kind, pan, dist);
         e.voiceT = e.brain.mode === 'chase' ? 1.6 + Math.random() : 4 + Math.random() * 5;
       }
@@ -417,6 +421,13 @@ export class EntitySystem {
         const k = e.brain.mode === 'fuse' ? Math.min(1, e.brain.t / BLOATER.fuse) : 0;
         e.mesh.scale.setScalar(1 + 0.4 * k * k);
         if (k > 0 && Math.sin(e.brain.t * (8 + 30 * k)) > 0) e.flash = Math.max(e.flash, 0.8);
+      }
+      if (e.kind === 'bug') {
+        // Glitch: now and then it skips sideways or flickers out of place for a frame.
+        // (Visual only: the body never moves through walls.)
+        if (Math.random() < 0.06) e.mesh.position.z += (Math.random() - 0.5) * 0.8;
+        e.mesh.scale.set(1, Math.random() < 0.05 ? 0.6 + Math.random() * 0.8 : 1, 1);
+        if (Math.random() < 0.04) e.mesh.position.x += (Math.random() - 0.5) * 0.6;
       }
       if (e.kind === 'giant') e.mesh.rotation.x = e.brain.mode === 'attack' ? -0.12 * Math.min(1, e.brain.t / GIANT.windup) : 0;
       setEntityAlpha(e.mesh, e.brain.alpha);

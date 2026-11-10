@@ -49,7 +49,7 @@ export interface WeaponDef {
   /** Hitscan pellets per shot (shotgun); `damage` is per pellet. */
   pellets?: number;
   /** Spell (staff): aim a circle on the ground, lightning falls `delay` s after release. */
-  spell?: { radius: number; delay: number; stun: number };
+  spell?: { radius: number; delay: number; stun: number; damage: number; cooldown: number };
   /** Explodes on impact: blast radius (m), knockback on entities and on the player (m/s). */
   explosive?: { radius: number; knock: number; selfKnock: number };
 }
@@ -149,15 +149,18 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     name: '魔法の杖',
     kind: 'spell',
     mag: 0,
-    interval: 3, // cooldown
+    // Left click: an instant magic bolt every 0.4 s (hold to keep firing), no aiming down sights.
+    interval: 0.4,
+    auto: true,
     reloadTime: 0,
-    damage: 100,
-    hipSpread: 0,
-    adsSpread: 0,
+    damage: 30,
+    hipSpread: 0.004,
+    adsSpread: 0.004,
     adsZoom: 1,
-    headMultiplier: 1,
-    range: 40,
-    spell: { radius: 3.5, delay: 0.3, stun: 1 },
+    headMultiplier: 1.5,
+    range: 80,
+    // Right click: the lightning circle (its own cooldown).
+    spell: { radius: 3.5, delay: 0.3, stun: 1, damage: 100, cooldown: 3 },
   },
   axe: {
     id: 'axe',

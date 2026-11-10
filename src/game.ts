@@ -1342,25 +1342,40 @@ export class Game {
   }
 
   /**
-   * The staff: hold to steer a magic circle across the ground, release to call
-   * the lightning down on it. Unlimited uses, but a cooldown between casts.
+   * The staff. Left click: an instant magic bolt every 0.4 s (hold to keep
+   * firing). Right click: hold to steer a magic circle across the ground,
+   * release to call the lightning down on it (its own 3 s cooldown).
+   * No ammunition either way.
    */
   private updateStaff(def: (typeof WEAPONS)['staff']): void {
-    const down = this.input.isDown('attack');
-    if (down && this.arsenal.cooldown <= 0) {
-      this.staffTarget = this.spellTarget(def.range);
-      this.ents.showSpellCircle(this.staffTarget, def.spell!.radius);
+    const sp = def.spell!;
+    if (this.input.isDown('attack')) {
+      const r = this.arsenal.fire('staff');
+      if (r && r !== 'empty') {
+        const o: [number, number, number] = [this.player.x, this.player.y + this.player.eye, this.player.z];
+        const end = this.ents.hitscan(def, o, this.aimDir(this.currentSpread('staff')));
+        this.ents.beam(this.viewmodel.muzzleWorld, end);
+        this.audio.staffBolt();
+        this.viewmodel.fire('hitscan', 0.4);
+      }
+    }
+    const down = this.input.isDown('aim');
+    if (down && this.spellCd <= 0) {
+      this.staffTarget = this.spellTarget(40);
+      this.ents.showSpellCircle(this.staffTarget, sp.radius);
     } else if (!down && this.staffTarget) {
       const at = this.staffTarget;
       this.staffTarget = null;
       this.ents.showSpellCircle(null);
-      const r = this.arsenal.fire('staff');
-      if (r && r !== 'empty') {
+      if (this.spellCd <= 0) {
+        this.spellCd = sp.cooldown;
         this.ents.castPlayerStrike(def, at);
         this.viewmodel.fire('spell', 1);
       }
     }
   }
+  /** Seconds until the staff's lightning can be cast again. */
+  private spellCd = 0;
 
   /** Where the aim meets the ground (up to `range` m), dropped to the floor below. */
   private spellTarget(range: number): [number, number, number] {
@@ -1384,7 +1399,8 @@ export class Game {
       this.staffTarget = null;
       this.ents.showSpellCircle(null);
     }
-    this.hud.setCooldown(id === 'staff' ? 1 - Math.max(0, this.arsenal.cooldown) / WEAPONS.staff.interval : null);
+    this.spellCd = Math.max(0, this.spellCd - dt);
+    this.hud.setCooldown(id === 'staff' ? 1 - this.spellCd / WEAPONS.staff.spell!.cooldown : null);
     if (held !== this.heldPrev) {
       this.heldPrev = held;
       this.arsenal.cancelReload();
@@ -1392,7 +1408,8 @@ export class Game {
       this.meleePending = -1;
     }
     this.arsenal.update(dt);
-    const aiming = active && !!id && this.input.isDown('aim') && WEAPONS[id].kind !== 'melee';
+    // (The staff's right click is its spell, not aiming down sights.)
+    const aiming = active && !!id && this.input.isDown('aim') && WEAPONS[id].kind !== 'melee' && WEAPONS[id].kind !== 'spell';
     this.adsT += ((aiming ? 1 : 0) - this.adsT) * Math.min(1, dt * 14);
     if (active) {
       if (id) {

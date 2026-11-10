@@ -448,6 +448,7 @@ export class EntitySystem {
     this.updateShots(dt);
     this.updateStrikes(dt);
     this.updateBombs(dt);
+    this.updateBeams(dt);
     this.updateFx(dt);
   }
 
@@ -507,15 +508,17 @@ export class EntitySystem {
   }
 
   /** Hitscan shot (pistol): instant, damage falls off with distance. */
-  hitscan(def: WeaponDef, o: [number, number, number], d: [number, number, number]): void {
+  /** Returns where the shot ended (hit point, or the end of its range). */
+  hitscan(def: WeaponDef, o: [number, number, number], d: [number, number, number]): [number, number, number] {
     const h = this.castRay(o[0], o[1], o[2], d[0], d[1], d[2], def.range);
-    if (!h) return;
+    if (!h) return [o[0] + d[0] * def.range, o[1] + d[1] * def.range, o[2] + d[2] * def.range];
     const at: [number, number, number] = [o[0] + d[0] * h.t, o[1] + d[1] * h.t, o[2] + d[2] * h.t];
     if (h.entity) this.damage(h.entity, def, def.damage * falloffFactor(def, h.t), h.head, at);
     else {
       this.spark(at[0] - d[0] * 0.03, at[1] - d[1] * 0.03, at[2] - d[2] * 0.03, 0xffe0a0);
       this.host.audio.impact(false, this.panTo(at[0], at[2]), h.t);
     }
+    return at;
   }
 
   /** Projectile (magnum bullet or thrown kunai). */
@@ -947,8 +950,39 @@ export class EntitySystem {
     const ring = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: 0xd8a8ff, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2;
     this.host.fx.add(ring);
-    this.strikes.push({ x: at[0], y: at[1], z: at[2], t: sp.delay, warn: sp.delay, radius: sp.radius, damage: def.damage, stun: sp.stun, owner: 'player', def, ring, bolt: null });
+    this.strikes.push({ x: at[0], y: at[1], z: at[2], t: sp.delay, warn: sp.delay, radius: sp.radius, damage: sp.damage, stun: sp.stun, owner: 'player', def, ring, bolt: null });
     this.host.audio.entityVoice('zap', 0, 0);
+  }
+
+  /** The staff's bolt: an instant beam from the orb to what it hit. */
+  beam(from: THREE.Vector3, to: [number, number, number]): void {
+    const [tx, tz] = this.host.toRender(to[0], to[2]);
+    const end = new THREE.Vector3(tx, to[1], tz);
+    const len = from.distanceTo(end);
+    if (len < 0.05) return;
+    const mesh = new THREE.Mesh(this.beamGeo, new THREE.MeshBasicMaterial({ color: 0xe0b8ff, transparent: true, opacity: 0.9, depthWrite: false }));
+    mesh.position.copy(from).lerp(end, 0.5);
+    mesh.scale.set(1, 1, len);
+    mesh.lookAt(end);
+    this.host.fx.add(mesh);
+    this.beams.push({ mesh, t: 0.12 });
+    this.spark(to[0], to[1], to[2], 0xd8a8ff, 3, 0.2);
+  }
+
+  private beams: Array<{ mesh: THREE.Mesh; t: number }> = [];
+  private beamGeo = new THREE.BoxGeometry(0.035, 0.035, 1);
+
+  private updateBeams(dt: number): void {
+    for (let i = this.beams.length - 1; i >= 0; i--) {
+      const b = this.beams[i];
+      b.t -= dt;
+      (b.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, b.t / 0.12) * 0.9;
+      if (b.t <= 0) {
+        (b.mesh.material as THREE.Material).dispose();
+        b.mesh.removeFromParent();
+        this.beams.splice(i, 1);
+      }
+    }
   }
 
   /** Giant stomp: a shockwave around its feet. */

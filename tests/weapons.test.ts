@@ -109,19 +109,24 @@ describe('weapons', () => {
     expect(sg.pellets! * sg.damage * falloffFactor(sg, 30)).toBeLessThan(40);
   });
 
-  it('staff: needs no ammo, 100 damage, 3 s cooldown between casts', () => {
+  it('staff: left click = instant 30-damage bolt every 0.4 s (no ammo); right click = 100-damage lightning on a 3 s cooldown', () => {
     const a = new Arsenal();
     const st = WEAPONS.staff;
-    expect(st.damage).toBe(100);
+    expect(st.damage).toBe(30);
+    expect(st.interval).toBeCloseTo(0.4);
+    expect(st.auto).toBe(true);
+    expect(st.spell!.damage).toBe(100);
     expect(st.spell!.delay).toBeCloseTo(0.3);
     expect(st.spell!.stun).toBe(1);
+    expect(st.spell!.cooldown).toBe(3);
     expect(a.loaded('staff')).toBe(Infinity);
-    const r = a.fire('staff');
-    expect(r && r !== 'empty').toBe(true);
-    for (let t = 0; t < 2.9; t += 0.1) a.update(0.1);
-    expect(a.fire('staff')).toBeNull();
-    a.update(0.2);
-    expect(a.fire('staff')).not.toBeNull();
+    let bolts = 0;
+    for (let t = 0; t < 2; t += 1 / 60) {
+      a.update(1 / 60);
+      const r = a.fire('staff');
+      if (r && r !== 'empty') bolts++;
+    }
+    expect(bolts).toBe(5);
   });
 
   it('every reserve holds up to 999', () => {

@@ -328,6 +328,15 @@ export class AudioSystem {
     this.noise(t, 0.9, 'bandpass', 1800, 0.6, this.sfxBus, this.env(t, 0.5, 0.01, 0.85));
   }
 
+  /** The staff's bolt: a bright zip. */
+  staffBolt(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.tone(t, 'sawtooth', 1600, 420, 0.12, this.env(t, 0.12, 0.002, 0.11), this.sfxBus);
+    this.noise(t, 0.08, 'highpass', 3500, 0.7, this.sfxBus, this.env(t, 0.18, 0.001, 0.07));
+  }
+
   dryFire(): void {
     const ctx = this.ctx;
     if (!ctx) return;

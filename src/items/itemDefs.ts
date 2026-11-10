@@ -24,7 +24,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   kunai: { id: 'kunai', name: 'クナイ', desc: '投げて使う。まっすぐ飛び、押しっぱなしで毎秒2本。拾い直せる。', kind: 'weapon', heal: 0, weapon: 'kunai' },
   rocket: { id: 'rocket', name: 'ロケットランチャー', desc: '滅多に見つからない。遅い弾が爆発し、何もかも吹き飛ばす。足元に撃てば大ジャンプ(自分は傷つかない)。5発。', kind: 'weapon', heal: 0, weapon: 'rocket' },
   shotgun: { id: 'shotgun', name: 'ショットガン', desc: '8粒の散弾。近距離で全部当てれば200。離れるほど散って弱くなる。6発。', kind: 'weapon', heal: 0, weapon: 'shotgun' },
-  staff: { id: 'staff', name: '魔法の杖', desc: 'ウィッチャーが落とした杖。長押しで地面に魔法陣を描き、離すと雷が落ちる(100・1秒スタン)。弾は要らないが3秒の溜めが要る。', kind: 'weapon', heal: 0, weapon: 'staff' },
+  staff: { id: 'staff', name: '魔法の杖', desc: 'ウィッチャーが落とした杖。弾は要らない。左クリックで魔法弾(30・連射可)、右クリック長押しで地面に魔法陣、離すと雷(100・1秒スタン、3秒ごと)。', kind: 'weapon', heal: 0, weapon: 'staff' },
   axe: { id: 'axe', name: '斧', desc: '近接武器。壊れない。', kind: 'weapon', heal: 0, weapon: 'axe' },
   ammo_pistol: { id: 'ammo_pistol', name: 'ピストルの弾', desc: '9mm弾。12発。', kind: 'ammo', heal: 0, ammo: 'pistol' },
   ammo_rocket: { id: 'ammo_rocket', name: 'ロケット弾', desc: 'ロケットランチャーの弾。5発。', kind: 'ammo', heal: 0, ammo: 'rocket' },

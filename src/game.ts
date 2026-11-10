@@ -164,7 +164,7 @@ export function readLaunchOptions(): LaunchOptions {
 
 
 /** Chance that a defeated witch drops its staff. */
-const STAFF_DROP_P = 0.05;
+const STAFF_DROP_P = 0.3;
 const SLOT_ACTIONS: Action[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6', 'slot7', 'slot8'];
 
 export class Game {
@@ -308,7 +308,7 @@ export class Game {
       },
       onKilled: (kind, at) => {
         this.hud.message(t('entity.killed', { name: ENTITIES[kind].name }), 2);
-        // Now and then a witch leaves its staff behind (5%).
+        // Often a witch leaves its staff behind (30%).
         if (kind === 'witch' && this.rng.float() < STAFF_DROP_P) this.spawnItemAt('staff', at.x, at.y, at.z);
         if (this.mode === 'escape') {
           if (this.escape.recordKill(kind) === 'return') {

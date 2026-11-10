@@ -17,7 +17,7 @@ export interface Corpse {
 }
 
 /** Chance per chunk of a corpse with a weapon, and per item spot of loose ammo. */
-export const CORPSE_P = 0.045;
+export const CORPSE_P = 0.0675; // 1.5x (user request)
 export const AMMO_P = 0.12;
 
 const WEAPON_TABLE: Array<[ItemId, number]> = [
@@ -25,6 +25,7 @@ const WEAPON_TABLE: Array<[ItemId, number]> = [
   ['kunai', 22],
   ['axe', 18],
   ['magnum', 15],
+  ['shotgun', 16],
   ['rocket', 4], // very rare
 ];
 
@@ -54,12 +55,12 @@ export function augmentLoot(data: ChunkData, levelSeed: number, safeLevel: boole
       corpses.push({ uid: 'corpse', x: it.x, y: it.y, z: it.z, rot });
       const w = pick(hash01(levelSeed, 1303, key));
       it.id = w;
-      const ammo: ItemId | null = w === 'pistol' ? 'ammo_pistol' : w === 'magnum' ? 'ammo_magnum' : w === 'rocket' ? 'ammo_rocket' : null;
+      const ammo: ItemId | null = w === 'pistol' ? 'ammo_pistol' : w === 'magnum' ? 'ammo_magnum' : w === 'rocket' ? 'ammo_rocket' : w === 'shotgun' ? 'ammo_shotgun' : null;
       if (ammo) extra.push({ uid: it.uid + ':a', id: ammo, x: it.x + Math.cos(rot) * 0.5, y: it.y, z: it.z + Math.sin(rot) * 0.5, rot });
       return;
     }
     const u = hash01(levelSeed, 1304, key, k);
-    if (u < AMMO_P) it.id = u < AMMO_P * 0.72 ? 'ammo_pistol' : u < AMMO_P * 0.97 ? 'ammo_magnum' : 'ammo_rocket';
+    if (u < AMMO_P) it.id = u < AMMO_P * 0.6 ? 'ammo_pistol' : u < AMMO_P * 0.8 ? 'ammo_magnum' : u < AMMO_P * 0.97 ? 'ammo_shotgun' : 'ammo_rocket';
   });
   data.items.push(...extra);
   return corpses;

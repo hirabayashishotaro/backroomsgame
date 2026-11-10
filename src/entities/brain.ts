@@ -35,10 +35,12 @@ export interface BrainState {
   n: number;
   side: number;
   sideT: number;
+  /** Stunned (seconds left): cannot move or act. */
+  stunT: number;
 }
 
 export function newBrain(kind: EntityKind): BrainState {
-  return { kind, mode: 'idle', t: 0, watch: 0, heard: 99, hp: ENTITIES[kind].hp, alpha: 0, cd: 1.5, n: GUNMAN.mag, side: 1, sideT: 0 };
+  return { kind, mode: 'idle', t: 0, watch: 0, heard: 99, hp: ENTITIES[kind].hp, alpha: 0, cd: 1.5, n: GUNMAN.mag, side: 1, sideT: 0, stunT: 0 };
 }
 
 export interface Decision {
@@ -99,6 +101,12 @@ export function think(b: BrainState, p: Perception, dt: number): Decision {
   if (b.mode === 'fade' || b.mode === 'flee') b.alpha = Math.max(0, b.alpha - dt * (b.mode === 'flee' ? 0.6 : 0.35));
   else b.alpha = Math.min(1, b.alpha + dt * 0.8);
   if ((b.mode === 'fade' || b.mode === 'flee') && b.alpha <= 0) return { speed: 0, gone: true };
+  if (b.stunT > 0 && b.hp > 0) {
+    // Stunned (the staff's lightning): frozen in place, timers paused.
+    b.stunT -= dt;
+    b.t -= dt;
+    return { speed: 0, gone: false };
+  }
   if (b.mode === 'stagger') {
     if (b.t > 0.6) set(b, 'chase');
     return { speed: -1.5, gone: false };

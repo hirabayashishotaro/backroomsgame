@@ -76,7 +76,7 @@ export function buildItemMesh(id: ItemId, light: number): THREE.Group {
   if (def.kind === 'ammo') {
     // A small cardboard box with the cartridge colour on the lid.
     const g = new THREE.Group();
-    const box = part(geo('ammo-box', () => new THREE.BoxGeometry(0.14, 0.07, 0.09)), mat(id === 'ammo_magnum' ? 0x6a3a24 : id === 'ammo_rocket' ? 0x5a6448 : 0x3a5a3a, b), 0, 0.035, 0);
+    const box = part(geo('ammo-box', () => new THREE.BoxGeometry(0.14, 0.07, 0.09)), mat(id === 'ammo_magnum' ? 0x6a3a24 : id === 'ammo_rocket' ? 0x5a6448 : id === 'ammo_shotgun' ? 0x8a2a24 : 0x3a5a3a, b), 0, 0.035, 0);
     const lid = part(geo('ammo-lid', () => new THREE.BoxGeometry(0.1, 0.002, 0.05)), mat(0xd8b040, b), 0, 0.071, 0);
     g.add(box, lid);
     return g;

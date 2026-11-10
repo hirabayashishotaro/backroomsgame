@@ -205,6 +205,34 @@ function shapeIcon(id: ItemId, size: number): HTMLCanvasElement {
       fill('#1e1f22', () => g.rect(26, 34, 6, 12)); // grip
       fill('#22262a', () => g.rect(18, 15, 10, 7)); // sight
       break;
+    case 'shotgun':
+      fill('#6a4628', () => {
+        g.moveTo(44, 26);
+        g.lineTo(62, 30);
+        g.lineTo(62, 40);
+        g.lineTo(44, 34);
+        g.closePath();
+      }); // stock
+      fill('#2a2c30', () => g.rect(30, 25, 16, 9)); // receiver
+      fill('#3a3c40', () => g.rect(2, 26, 30, 4)); // barrel
+      fill('#7a5432', () => g.rect(12, 31, 12, 5)); // pump
+      break;
+    case 'staff':
+      fill('#5a4632', () => {
+        g.moveTo(10, 58);
+        g.lineTo(14, 60);
+        g.lineTo(48, 14);
+        g.lineTo(44, 12);
+        g.closePath();
+      });
+      fill('#9ad8ff', () => g.arc(48, 12, 6, 0, Math.PI * 2));
+      break;
+    case 'ammo_shotgun':
+      for (const dx of [0, 10, 20, 30]) {
+        fill('#b8302a', () => g.rect(12 + dx, 20, 8, 22));
+        fill('#c8a050', () => g.rect(12 + dx, 42, 8, 6));
+      }
+      break;
     case 'ammo_rocket':
       for (const dx of [0, 14, 28]) {
         fill('#5a6448', () => g.rect(12 + dx, 22, 10, 30));

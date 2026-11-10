@@ -29,6 +29,8 @@ const CSS = `
 .hud-cross i { position: absolute; background: var(--xc, #fff); box-shadow: 0 0 0 1px rgba(0,0,0,0.7), 0 0 3px rgba(0,0,0,0.8); }
 .hud-cross .ring { background: none; border: 1.5px solid var(--xc, #fff); border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(0,0,0,0.55); }
 .hud-cross .dot { width: 3px; height: 3px; left: -1.5px; top: -1.5px; border-radius: 50%; }
+.hud-cool { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; display: none; pointer-events: none;
+  -webkit-mask: radial-gradient(circle, transparent 17px, #000 18px, #000 21px, transparent 22px); mask: radial-gradient(circle, transparent 17px, #000 18px, #000 21px, transparent 22px); }
 .hud-hit { position: absolute; left: 50%; top: 50%; width: 0; height: 0; opacity: 0; transition: opacity 0.12s; }
 .hud-hit i { position: absolute; width: 10px; height: 2px; background: #fff; box-shadow: 0 0 2px #000; }
 .hud-ammo { position: absolute; right: 22px; bottom: 96px; text-align: right; font-variant-numeric: tabular-nums; }
@@ -36,7 +38,7 @@ const CSS = `
 .hud-ammo .r { font-size: 16px; opacity: 0.7; }
 .hud-ammo .w { font-size: 12px; opacity: 0.7; letter-spacing: 0.15em; }
 .hud-scare { position: fixed; inset: 0; z-index: 27; pointer-events: none; opacity: 0; display: flex; align-items: center; justify-content: center; }
-.hud-hint { position: absolute; right: 20px; bottom: 20px; text-align: right; opacity: 0.6; line-height: 1.8; font-size: 12px;
+.hud-hint { position: absolute; right: 20px; bottom: 172px; text-align: right; opacity: 0.6; line-height: 1.8; font-size: 12px;
   white-space: pre-line; transition: opacity 2s; }
 .hud-title { position: fixed; inset: 0; z-index: 25; pointer-events: none; display: flex; flex-direction: column;
   align-items: center; justify-content: center; opacity: 0; color: #f4ecd0; text-shadow: 0 0 24px rgba(0,0,0,0.9), 0 2px 4px #000; }
@@ -91,6 +93,7 @@ export class Hud {
   private deadOverlay: HTMLDivElement;
   private cross!: HTMLDivElement;
   private hit!: HTMLDivElement;
+  private cool!: HTMLDivElement;
   private ammo!: HTMLDivElement;
   private hitT = 0;
   private scare!: HTMLDivElement;
@@ -148,6 +151,7 @@ export class Hud {
     for (let i = 0; i < 6; i++) this.cross.appendChild(document.createElement('i'));
     (this.cross.children[4] as HTMLElement).className = 'dot';
     (this.cross.children[5] as HTMLElement).className = 'ring';
+    this.cool = this.div('hud-cool');
     this.hit = this.div('hud-hit');
     for (let i = 0; i < 4; i++) {
       const l = document.createElement('i');
@@ -157,7 +161,7 @@ export class Hud {
       this.hit.appendChild(l);
     }
     this.ammo = this.div('hud-ammo');
-    this.root.append(bars, slotRow, this.held, this.msg, this.prompt, this.hint, this.cross, this.hit, this.ammo);
+    this.root.append(bars, slotRow, this.held, this.msg, this.prompt, this.hint, this.cross, this.cool, this.hit, this.ammo);
 
     this.title = this.div('hud-title');
     this.fade = this.div('hud-fade');
@@ -222,6 +226,23 @@ export class Hud {
       set(ring, -rr, -rr, rr * 2, rr * 2, Math.min(1, ads * 1.4));
       ring.style.boxSizing = 'border-box';
     }
+  }
+
+  /**
+   * Cooldown ring around the reticle (the staff): `ready` 0..1 fills clockwise;
+   * at 1 it glows faintly to show it can be used. null hides it.
+   */
+  setCooldown(ready: number | null): void {
+    if (ready === null) {
+      if (this.cool.style.display !== 'none') this.cool.style.display = 'none';
+      return;
+    }
+    this.cool.style.display = 'block';
+    const deg = Math.round(Math.min(1, Math.max(0, ready)) * 360);
+    const full = deg >= 360;
+    this.cool.style.background = full
+      ? 'rgba(216,168,255,0.55)'
+      : `conic-gradient(rgba(216,168,255,0.75) ${deg}deg, rgba(255,255,255,0.16) ${deg}deg)`;
   }
 
   /** Hit marker: white = body, red = head, larger = kill. */

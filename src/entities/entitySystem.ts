@@ -73,6 +73,13 @@ interface Strike {
   y: number;
   z: number;
   t: number;
+  /** Warning time, radius, damage; who cast it (player strikes never hurt the player). */
+  warn: number;
+  radius: number;
+  damage: number;
+  stun: number;
+  owner: 'witch' | 'player';
+  def: WeaponDef | null;
   ring: THREE.Mesh;
   bolt: THREE.Mesh | null;
 }
@@ -130,51 +137,54 @@ interface Spark {
 }
 
 /** Hit volumes in entity space: forward offset f, height range, half-size, head flag. */
-const HITBOXES: Record<EntityKind, Array<{ f: number; y0: number; y1: number; r: number; head: boolean }>> = {
+/**
+ * Hit volumes in the entity's own frame (it faces -Z): `f` = offset backward
+ * (negative = in front), height range, half-width `r` and half-depth `d`
+ * (defaults to r). Boxes follow the model's rotation, so they hug the body:
+ * a shot aimed at the head from close below is no longer caught by an
+ * invisible slab in front of the chest.
+ */
+type HitBox = { f: number; y0: number; y1: number; r: number; d?: number; head: boolean };
+const HUMAN = (h: number, w = 0.3): HitBox[] => [
+  { f: 0, y0: 0, y1: h * 0.815, r: w, d: 0.19, head: false },
+  { f: 0, y0: h * 0.815, y1: h, r: 0.17, head: true },
+];
+const HITBOXES: Record<EntityKind, HitBox[]> = {
   smiler: [
-    { f: 0, y0: 1.15, y1: 1.95, r: 0.4, head: false },
-    { f: -0.35, y0: 1.65, y1: 1.92, r: 0.26, head: true },
+    { f: 0, y0: 1.15, y1: 1.95, r: 0.45, d: 0.45, head: false },
+    { f: -0.35, y0: 1.6, y1: 1.95, r: 0.3, d: 0.2, head: true },
   ],
   hound: [
-    { f: 0, y0: 0.05, y1: 1.0, r: 0.45, head: false },
-    { f: -0.75, y0: 0.82, y1: 1.18, r: 0.2, head: true },
+    { f: 0, y0: 0.05, y1: 1.0, r: 0.26, d: 0.68, head: false },
+    { f: -0.78, y0: 0.82, y1: 1.18, r: 0.18, d: 0.25, head: true },
   ],
-  duller: [
-    { f: 0, y0: 0, y1: 1.47, r: 0.3, head: false },
-    { f: 0, y0: 1.47, y1: 1.8, r: 0.16, head: true },
-  ],
-  faceling: [
-    { f: 0, y0: 0, y1: 1.47, r: 0.3, head: false },
-    { f: 0, y0: 1.47, y1: 1.8, r: 0.16, head: true },
-  ],
-  skinstealer: [
-    { f: 0, y0: 0, y1: 1.63, r: 0.28, head: false },
-    { f: 0, y0: 1.63, y1: 2.0, r: 0.17, head: true },
-  ],
+  duller: HUMAN(1.85),
+  faceling: HUMAN(1.8),
+  skinstealer: HUMAN(2.0, 0.26),
   bloater: [
-    { f: 0, y0: 0.1, y1: 1.45, r: 0.55, head: false },
-    { f: 0, y0: 1.45, y1: 1.85, r: 0.2, head: true },
+    { f: 0, y0: 0.1, y1: 1.5, r: 0.6, d: 0.56, head: false },
+    { f: 0, y0: 1.5, y1: 1.85, r: 0.2, head: true },
   ],
   giant: [
-    { f: 0, y0: 0, y1: 5.3, r: 0.95, head: false },
-    { f: 0, y0: 5.3, y1: 6.5, r: 0.5, head: true },
+    { f: 0, y0: 0, y1: 3.1, r: 0.75, d: 0.38, head: false }, // legs
+    { f: 0, y0: 3.1, y1: 5.35, r: 1.15, d: 0.48, head: false }, // torso and arms
+    { f: 0, y0: 5.3, y1: 6.45, r: 0.58, d: 0.58, head: true },
   ],
   gunman: [
-    { f: 0, y0: 0, y1: 1.5, r: 0.3, head: false },
-    { f: 0, y0: 1.5, y1: 1.85, r: 0.17, head: true },
+    { f: 0, y0: 0, y1: 1.5, r: 0.3, d: 0.2, head: false },
+    { f: -0.45, y0: 1.2, y1: 1.5, r: 0.12, d: 0.45, head: false }, // outstretched arm
+    { f: 0, y0: 1.5, y1: 1.9, r: 0.2, head: true },
   ],
   witch: [
-    { f: 0, y0: 0, y1: 1.45, r: 0.34, head: false },
-    { f: 0, y0: 1.45, y1: 1.8, r: 0.16, head: true },
+    { f: 0, y0: 0, y1: 1.45, r: 0.4, d: 0.4, head: false },
+    { f: 0, y0: 1.45, y1: 2.1, r: 0.17, head: true },
   ],
   bomber: [
-    { f: 0, y0: 0, y1: 1.42, r: 0.36, head: false },
+    { f: 0, y0: 0, y1: 1.42, r: 0.38, d: 0.3, head: false },
+    { f: 0.33, y0: 0.85, y1: 1.45, r: 0.3, d: 0.25, head: false }, // sack on the back
     { f: 0, y0: 1.42, y1: 1.76, r: 0.17, head: true },
   ],
-  bug: [
-    { f: 0, y0: 0, y1: 1.47, r: 0.3, head: false },
-    { f: 0, y0: 1.47, y1: 1.8, r: 0.16, head: true },
-  ],
+  bug: HUMAN(1.8),
 };
 
 /** Eye-level height used for line of sight. */
@@ -227,6 +237,7 @@ export class EntitySystem {
     this.strikes.length = 0;
     for (const bm of this.bombs) bm.mesh.removeFromParent();
     this.bombs.length = 0;
+    if (this.aimRing) this.aimRing.visible = false;
   }
 
   // ------------------------------------------------------------------ spawn --
@@ -456,13 +467,21 @@ export class EntitySystem {
     for (const e of this.entities) {
       if (e.brain.mode === 'flee' && e.brain.hp <= 0) continue;
       const b = e.body;
-      const fx = -Math.sin(b.yaw);
-      const fz = -Math.cos(b.yaw);
+      // Into the model's frame: x = its right, z = its back (it faces -z).
+      const yaw = e.mesh.rotation.y;
+      const c = Math.cos(yaw);
+      const sn = Math.sin(yaw);
+      const rx = ox - b.x;
+      const rz = oz - b.z;
+      const lox = rx * c - rz * sn;
+      const loz = rx * sn + rz * c;
+      const ldx = dx * c - dz * sn;
+      const ldz = dx * sn + dz * c;
+      const k = e.mesh.scale.x; // bloater swelling
       for (const hb of HITBOXES[e.kind]) {
-        const cx = b.x - fx * hb.f;
-        const cz = b.z - fz * hb.f;
-        const box: WBox = { minX: cx - hb.r, maxX: cx + hb.r, minY: b.y + hb.y0, maxY: b.y + hb.y1, minZ: cz - hb.r, maxZ: cz + hb.r };
-        const h = rayBox(ox, oy, oz, dx, dy, dz, box, max);
+        const d = (hb.d ?? hb.r) * k;
+        const box: WBox = { minX: -hb.r * k, maxX: hb.r * k, minY: b.y + hb.y0 * (e.mesh.scale.y || 1), maxY: b.y + hb.y1 * (e.mesh.scale.y || 1), minZ: hb.f - d, maxZ: hb.f + d };
+        const h = rayBox(lox, oy, loz, ldx, dy, ldz, box, max);
         if (h && (!best || h.t < best.t - 1e-4 || (Math.abs(h.t - best.t) < 0.05 && hb.head))) best = { t: h.t, entity: e, head: hb.head };
       }
     }
@@ -566,7 +585,7 @@ export class EntitySystem {
       }
       const [rx, rz] = this.host.toRender(pr.x, pr.z);
       // The tracer drifts from the muzzle onto the true path over the first metres.
-      const blend = Math.min(1, pr.travelled / 6);
+      const blend = Math.min(1, pr.travelled / 2.5);
       const target = new THREE.Vector3(rx, pr.y, rz);
       pr.mesh.position.lerp(target, pr.def.kind === 'thrown' ? 1 : 0.35 + 0.65 * blend);
       pr.mesh.lookAt(pr.mesh.position.x + pr.vx, pr.mesh.position.y + pr.vy, pr.mesh.position.z + pr.vz);
@@ -840,7 +859,7 @@ export class EntitySystem {
     const ring = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: 0x9ad8ff, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2;
     this.host.fx.add(ring);
-    this.strikes.push({ x: p.x, y: p.y, z: p.z, t: WITCH.warn, ring, bolt: null });
+    this.strikes.push({ x: p.x, y: p.y, z: p.z, t: WITCH.warn, warn: WITCH.warn, radius: WITCH.radius, damage: ENTITIES.witch.damage, stun: 0, owner: 'witch', def: null, ring, bolt: null });
     e.flash = 0.6;
     this.host.audio.entityVoice('zap', this.panTo(p.x, p.z), 0);
     void dist;
@@ -857,9 +876,9 @@ export class EntitySystem {
       const ringMat = s.ring.material as THREE.MeshBasicMaterial;
       if (s.t > 0) {
         // Warning: the ring brightens and pulses faster as the strike nears.
-        const k = 1 - s.t / WITCH.warn;
+        const k = 1 - s.t / s.warn;
         ringMat.opacity = 0.35 + 0.5 * k * (0.6 + 0.4 * Math.sin(k * 40));
-        s.ring.scale.setScalar(WITCH.radius);
+        s.ring.scale.setScalar(s.radius);
       } else if (before > 0) {
         // Strike.
         const bolt = new THREE.Mesh(this.boltGeo, new THREE.MeshBasicMaterial({ color: 0xeaf6ff, transparent: true, opacity: 1, depthWrite: false }));
@@ -869,10 +888,14 @@ export class EntitySystem {
         this.spark(s.x, s.y + 0.5, s.z, 0xbfe6ff, 60, 0.35);
         const d = Math.hypot(p.x - s.x, p.z - s.z);
         this.host.audio.entityVoice('thunder', this.panTo(s.x, s.z), d);
-        if (d < WITCH.radius && Math.abs(p.y - s.y) < 3) this.host.onRangedHit('witch', ENTITIES.witch.damage);
+        if (s.owner === 'witch' && d < s.radius && Math.abs(p.y - s.y) < 3) this.host.onRangedHit('witch', s.damage);
         for (const e of this.entities) {
-          // Lightning hurts anything standing in it (except the witch casting it).
-          if (e.kind !== 'witch' && e.brain.hp > 0 && Math.hypot(e.body.x - s.x, e.body.z - s.z) < WITCH.radius) hurt(e.brain, ENTITIES.witch.damage);
+          // Lightning hurts anything standing in it (a witch is not hurt by its own kind's spell).
+          if (e.brain.hp <= 0 || (s.owner === 'witch' && e.kind === 'witch')) continue;
+          if (Math.hypot(e.body.x - s.x, e.body.z - s.z) >= s.radius || Math.abs(e.body.y - s.y) > 3) continue;
+          if (s.def) this.damage(e, s.def, s.damage, false, [e.body.x, e.body.y + 1, e.body.z]);
+          else hurt(e.brain, s.damage);
+          if (s.stun > 0) e.brain.stunT = Math.max(e.brain.stunT, s.stun);
         }
       } else {
         const f = Math.max(0, 1 + s.t / 0.35);
@@ -893,6 +916,39 @@ export class EntitySystem {
         }
       }
     }
+  }
+
+  // ----------------------------------------------------------- the staff --
+
+  private aimRing: THREE.Mesh | null = null;
+
+  /** Show the staff's magic circle on the ground at (x, y, z), or hide it (null). */
+  showSpellCircle(at: [number, number, number] | null, radius = 3.5): void {
+    if (!at) {
+      if (this.aimRing) this.aimRing.visible = false;
+      return;
+    }
+    if (!this.aimRing) {
+      this.aimRing = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: 0xd8a8ff, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }));
+      this.aimRing.rotation.x = -Math.PI / 2;
+      this.host.fx.add(this.aimRing);
+    }
+    const [rx, rz] = this.host.toRender(at[0], at[2]);
+    this.aimRing.visible = true;
+    this.aimRing.position.set(rx, at[1] + 0.05, rz);
+    this.aimRing.scale.setScalar(radius);
+    this.aimRing.rotation.z += 0.03;
+    (this.aimRing.material as THREE.MeshBasicMaterial).opacity = 0.55 + 0.25 * Math.sin(performance.now() * 0.008);
+  }
+
+  /** The player's lightning: falls `def.spell.delay` s later on the circle, hurts and stuns entities only. */
+  castPlayerStrike(def: WeaponDef, at: [number, number, number]): void {
+    const sp = def.spell!;
+    const ring = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: 0xd8a8ff, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2;
+    this.host.fx.add(ring);
+    this.strikes.push({ x: at[0], y: at[1], z: at[2], t: sp.delay, warn: sp.delay, radius: sp.radius, damage: def.damage, stun: sp.stun, owner: 'player', def, ring, bolt: null });
+    this.host.audio.entityVoice('zap', 0, 0);
   }
 
   /** Giant stomp: a shockwave around its feet. */

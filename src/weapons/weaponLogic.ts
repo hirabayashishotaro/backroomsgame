@@ -19,7 +19,7 @@ export interface ArsenalData {
 
 export class Arsenal {
   mags: Partial<Record<WeaponId, number>> = {};
-  reserve: Record<AmmoType, number> = { pistol: 0, magnum: 0, kunai: 0, rocket: 0 };
+  reserve: Record<AmmoType, number> = { pistol: 0, magnum: 0, kunai: 0, rocket: 0, shotgun: 0 };
   /** Seconds until the held weapon may fire again. */
   cooldown = 0;
   /** Reload in progress: weapon and time left. */
@@ -51,7 +51,7 @@ export class Arsenal {
   /** Rounds available to fire right now. */
   loaded(id: WeaponId): number {
     const def = WEAPONS[id];
-    if (def.kind === 'melee') return Infinity;
+    if (def.kind === 'melee' || def.kind === 'spell') return Infinity;
     if (def.mag === 0) return this.reserve[def.ammo!];
     return this.mags[id] ?? 0;
   }
@@ -102,8 +102,8 @@ export class Arsenal {
   /** Try to fire. Returns null if not possible (cooldown, reloading, empty). */
   fire(id: WeaponId): FireResult | 'empty' | null {
     const def = WEAPONS[id];
-    if (this.cooldown > 0 || (this.reloading && def.kind !== 'melee')) return null;
-    if (def.kind !== 'melee') {
+    if (this.cooldown > 0 || (this.reloading && def.kind !== 'melee' && def.kind !== 'spell')) return null;
+    if (def.kind !== 'melee' && def.kind !== 'spell') {
       if (this.loaded(id) <= 0) return 'empty';
       if (def.mag > 0) this.mags[id] = (this.mags[id] ?? 0) - 1;
       else this.reserve[def.ammo!] -= 1;
@@ -122,7 +122,7 @@ export class Arsenal {
 
   load(d: ArsenalData | undefined): void {
     this.mags = { ...(d?.mags ?? {}) };
-    this.reserve = { pistol: 0, magnum: 0, kunai: 0, rocket: 0, ...(d?.reserve ?? {}) };
+    this.reserve = { pistol: 0, magnum: 0, kunai: 0, rocket: 0, shotgun: 0, ...(d?.reserve ?? {}) };
     this.cooldown = 0;
     this.reloading = null;
     this.recoilDebt = 0;

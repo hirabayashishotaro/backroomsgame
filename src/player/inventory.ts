@@ -1,7 +1,7 @@
 /** 6-slot item bar, one item per slot (SPEC §17, extended for weapons). */
 import { ITEMS, type ItemId } from '../items/itemDefs';
 
-export const SLOTS = 6;
+export const SLOTS = 8;
 
 export class Inventory {
   slots: Array<ItemId | null> = new Array(SLOTS).fill(null);

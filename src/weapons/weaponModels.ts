@@ -74,6 +74,30 @@ export function buildWeaponModel(id: WeaponId, shade = 1): THREE.Group {
       muzzle.position.set(0, 0.07, -0.66);
       break;
     }
+    case 'shotgun':
+      // Pump-action: wooden stock and fore-end, two barrels' worth of steel.
+      b(g, 0.04, 0.09, 0.2, 0, -0.02, 0.15, k(0x6a4628)); // stock
+      b(g, 0.042, 0.05, 0.16, 0, 0.02, -0.02, k(0x2a2c30)); // receiver
+      cyl(g, 0.016, 0.5, 0, 0.04, -0.33, k(0x3a3c40)); // barrel
+      cyl(g, 0.013, 0.42, 0, 0.012, -0.3, k(0x2a2c30)); // magazine tube
+      b(g, 0.05, 0.045, 0.13, 0, 0.012, -0.24, k(0x7a5432)); // pump
+      b(g, 0.006, 0.01, 0.006, 0, 0.062, -0.56, k(0xe8e0c0)); // bead sight
+      b(g, 0.008, 0.03, 0.04, 0, -0.03, 0.03, k(0x111111)); // trigger guard
+      muzzle.position.set(0, 0.04, -0.59);
+      break;
+    case 'staff': {
+      // A dark wooden staff with a glowing pale-blue orb at the tip.
+      cyl(g, 0.015, 0.7, 0, 0, -0.22, k(0x5a4632));
+      const orb = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), new THREE.MeshBasicMaterial({ color: 0x9ad8ff }));
+      orb.position.set(0, 0, -0.6);
+      orb.name = 'orb';
+      g.add(orb);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 6, 14), mat(k(0x8a7a5a)));
+      ring.position.set(0, 0, -0.55);
+      g.add(ring);
+      muzzle.position.set(0, 0, -0.62);
+      break;
+    }
     case 'axe':
       cyl(g, 0.016, 0.62, 0, 0, -0.2, k(0x6a4628)); // handle along -z
       b(g, 0.02, 0.17, 0.12, 0, 0.06, -0.47, k(0x9aa0a6)); // head

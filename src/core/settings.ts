@@ -26,6 +26,8 @@ export type Action =
   | 'slot4'
   | 'slot5'
   | 'slot6'
+  | 'slot7'
+  | 'slot8'
   | 'prevSlot'
   | 'nextSlot'
   | 'journal';
@@ -49,6 +51,8 @@ export const ACTIONS: Action[] = [
   'slot4',
   'slot5',
   'slot6',
+  'slot7',
+  'slot8',
   'prevSlot',
   'nextSlot',
   'journal',
@@ -75,6 +79,8 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   slot4: ['Digit4'],
   slot5: ['Digit5'],
   slot6: ['Digit6'],
+  slot7: ['Digit7'],
+  slot8: ['Digit8'],
   prevSlot: ['WheelUp'],
   nextSlot: ['WheelDown'],
   journal: ['Tab', 'KeyJ'],

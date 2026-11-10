@@ -11,7 +11,7 @@ import { arraysToGroup, buildChunkMesh, disposeChunkMesh, LevelMaterials } from 
 import { ChunkWorkerPool, type ChunkResult } from './world/chunkWorkerPool';
 import type { ChunkArrays } from './world/chunkGeometry';
 import { FloatingOrigin } from './world/floatingOrigin';
-import { rayBox, toWorldBox, type FloorRect, type WBox } from './world/collision';
+import { groundHeight, rayBox, toWorldBox, type FloorRect, type WBox } from './world/collision';
 import { chunkKey, type ChunkData, type Prop, type PropKind, type ZoneKind } from './world/chunkData';
 import { WorldDeltas } from './world/deltas';
 import { sampleTerrain, type TerrainGrid } from './world/terrain';
@@ -163,7 +163,9 @@ export function readLaunchOptions(): LaunchOptions {
 }
 
 
-const SLOT_ACTIONS: Action[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6'];
+/** Chance that a defeated witch drops its staff. */
+const STAFF_DROP_P = 0.05;
+const SLOT_ACTIONS: Action[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6', 'slot7', 'slot8'];
 
 export class Game {
   readonly settings: Settings;
@@ -205,6 +207,8 @@ export class Game {
   /** Escape-mode progress (conditions, the Bug, the way home). */
   private escape = new EscapeProgress();
   private bugT = 5;
+  /** The staff's circle while the button is held. */
+  private staffTarget: [number, number, number] | null = null;
   private arrivedStage: EscapeStage | null = null;
   private crowd: Crowd | null = null;
   private endingTimer = -1;
@@ -304,6 +308,8 @@ export class Game {
       },
       onKilled: (kind, at) => {
         this.hud.message(t('entity.killed', { name: ENTITIES[kind].name }), 2);
+        // Now and then a witch leaves its staff behind (5%).
+        if (kind === 'witch' && this.rng.float() < STAFF_DROP_P) this.spawnItemAt('staff', at.x, at.y, at.z);
         if (this.mode === 'escape') {
           if (this.escape.recordKill(kind) === 'return') {
             // A door appears where the Bug fell: the first way home.
@@ -652,6 +658,20 @@ export class Game {
     return this.level.id === ARENA_ID;
   }
 
+  /** Drop an item into the world (e.g. a witch's staff). */
+  private spawnItemAt(id: ItemId, x: number, y: number, z: number): void {
+    const S = this.level.chunkSize;
+    const c = this.chunks.column(Math.floor(x / S), Math.floor(z / S), this.chunks.slabCoord(y)).map((h) => h.handle)[0];
+    if (!c) return;
+    const uid = 'drop' + this.dropCount++;
+    const mesh = buildItemMesh(id, c.sampler(x, y + 0.3, z, 0, 1, 0));
+    mesh.position.set(x - c.ox, y, z - c.oz);
+    c.group.add(mesh);
+    c.items.set(uid, { uid, id, mesh, x, y, z });
+    this.hud.message(t('msg.dropped', { name: ITEMS[id].name }), 3);
+  }
+  private dropCount = 0;
+
   /** Stand a door in the world at (x, y, z), its front facing `rotY` (added to the chunk there). */
   private spawnDoorAt(x: number, y: number, z: number, rotY: number): void {
     const S = this.level.chunkSize;
@@ -692,7 +712,7 @@ export class Game {
 
   /** Every weapon with a full magazine and full reserves; hold the pistol. */
   private labRefill(): void {
-    for (const id of ['pistol', 'magnum', 'kunai', 'axe', 'rocket'] as const) {
+    for (const id of ['pistol', 'magnum', 'shotgun', 'kunai', 'rocket', 'staff', 'axe'] as const) {
       if (!this.inventory.has(id)) {
         if (!this.inventory.add(id)) continue;
         this.arsenal.gainWeapon(id, false);
@@ -700,7 +720,7 @@ export class Game {
       const def = WEAPONS[id];
       if (def.mag > 0) this.arsenal.mags[id] = def.mag;
     }
-    for (const a of ['pistol', 'magnum', 'kunai', 'rocket'] as const) this.arsenal.reserve[a] = AMMO_MAX[a];
+    for (const a of ['pistol', 'magnum', 'kunai', 'rocket', 'shotgun'] as const) this.arsenal.reserve[a] = AMMO_MAX[a];
     this.arsenal.cancelReload();
     const i = this.inventory.slots.indexOf('pistol');
     if (i >= 0) this.inventory.select(i);
@@ -750,7 +770,7 @@ export class Game {
     const on = this.started && this.inArena;
     if (on && !this.paused) this.labEndless(dt);
     this.ents.aiStopped = on && this.lab.options.aiStopped;
-    if (on && this.lab.options.infiniteAmmo) for (const a of ['pistol', 'magnum', 'kunai', 'rocket'] as const) this.arsenal.reserve[a] = AMMO_MAX[a];
+    if (on && this.lab.options.infiniteAmmo) for (const a of ['pistol', 'magnum', 'kunai', 'rocket', 'shotgun'] as const) this.arsenal.reserve[a] = AMMO_MAX[a];
     this.lab.updateInfo(
       on
         ? this.ents.entities.map((e) => ({
@@ -1290,7 +1310,12 @@ export class Game {
     const spread = this.currentSpread(id);
     const d = this.aimDir(spread);
     const o: [number, number, number] = [this.player.x, this.player.y + this.player.eye, this.player.z];
-    if (def.kind === 'hitscan') {
+    if (def.kind === 'hitscan' && def.pellets) {
+      // Shotgun: a cone of pellets, each its own hitscan ray.
+      for (let k = 0; k < def.pellets; k++) this.ents.hitscan(def, o, k === 0 ? this.aimDir(spread * 0.3) : this.aimDir(spread));
+      this.audio.gunshot('magnum');
+      this.audio.gunshot('pistol');
+    } else if (def.kind === 'hitscan') {
       this.ents.hitscan(def, o, d);
       this.audio.gunshot('pistol');
     } else if (def.kind === 'projectile') {
@@ -1305,7 +1330,7 @@ export class Game {
       this.audio.swing();
     }
     this.player.pitch = Math.min(1.55, this.player.pitch + r.kick);
-    this.viewmodel.fire(def.kind, def.explosive ? 2.4 : def.kind === 'projectile' ? 1.6 : 0.6);
+    this.viewmodel.fire(def.kind, def.explosive ? 2.4 : def.pellets ? 2 : def.kind === 'projectile' ? 1.6 : 0.6);
     // Auto-reload an emptied magazine.
     if (def.mag > 0 && this.arsenal.loaded(id) === 0 && this.arsenal.startReload(id)) this.beginReloadFx(id);
   }
@@ -1316,9 +1341,50 @@ export class Game {
     this.viewmodel.reload(def.reloadTime);
   }
 
+  /**
+   * The staff: hold to steer a magic circle across the ground, release to call
+   * the lightning down on it. Unlimited uses, but a cooldown between casts.
+   */
+  private updateStaff(def: (typeof WEAPONS)['staff']): void {
+    const down = this.input.isDown('attack');
+    if (down && this.arsenal.cooldown <= 0) {
+      this.staffTarget = this.spellTarget(def.range);
+      this.ents.showSpellCircle(this.staffTarget, def.spell!.radius);
+    } else if (!down && this.staffTarget) {
+      const at = this.staffTarget;
+      this.staffTarget = null;
+      this.ents.showSpellCircle(null);
+      const r = this.arsenal.fire('staff');
+      if (r && r !== 'empty') {
+        this.ents.castPlayerStrike(def, at);
+        this.viewmodel.fire('spell', 1);
+      }
+    }
+  }
+
+  /** Where the aim meets the ground (up to `range` m), dropped to the floor below. */
+  private spellTarget(range: number): [number, number, number] {
+    const p = this.player;
+    const d = this.aimDir(0);
+    const ey = p.y + p.eye;
+    const t = this.rayWorld(p.x, ey, p.z, d[0], d[1], d[2], range) ?? range;
+    const x = p.x + d[0] * Math.max(0, t - 0.1);
+    const z = p.z + d[2] * Math.max(0, t - 0.1);
+    const y = ey + d[1] * t;
+    let g = groundHeight(x, z, 0.2, y + 0.3, this.floorsNear(x, z), this.boxesNear(x, z));
+    const th = this.terrainAt(x, z);
+    if (th !== null && th <= y + 0.3 && th > g) g = th;
+    return [x, Number.isFinite(g) ? g : p.y, z];
+  }
+
   private updateWeapons(dt: number, active: boolean): void {
     const id = this.heldWeapon();
     const held = this.inventory.held;
+    if ((!active || id !== 'staff') && this.staffTarget) {
+      this.staffTarget = null;
+      this.ents.showSpellCircle(null);
+    }
+    this.hud.setCooldown(id === 'staff' ? 1 - Math.max(0, this.arsenal.cooldown) / WEAPONS.staff.interval : null);
     if (held !== this.heldPrev) {
       this.heldPrev = held;
       this.arsenal.cancelReload();
@@ -1330,8 +1396,9 @@ export class Game {
     this.adsT += ((aiming ? 1 : 0) - this.adsT) * Math.min(1, dt * 14);
     if (active) {
       if (id) {
+        if (WEAPONS[id].kind === 'spell') this.updateStaff(WEAPONS[id]);
         // Kunai keep flying while the button is held (when there are any left).
-        if (this.input.wasPressed('attack') || (WEAPONS[id].auto && this.input.isDown('attack') && this.arsenal.loaded(id) > 0)) this.fireWeapon(id);
+        else if (this.input.wasPressed('attack') || (WEAPONS[id].auto && this.input.isDown('attack') && this.arsenal.loaded(id) > 0)) this.fireWeapon(id);
         if (this.input.wasPressed('reload') && this.arsenal.startReload(id)) this.beginReloadFx(id);
       } else if (held === 'almond_water' && this.input.wasPressed('attack')) this.useHeld();
     }
@@ -1356,7 +1423,7 @@ export class Game {
       const gap = (Math.tan(spread) / Math.tan(((this.camera.fov * Math.PI) / 180) / 2)) * (window.innerHeight / 2);
       this.hud.setCrosshair(gap, def.kind !== 'melee', s.crosshairSize, s.crosshairColor, s.crosshairDot, this.adsT);
       const loaded = this.arsenal.loaded(id);
-      if (def.kind === 'melee') this.hud.setAmmo(def.name, '', '', false);
+      if (def.kind === 'melee' || def.kind === 'spell') this.hud.setAmmo(def.name, '', '', false);
       else if (def.mag === 0) this.hud.setAmmo(def.name, String(loaded), '', false);
       else this.hud.setAmmo(def.name, String(loaded), String(this.arsenal.reserve[def.ammo!]), !!this.arsenal.reloading);
     } else {

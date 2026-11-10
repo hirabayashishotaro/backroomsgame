@@ -114,6 +114,23 @@ describe('entity behaviour', () => {
     expect(think(newBrain('bomber'), P({ dist: 4 }), 0.05).speed).toBeLessThan(0);
   });
 
+  it('a stunned entity cannot move or act for the stun time', () => {
+    const g = newBrain('gunman');
+    g.alpha = 1;
+    g.cd = 0;
+    g.stunT = 1;
+    let fired = false;
+    for (let t = 0; t < 0.95; t += 0.05) {
+      const d = think(g, P({ dist: 15 }), 0.05);
+      expect(d.speed).toBe(0);
+      if (d.fire) fired = true;
+    }
+    expect(fired).toBe(false);
+    let after = false;
+    for (let t = 0; t < 0.5; t += 0.05) if (think(g, P({ dist: 15 }), 0.05).fire) after = true;
+    expect(after).toBe(true);
+  });
+
   it('giant walks in, winds up and stomps with a cooldown', () => {
     const g = newBrain('giant');
     expect(think(g, P({ dist: 20 }), 0.05).speed).toBeGreaterThan(0);

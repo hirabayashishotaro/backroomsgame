@@ -102,6 +102,28 @@ describe('weapons', () => {
     expect(AMMO_PICKUP.rocket).toBe(5);
   });
 
+  it('shotgun: 8 pellets of 25 = 200 up close, much less far away', () => {
+    const sg = WEAPONS.shotgun;
+    expect(sg.pellets! * sg.damage).toBe(200);
+    expect(sg.pellets! * sg.damage * falloffFactor(sg, 3)).toBe(200);
+    expect(sg.pellets! * sg.damage * falloffFactor(sg, 30)).toBeLessThan(40);
+  });
+
+  it('staff: needs no ammo, 100 damage, 3 s cooldown between casts', () => {
+    const a = new Arsenal();
+    const st = WEAPONS.staff;
+    expect(st.damage).toBe(100);
+    expect(st.spell!.delay).toBeCloseTo(0.3);
+    expect(st.spell!.stun).toBe(1);
+    expect(a.loaded('staff')).toBe(Infinity);
+    const r = a.fire('staff');
+    expect(r && r !== 'empty').toBe(true);
+    for (let t = 0; t < 2.9; t += 0.1) a.update(0.1);
+    expect(a.fire('staff')).toBeNull();
+    a.update(0.2);
+    expect(a.fire('staff')).not.toBeNull();
+  });
+
   it('every reserve holds up to 999', () => {
     for (const v of Object.values(AMMO_MAX)) expect(v).toBe(999);
     const a = new Arsenal();

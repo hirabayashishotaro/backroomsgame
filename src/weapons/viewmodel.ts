@@ -16,6 +16,8 @@ const POSES: Record<string, Pose> = {
   magnum: { hip: new THREE.Vector3(0.17, -0.17, -0.36), ads: new THREE.Vector3(0, -0.13, -0.4), rot: new THREE.Euler(0, 0, 0) },
   kunai: { hip: new THREE.Vector3(0.2, -0.17, -0.34), ads: new THREE.Vector3(0.14, -0.16, -0.34), rot: new THREE.Euler(0.1, 0.25, 0.4) },
   rocket: { hip: new THREE.Vector3(0.26, -0.22, -0.5), ads: new THREE.Vector3(0.13, -0.2, -0.5), rot: new THREE.Euler(0, 0.05, 0) },
+  shotgun: { hip: new THREE.Vector3(0.18, -0.17, -0.34), ads: new THREE.Vector3(0, -0.12, -0.36), rot: new THREE.Euler(0, 0, 0) },
+  staff: { hip: new THREE.Vector3(0.22, -0.2, -0.36), ads: new THREE.Vector3(0.16, -0.18, -0.36), rot: new THREE.Euler(0.35, 0.1, 0.15) },
   axe: { hip: new THREE.Vector3(0.24, -0.22, -0.25), ads: new THREE.Vector3(0.2, -0.2, -0.25), rot: new THREE.Euler(0.5, 0.15, 0.25) },
   almond_water: { hip: new THREE.Vector3(0.2, -0.24, -0.38), ads: new THREE.Vector3(0.2, -0.24, -0.38), rot: new THREE.Euler(0, 0, 0) },
 };
@@ -71,9 +73,9 @@ export class ViewModel {
   }
 
   /** Fired: visual kick (and flash for guns). */
-  fire(kind: 'hitscan' | 'projectile' | 'thrown' | 'melee', strength: number): void {
+  fire(kind: 'hitscan' | 'projectile' | 'thrown' | 'melee' | 'spell', strength: number): void {
     if (kind === 'melee') this.swingT = 0;
-    else if (kind === 'thrown') this.throwT = 0;
+    else if (kind === 'thrown' || kind === 'spell') this.throwT = 0;
     else {
       this.kickT = 0;
       this.kickAmt = strength;

@@ -172,23 +172,42 @@ export function poolRoomOut(seed: number, p: PoolParams, cx: number, cz: number)
       pillar(o, mx, mz, rc, 0, H + 7);
       const n = Math.round(H / 0.25);
       const a0 = rng.float() * Math.PI * 2;
+      const STEP_A = 0.34;
+      const stepT = (k: number) => 0.25 * (k + 1);
       for (let k = 0; k < n; k++) {
-        const a = a0 + k * 0.34;
-        const t = 0.25 * (k + 1);
+        const a = a0 + k * STEP_A;
+        const t = stepT(k);
         for (const r of [2.2, 3.2]) {
           const x = mx + Math.cos(a) * r;
           const z = mz + Math.sin(a) * r;
-          box(o.solids, x - 0.6, t - 0.18, z - 0.6, x + 0.6, t, z + 0.6, 'wall');
+          box(o.solids, x - 0.6, t - 0.22, z - 0.6, x + 0.6, t, z + 0.6, 'wall');
         }
       }
-      // Landing ring at the top and a door on it
-      for (let k = 0; k < 12; k++) {
-        const a = (k / 12) * Math.PI * 2;
+      // Landing at the top: only where it does not hang over the stair's upper
+      // steps (a slab at head height there used to stop you halfway up). The
+      // last step is level with it, so you walk straight off onto it.
+      const angDist = (a: number, b: number) => {
+        const d = (((a - b) % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+        return Math.abs(d);
+      };
+      const landing: number[] = [];
+      for (let k = 0; k < 36; k++) {
+        const a = a0 + (k / 36) * Math.PI * 2;
+        let clear = true;
+        for (let j = 0; j < n; j++) {
+          const t = stepT(j);
+          if (t > H - 2.6 && t < H - 0.01 && angDist(a, a0 + j * STEP_A) < 0.5) {
+            clear = false;
+            break;
+          }
+        }
+        if (!clear) continue;
+        landing.push(a);
         const x = mx + Math.cos(a) * 2.7;
         const z = mz + Math.sin(a) * 2.7;
-        box(o.solids, x - 0.8, H - 0.2, z - 0.8, x + 0.8, H, z + 0.8, 'wall');
+        box(o.solids, x - 0.75, H - 0.22, z - 0.75, x + 0.75, H, z + 0.75, 'wall');
       }
-      const ad = a0 + (n + 4) * 0.34;
+      const ad = landing.length ? landing[Math.floor(landing.length / 2)] : a0 + (n + 4) * STEP_A;
       o.props.push({ uid: 'spiral-door', kind: 'plain-door', x: mx + Math.cos(ad) * (rc + 0.95), y: H, z: mz + Math.sin(ad) * (rc + 0.95), rotY: Math.atan2(Math.cos(ad), Math.sin(ad)), color: 0xf2f0e6 });
       // The shaft above: tiled walls up to a bright skylight
       // Round opening in the ceiling (stepped), a tiled shaft and a skylight above.

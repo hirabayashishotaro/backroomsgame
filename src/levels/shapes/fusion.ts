@@ -76,6 +76,11 @@ const GROUND_SETS: Array<[string, string, string]> = [
   ['path', 'stone', ''],
   ['aero-white', 'tile-blue', ''],
   ['tatami', 'wood-dark', ''],
+  // From the explicit worlds:
+  ['neon-grid', 'neon-grid', ''], // Vaporwave wireframe
+  ['vapor-check', 'plaster', ''],
+  ['memphis-tile', 'terrazzo', ''], // Memphis
+  ['terrazzo', 'memphis-stripes', ''],
 ];
 
 const LIQUIDS: Array<{ mat: string; lava: boolean }> = [
@@ -87,8 +92,8 @@ const LIQUIDS: Array<{ mat: string; lava: boolean }> = [
   { mat: 'lava', lava: true },
 ];
 
-const CEILING_TEX = ['gen:rock:3a3430:801', 'ceiling-tile', 'gen:concrete:4a4844:802', 'gen:pooltile:f2f0e6:803', 'gen:wood:3e2a18:804', 'gen:flesh:7a2838:805', 'gen:marble:eceae6:806', 'studs'];
-const WALL_TEX = ['wallpaper-yellow', 'gen:concrete:8a8680:811', 'gen:tile:d9e3e6:812', 'gen:brick:7a3b2a:813', 'gen:marble:eceae6:814', 'gen:rock:5a5450:815'];
+const CEILING_TEX = ['flat:ffffff', 'gen:rock:3a3430:801', 'ceiling-tile', 'gen:concrete:4a4844:802', 'gen:pooltile:f2f0e6:803', 'gen:wood:3e2a18:804', 'gen:flesh:7a2838:805', 'gen:marble:eceae6:806', 'studs'];
+const WALL_TEX = ['memphis-squiggle', 'plaster', 'wallpaper-yellow', 'gen:concrete:8a8680:811', 'gen:tile:d9e3e6:812', 'gen:brick:7a3b2a:813', 'gen:marble:eceae6:814', 'gen:rock:5a5450:815'];
 
 /** The genome of a fusion level (deterministic from its id). */
 export function fusionGenome(id: string): FusionGenome {
@@ -106,7 +111,7 @@ export function fusionGenome(id: string): FusionGenome {
   const pool = [...ALL_FEATURES];
   const features: FeatureId[] = [];
   while (features.length < nf) features.push(pool.splice(rng.int(0, pool.length - 1), 1)[0]);
-  const sky = rng.pick<SkyKind>(hostile ? ['night', 'void', 'dusk', 'overcast'] : ['day', 'dusk', 'night', 'dawn', 'overcast', 'void']);
+  const sky = rng.pick<SkyKind>(hostile ? ['night', 'void', 'dusk', 'overcast', 'synth'] : ['day', 'dusk', 'night', 'dawn', 'overcast', 'void', 'synth', 'vapor']);
   const brightness = roof === 'ceiling' ? (hostile ? 0.06 : 0.12 + rng.float() * 0.3) : { day: 1, dusk: 0.6, dawn: 0.7, night: 0.25, overcast: 0.75, void: 0.15, synth: 0.35, vapor: 0.95 }[sky] * (hostile ? 0.6 : 1);
   return {
     base,

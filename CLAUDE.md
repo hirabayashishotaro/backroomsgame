@@ -8,3 +8,4 @@ Project: THE BACKROOMS: ENDLESS — procedural first-person exploration horror (
 - Keep generators pure (no three.js imports) so they can be unit-tested: `src/levels/**` and `src/world/chunkData.ts`, `chunkManager.ts`, `collision.ts`.
 - Before committing: `npm run build` and `npm test` must pass.
 - Do not copy layouts, text or names from commercial Backrooms games. UI text lives in `src/ui/ja.json`.
+- When you add an explicit (hand-made) world, also register its structures, materials and sky with the random generator: structures as features in `src/levels/shapes/features.ts` (they then appear in fusion levels and overlays), ground/wall materials and skies in `src/levels/shapes/fusion.ts`, palettes in `THEMES` (`src/levels/procedural/generated.ts`).

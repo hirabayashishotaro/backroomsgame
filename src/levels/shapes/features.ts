@@ -7,7 +7,8 @@
  * dripping from the ceiling and books the size of houses.
  */
 import type { Box } from '../../world/chunkData';
-import { box, type Light, type Out } from './kit';
+import { box, emptyOut, type Light, type Out } from './kit';
+import { bust, column, neonPalm, sculpture } from '../hand/aesthetic';
 
 export type FeatureId =
   | 'books'
@@ -29,7 +30,15 @@ export type FeatureId =
   | 'stairs'
   | 'neon'
   | 'waterfalls'
-  | 'bones';
+  | 'bones'
+  // From the explicit worlds (every hand-made world adds its pieces here):
+  | 'busts'
+  | 'columns'
+  | 'neonpalms'
+  | 'memphis'
+  | 'loudwall'
+  | 'pinksheets'
+  | 'vending';
 
 export const ALL_FEATURES: FeatureId[] = [
   'books',
@@ -52,6 +61,13 @@ export const ALL_FEATURES: FeatureId[] = [
   'neon',
   'waterfalls',
   'bones',
+  'busts',
+  'columns',
+  'neonpalms',
+  'memphis',
+  'loudwall',
+  'pinksheets',
+  'vending',
 ];
 
 /** Height needed at scale 1 (m), footprint half-size, and words for names. */
@@ -76,7 +92,37 @@ export const FEATURE_INFO: Record<FeatureId, { h: number; r: number; name: strin
   neon: { h: 4, r: 1, name: 'ネオン', adj: 'ネオンの瞬く' },
   waterfalls: { h: 7, r: 1.2, name: '水の柱', adj: '水の降る' },
   bones: { h: 5, r: 3, name: '巨大な骨', adj: '骨の横たわる' },
+  busts: { h: 3.5, r: 2.2, name: '石膏の胸像', adj: '石膏の頭が並ぶ' },
+  columns: { h: 5, r: 3.2, name: 'ローマの柱', adj: '列柱の立つ' },
+  neonpalms: { h: 5.5, r: 2.4, name: 'ネオンのヤシ', adj: 'ネオンのヤシが光る' },
+  memphis: { h: 4.5, r: 2.4, name: 'メンフィスの家具', adj: '派手な家具の置かれた' },
+  loudwall: { h: 6, r: 4.2, name: '波線の壁', adj: '派手な壁の立つ' },
+  pinksheets: { h: 8, r: 3.5, name: 'ピンクの幕', adj: 'ピンクの幕が垂れる' },
+  vending: { h: 2, r: 0.8, name: '自販機', adj: '自販機の光る' },
 };
+
+/**
+ * Run a builder from a hand-made world on a scratch output, lift everything
+ * onto the ground height `y`, mark the solids as overlay, and copy it in.
+ * Returns the height it reached (to check against the headroom first).
+ */
+function borrowed(o: Out, y: number, room: number, build: (t: Out) => void): void {
+  const t = emptyOut();
+  build(t);
+  const top = Math.max(0, ...t.solids.map((b) => b.maxY), ...t.decor.map((b) => b.maxY));
+  if (Number.isFinite(room) && top > room - 0.2) return;
+  for (const b of t.solids) {
+    b.minY += y;
+    b.maxY += y;
+    b.overlay = true;
+    o.solids.push(b);
+  }
+  for (const b of t.decor) {
+    b.minY += y;
+    b.maxY += y;
+    o.decor.push(b);
+  }
+}
 
 /** One feature set down at a local point (y = the ground there). */
 export interface Placement {
@@ -283,6 +329,64 @@ export function drawFeature(o: Out, p: Placement, lights: Light[]): void {
       const h = Number.isFinite(p.room) ? p.room : 12 + k * 18;
       deco(x - 0.4 * s, y, z - 0.4 * s, x + 0.4 * s, y + h, z + 0.4 * s, 'water');
       deco(x - 1.5 * s, y + 0.01, z - 1.5 * s, x + 1.5 * s, y + 0.1, z + 1.5 * s, 'water-shallow');
+      break;
+    }
+    case 'busts': {
+      // Plaster heads from the Vaporwave world, on a patch of pink-and-navy checkerboard.
+      const h = Math.min(4 * s, Number.isFinite(p.room) ? (p.room - 0.3) / 1.05 : Infinity);
+      if (h < 1.2) break;
+      deco(x - 2.4 * s, y + 0.005, z - 2.4 * s, x + 2.4 * s, y + 0.02, z + 2.4 * s, 'vapor-check');
+      borrowed(o, y, p.room, (t) => bust(t, x, z, h, k < 0.5 ? 1 : -1));
+      lights.push({ x, y: y + h * 0.5, z, I: 2.5 });
+      break;
+    }
+    case 'columns': {
+      // A short colonnade of plaster Roman columns on checkerboard.
+      const h = top(4.5 * s + k * 2);
+      if (h < 2) break;
+      deco(x - 3 * s, y + 0.005, z - 3 * s, x + 3 * s, y + 0.02, z + 3 * s, 'vapor-check');
+      borrowed(o, y, p.room, (t) => {
+        for (const dz of [-2, 0, 2]) column(t, x + (k < 0.5 ? -1.5 : 1.5) * s, z + dz * s, h * (dz === 2 && k > 0.6 ? 0.6 : 1));
+      });
+      break;
+    }
+    case 'neonpalms': {
+      const h = top(5.5 * s);
+      if (h < 2.5) break;
+      borrowed(o, y, p.room, (t) => {
+        neonPalm(t, x - 1.2 * s, z, h);
+        neonPalm(t, x + 1.2 * s, z + 1.5 * s, h * 0.8);
+      });
+      lights.push({ x, y: y + h * 0.8, z, I: 2 });
+      break;
+    }
+    case 'memphis': {
+      // Loud post-modern furniture from the Memphis showroom, on a block of colour.
+      deco(x - 2.2, y + 0.005, z - 2.2, x + 2.2, y + 0.02, z + 2.2, pick(['m-yellow', 'm-blue', 'memphis-check', 'terrazzo', 'm-pink'], k));
+      borrowed(o, y, p.room, (t) => sculpture(t, x, z, k));
+      break;
+    }
+    case 'loudwall': {
+      const h = top(4 + k * 3);
+      const mat = pick(['memphis-squiggle', 'memphis-stripes', 'terrazzo', 'memphis-check', 'm-red', 'm-yellow'], k);
+      solid(x - 4 * s, y, z - 0.15, x + 4 * s, y + h, z + 0.15, mat);
+      deco(x - 4 * s, y + 0.005, z + 0.15, x + 4 * s, y + 0.015, z + 1.6, 'm-pink');
+      break;
+    }
+    case 'pinksheets': {
+      const h = Number.isFinite(p.room) ? p.room : 6 + k * 6;
+      deco(x - 3.4 * s, y, z - 0.02, x + 3.4 * s, y + h, z + 0.02, k < 0.7 ? 'pink-sheet' : 'mint-glass');
+      if (k > 0.4) deco(x - 0.02, y, z - 3 * s, x + 0.02, y + h * 0.8, z + 3 * s, 'pink-sheet');
+      break;
+    }
+    case 'vending': {
+      // Vending machines from the city street, glowing in the middle of nowhere.
+      for (let i = 0; i < 1 + Math.floor(k * 3); i++) {
+        const vx = x + (i - 1) * 1.0;
+        solid(vx - 0.45, y, z - 0.4, vx + 0.45, y + 1.85, z + 0.4, pick(['tile-white', 'slide-red', 'slide-blue'], (k * 7 + i * 0.3) % 1));
+        deco(vx - 0.38, y + 0.85, z - 0.42, vx + 0.38, y + 1.75, z - 0.41, 'daylight');
+      }
+      lights.push({ x, y: y + 1.3, z: z - 0.8, I: 1.6 });
       break;
     }
     case 'bones': {

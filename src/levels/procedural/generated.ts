@@ -40,6 +40,9 @@ const THEMES: Theme[] = [
   { wall: 'gen:concrete:5b6b52', floor: 'gen:tile:4c5e48', ceiling: 'gen:concrete:39443a', light: 0xd8ffc8, tint: [0.85, 1, 0.8], fog: 0x0e150c }, // greenhouse green
   { wall: 'gen:stripes:8a5a6a', floor: 'gen:carpet:4a2a34', ceiling: 'gen:panel:a88a92', light: 0xffd8e0, tint: [1, 0.85, 0.88], fog: 0x1a0d12 }, // hotel corridor
   { wall: 'gen:concrete:3a3a3a', floor: 'gen:floor-concrete:2c2c2c', ceiling: 'gen:concrete:222222', light: 0xff6040, tint: [1, 0.5, 0.4], fog: 0x0a0505 }, // emergency red
+  // From the explicit worlds:
+  { wall: 'plaster', floor: 'vapor-check', ceiling: 'neon-grid', light: 0xff7ae8, tint: [1.05, 0.62, 1.2], fog: 0x2a0848 }, // vaporwave corridors
+  { wall: 'memphis-squiggle', floor: 'memphis-tile', ceiling: 'flat:ffffff', light: 0xffffff, tint: [1, 1, 1], fog: 0xf4f0ea }, // Memphis offices
 ];
 
 /** Hints so known Wiki ids look like their connection (contents remain original). */
@@ -481,7 +484,8 @@ function makeGridGenerated(id: string, openSky: SkyKind | null): LevelDefinition
     noCeiling: !!openSky,
   };
   if (openSky) params.lightP = 0;
-  const tex = (k: string, n: number) => `${k}:${(seed + n) % 9973}`;
+  // gen: textures get a per-level variation seed; named textures are used as they are.
+  const tex = (k: string, n: number) => (k.startsWith('gen:') ? `${k}:${(seed + n) % 9973}` : k);
   const name = rng.pick(ADJ) + rng.pick(NOUN);
   const def: LevelDefinition = {
     id,

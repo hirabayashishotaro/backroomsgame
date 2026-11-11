@@ -156,6 +156,16 @@ describe('levels', () => {
     expect(overlaid).toBeGreaterThan(20);
   });
 
+  it('pieces of the explicit worlds (vaporwave, Memphis, the city) turn up in random levels', () => {
+    const want = ['石膏の胸像', 'ローマの柱', 'ネオンのヤシ', 'メンフィスの家具', '波線の壁', 'ピンクの幕', '自販機'];
+    const found = new Set<string>();
+    for (let n = 3; n < 1500; n++) {
+      const label = resolveLevel(String(n)).kindLabel ?? '';
+      for (const w of want) if (label.includes(w)) found.add(w);
+    }
+    expect([...found].sort()).toEqual([...want].sort());
+  });
+
   it('levels with pieces of other worlds layered in still have free arrivals', () => {
     let tested = 0;
     for (let n = 3; n < 400 && tested < 30; n++) {

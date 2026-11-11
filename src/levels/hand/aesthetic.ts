@@ -52,7 +52,7 @@ function vaporHeight(seed: number, x: number, z: number): number {
 }
 
 /** A Roman column: plinth, fluted-looking shaft, scroll capital. */
-function column(o: Out, x: number, z: number, h: number): void {
+export function column(o: Out, x: number, z: number, h: number): void {
   box(o.solids, x - 0.75, 0, z - 0.75, x + 0.75, 0.35, z + 0.75, 'plaster');
   box(o.solids, x - 0.6, 0.35, z - 0.6, x + 0.6, 0.6, z + 0.6, 'plaster');
   round(o.solids, x, z, 0.42, 0.6, h - 0.5, 'plaster');
@@ -61,7 +61,7 @@ function column(o: Out, x: number, z: number, h: number): void {
 }
 
 /** A giant plaster bust (head and neck), facing +x or -x, `s` metres tall-ish. */
-function bust(o: Out, x: number, z: number, s: number, face: 1 | -1, y = 0): void {
+export function bust(o: Out, x: number, z: number, s: number, face: 1 | -1, y = 0): void {
   const P = 'plaster';
   box(o.solids, x - 0.35 * s, y, z - 0.3 * s, x + 0.35 * s, y + 0.35 * s, z + 0.3 * s, P); // neck
   box(o.solids, x - 0.42 * s, y + 0.3 * s, z - 0.38 * s, x + 0.42 * s, y + 0.95 * s, z + 0.38 * s, P); // head
@@ -83,7 +83,7 @@ function bust(o: Out, x: number, z: number, s: number, face: 1 | -1, y = 0): voi
   box(o.decor, Math.min(fx, fx + face * 0.01), y + 0.36 * s, z - 0.12 * s, Math.max(fx, fx + face * 0.01), y + 0.4 * s, z + 0.12 * s, 'dark');
 }
 
-function neonPalm(o: Out, x: number, z: number, h: number): void {
+export function neonPalm(o: Out, x: number, z: number, h: number): void {
   box(o.solids, x - 0.15, 0, z - 0.15, x + 0.15, h, z + 0.15, 'neon-magenta');
   for (const [dx, dz] of [
     [1, 0],
@@ -231,7 +231,7 @@ function makeVaporwave(): LevelDefinition {
 const M_H = 12;
 
 /** One loud sculpture at (x, z) (local), chosen by `k`. Keeps within ~2.6 m. */
-function sculpture(o: Out, x: number, z: number, k: number): void {
+export function sculpture(o: Out, x: number, z: number, k: number): void {
   const kind = Math.floor(k * 7);
   switch (kind) {
     case 0: {

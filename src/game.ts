@@ -288,6 +288,8 @@ export class Game {
       player: this.player,
       audio: this.audio,
       isSafe: (x, z) => this.isSafeSpot(x, z),
+      spawnRange: () => (this.level.topology === 'closed' ? [9, 22] : [30, 55]),
+      isHazard: (gy) => !!this.level.lava && gy <= this.level.lava.y + 0.05,
       onPlayerHit: (kind, dmg) => this.onEntityHit(kind, dmg),
       onSelfBlast: () => {
         this.blastAirborne = true;
@@ -948,7 +950,7 @@ export class Game {
     this.worldRoot.add(group);
     return {
       group,
-      boxes: data.solids.map((b) => Object.assign(toWorldBox(b, ox, oz), { thin: b.thin })),
+      boxes: data.solids.map((b) => Object.assign(toWorldBox(b, ox, oz), { thin: b.thin, invisible: b.mat === 'invisible' || undefined })),
       floors: data.floors.map((f) => ({ x0: f.x0 + ox, z0: f.z0 + oz, x1: f.x1 + ox, z1: f.z1 + oz, y: f.y })),
       ceilings: data.ceilings.map((f) => ({ x0: f.x0 + ox, z0: f.z0 + oz, x1: f.x1 + ox, z1: f.z1 + oz, y: f.y })),
       terrain: data.terrain,

@@ -24,6 +24,10 @@ export interface Host {
   audio: AudioSystem;
   /** Entities may not step here (near return doorways). */
   isSafe: (x: number, z: number) => boolean;
+  /** How far away new entities appear [min, max] (closed levels such as the island are small). */
+  spawnRange: () => [number, number];
+  /** Ground at this height is hazardous (under the lava line): entities keep out. */
+  isHazard: (groundY: number) => boolean;
   onPlayerHit: (kind: EntityKind, damage: number) => void;
   /** The player was thrown by their own rocket's blast (no fall damage until they land). */
   onSelfBlast: () => void;
@@ -102,6 +106,9 @@ const BOMB_GRAVITY = 14;
 
 /** Max upward speed from your own rocket: v^2 / 2g = 15^2 / 32 = about 7 m of height. */
 export const ROCKET_JUMP_VY = 15;
+
+/** An entity will not step down further than this (m). */
+const LEDGE_DROP = 1.6;
 
 /** Enemy bullet speed (m/s): fast, but you can see it and step aside. */
 export const ENEMY_SHOT_SPEED = 55;
@@ -250,7 +257,8 @@ export class EntitySystem {
     for (let k = 0; k < 40; k++) {
       // Prefer behind and to the sides.
       const a = Math.atan2(-fz, -fx) + (rng() - 0.5) * Math.PI * (k < 20 ? 1.2 : 2);
-      const d = 30 + rng() * 25;
+      const [d0, d1] = this.host.spawnRange();
+      const d = d0 + rng() * (d1 - d0);
       const x = p.x + Math.cos(a) * d;
       const z = p.z + Math.sin(a) * d;
       const floors = this.host.world.floors(x, z);
@@ -264,6 +272,10 @@ export class EntitySystem {
       const pad = kind === 'giant' ? 1.3 : 0.5;
       if (boxes.some((b) => b.maxY > g + 0.3 && b.minY < g + top && x > b.minX - pad && x < b.maxX + pad && z > b.minZ - pad && z < b.maxZ + pad)) continue;
       if (this.host.isSafe(x, z)) continue;
+      if (this.host.isHazard(g)) continue;
+      // Reachable: walking straight there never crosses a gap, a hazard or an
+      // invisible barrier (no spawning out at sea beyond the island's current).
+      if (!this.reachable(p.x, p.y, p.z, x, g, z)) continue;
       // Out of sight: behind the player or hidden by a wall.
       const dx = x - p.x;
       const dz = z - p.z;
@@ -372,10 +384,29 @@ export class EntitySystem {
       const oz = b.z;
       b.yaw = yaw;
       if (speed > 0.01) {
+        const oy = b.y;
+        const wasGrounded = b.grounded;
         b.step(dt, { forward: fwd / speed, strafe: side / speed, sprint: false, crouch: false, jump: false, speed }, this.host.world);
         if (this.host.isSafe(b.x, b.z)) {
           b.x = ox;
           b.z = oz;
+        }
+        // Never walk off a ledge: if the ground just ahead drops away (a gap, the
+        // edge of a sky road, a lava sea), stay put and look for another way.
+        let ledge = false;
+        if (wasGrounded && (b.x !== ox || b.z !== oz)) {
+          const mvx = b.x - ox;
+          const mvz = b.z - oz;
+          const ml = Math.hypot(mvx, mvz) || 1;
+          const g = this.groundAt(b.x + (mvx / ml) * 0.45, b.z + (mvz / ml) * 0.45, oy + 0.6);
+          if (g < oy - LEDGE_DROP || this.host.isHazard(g)) {
+            b.x = ox;
+            b.z = oz;
+            b.y = oy;
+            b.vy = 0;
+            b.grounded = true;
+            ledge = true;
+          }
         }
         const moved = Math.hypot(b.x - ox, b.z - oz);
         if (moved < speed * dt * 0.3) {
@@ -393,7 +424,7 @@ export class EntitySystem {
           e.detourT = Math.min(3.5, 0.8 + 0.7 * e.tries);
           e.tries++;
           e.stuck = 0;
-          if (b.grounded) b.vy = 6; // hop over low obstacles
+          if (b.grounded && !ledge) b.vy = 6; // hop over low obstacles (never at a ledge)
         }
         e.phase += moved * (e.kind === 'giant' ? 1.1 : 3);
         if (e.kind === 'giant' && Math.floor(e.phase / Math.PI) !== e.lastStep) {
@@ -716,6 +747,33 @@ export class EntitySystem {
       }
       this.host.onSelfBlast();
     }
+  }
+
+  /** Rough reachability: ground all along the straight line, no big drops, hazards or invisible walls. */
+  private reachable(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): boolean {
+    const L = Math.hypot(x1 - x0, z1 - z0);
+    const n = Math.max(2, Math.ceil(L / 1.5));
+    let prev = y0;
+    for (let i = 1; i <= n; i++) {
+      const u = i / n;
+      const x = x0 + (x1 - x0) * u;
+      const z = z0 + (z1 - z0) * u;
+      for (const b of this.host.world.boxes(x, z) as Array<WBox & { invisible?: boolean }>)
+        if (b.invisible && x > b.minX - 0.3 && x < b.maxX + 0.3 && z > b.minZ - 0.3 && z < b.maxZ + 0.3) return false;
+      const g = this.groundAt(x, z, Math.max(prev, y0 + (y1 - y0) * u) + 3);
+      if (!Number.isFinite(g) || g < prev - 4 || this.host.isHazard(g)) return false;
+      prev = g;
+    }
+    return true;
+  }
+
+  /** Highest ground (floors, box tops, terrain) under (x, z) no higher than maxY, or -Infinity. */
+  private groundAt(x: number, z: number, maxY: number): number {
+    const w = this.host.world;
+    let g = groundHeight(x, z, 0.15, maxY, w.floors(x, z), w.boxes(x, z));
+    const t = w.terrain?.(x, z) ?? null;
+    if (t !== null && t <= maxY && t > g) g = t;
+    return g;
   }
 
   /** Bomber: lob a bomb so that it lands where the player stands. */

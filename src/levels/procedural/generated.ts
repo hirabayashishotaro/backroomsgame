@@ -11,6 +11,8 @@ import { makeGardenLevel, makeRoadLevel, makeTatamiLevel, makeWalkwayLevel, type
 import { SKY_PRESETS } from '../../systems/skyPresets';
 import * as W from '../worlds2';
 import type * as T from '../shapes/terrain';
+import * as F from '../shapes/fusion';
+import { FEATURE_INFO } from '../shapes/features';
 import type { ShapeOpts } from '../worlds2';
 import { ALL_GRID_PIECES, GRID_PIECES } from '../gridPieces';
 
@@ -108,7 +110,8 @@ export type Grammar =
   | 'pooltower'
   | 'hospital'
   | 'poolrooms'
-  | 'waterpark';
+  | 'waterpark'
+  | 'fusion';
 
 /**
  * Grammar weights. Indoor mazes with a ceiling used to dominate; now terrain
@@ -143,6 +146,8 @@ const GRAMMARS: Array<[Grammar, number, SkyKind[]]> = [
   ['hospital', 4, []],
   ['poolrooms', 7, []],
   ['waterpark', 4, []],
+  // Superposed worlds: base form x roof x materials x liquid x several feature sets.
+  ['fusion', 90, []],
 ];
 
 /** Terrain variants for random levels (the named levels keep their originals). */
@@ -209,6 +214,7 @@ export const GRAMMAR_LABEL: Record<Grammar, string> = {
   narrow: '極細の足場',
   roads: '浮遊道路',
   tatami: '座敷と橋',
+  fusion: '重ね合わせ',
 };
 
 export const SKY_LABEL: Record<SkyKind, string> = { day: '昼', dusk: '夕暮れ', night: '夜空', dawn: '夜明け', void: '虚無', overcast: '曇り' };
@@ -308,6 +314,7 @@ export function makeGeneratedLevel(id: string): LevelDefinition {
   const { grammar, sky } = genomeOf(id);
   let def: LevelDefinition;
   if (grammar === 'grid' || grammar === 'ruins') def = makeGridGenerated(id, grammar === 'ruins' ? sky! : null);
+  else if (grammar === 'fusion') def = makeFusionLevel(id, new Rng(hashString('world:' + id)));
   else {
     const rng = new Rng(hashString('world:' + id));
     const variant = grammar === 'mountain' ? pickVariant(id, MOUNTAIN_VARIANTS) : grammar === 'volcano' ? pickVariant(id, VOLCANO_VARIANTS) : grammar === 'swamp' ? pickVariant(id, SWAMP_VARIANTS) : grammar === 'island' ? pickVariant(id, ISLAND_VARIANTS) : null;
@@ -358,10 +365,76 @@ export function makeGeneratedLevel(id: string): LevelDefinition {
       def = make[grammar]();
     }
   }
+  // Pieces of other worlds layered into the level (most generated worlds get some).
+  if (grammar !== 'fusion' && grammar !== 'temple' && grammar !== 'island' && grammar !== 'chaos') {
+    const spec = F.overlayFor(id);
+    if (spec) {
+      const base = def.generator;
+      const seedK = hashString('overlay-seed:' + id);
+      const wrapped: LevelDefinition = {
+        ...def,
+        kindLabel: `${def.kindLabel ?? ''} + ${spec.features.map((f) => FEATURE_NAME[f]).join('・')}`,
+        generator: (ctx, cx, cz, cy) => {
+          const d = { ...base(ctx, cx, cz, cy) };
+          F.overlayChunk(d, ctx.levelSeed ^ seedK, spec);
+          return d;
+        },
+      };
+      wrapped.arrival = F.arrivalAvoidingOverlay(wrapped, def.arrival);
+      def = wrapped;
+    }
+  }
   // A few levels are broken: their names come out garbled (bug levels).
   if (grammar === 'chaos' || hashString('glitch:' + id) % 100 < 6) def = { ...def, glitch: true };
   cache.set(id, def);
   return def;
+}
+
+const FEATURE_NAME = Object.fromEntries(Object.entries(FEATURE_INFO).map(([k, v]) => [k, v.name])) as Record<string, string>;
+
+/** A superposed world (see shapes/fusion.ts). */
+function makeFusionLevel(id: string, rng: Rng): LevelDefinition {
+  const g = F.fusionGenome(id);
+  const { name, label } = F.fusionName(id, g);
+  const exits = genericExits(id, rng, 'garden');
+  const open = g.roof !== 'ceiling';
+  return {
+    id,
+    title: 'Level ' + id,
+    name,
+    subtitle: name,
+    threatClass: (g.hostile ? 4 : rng.int(1, 3)) as 1 | 2 | 3 | 4,
+    chunkSize: F.FUSION_S,
+    ceilingHeight: g.roof === 'ceiling' ? g.ceilingH : 30,
+    meshDetail: 2,
+    palette: {
+      wallTex: g.palette.wall,
+      floorTex: g.palette.floor,
+      ceilingTex: g.palette.ceiling,
+      lightColor: 0xfff4e0,
+      fogColor: g.fog,
+      fogDensity: g.fogDensity,
+      ambient: g.brightness * 0.3,
+      lightTint: [1, 0.96, 0.9],
+    },
+    generator: (ctx, cx, cz) => F.generateFusion(ctx, g, cx, cz),
+    lightSampler: (ctx, cx, cz) => F.fusionSampler(ctx, g, cx, cz),
+    setPieces: g.features.map((f) => ({ id: f, name: FEATURE_INFO[f].name, desc: `${FEATURE_INFO[f].name}が、ここにあるはずのない場所にある。` })),
+    lootTable: { perCell: 0, rules: ALMOND_ONLY },
+    exits,
+    drainMul: g.hostile ? 1.6 : 1,
+    hallucination: g.hostile ? 1.5 : 0.8,
+    footstep: g.liquid && !g.liquid.lava ? 'water' : g.ground === 'backrooms-carpet' ? 'carpet' : 'concrete',
+    ambience: g.liquid?.lava ? { humFreq: 30, humGain: 0.05, noiseGain: 0.07, noiseCutoff: 200 } : open ? { humFreq: 0, humGain: 0, noiseGain: 0.06, noiseCutoff: 520 } : { humFreq: 50, humGain: 0.03, noiseGain: 0.04, noiseCutoff: 300 },
+    environment: open ? 'open-sky' : 'enclosed',
+    sky: open ? { kind: g.roof === 'void' ? 'void' : g.sky } : undefined,
+    groundless: g.roof === 'void' || undefined,
+    fall: g.roof === 'void' ? { killY: -40, mode: 'transition' } : undefined,
+    lava: g.liquid?.lava ? { y: g.liquid.y, damage: 30 } : undefined,
+    kindLabel: label,
+    spawn: { x: 0.5, y: 2, z: 0.5, yaw: 0 },
+    arrival: (ctx, h) => F.fusionArrival(ctx, g, h),
+  };
 }
 
 function makeGridGenerated(id: string, openSky: SkyKind | null): LevelDefinition {

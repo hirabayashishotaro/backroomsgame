@@ -289,7 +289,7 @@ export function generateVolcano(ctx: GenContext, cx: number, cz: number, p: Volc
       box(o.decor, x - 0.7, y + 0.02, z - 0.7, x + 0.7, y + 0.05, z + 0.7, 'portal');
       o.zones.push({ kind: 'gate', x0: x - 0.6, z0: z - 0.6, x1: x + 0.6, z1: z + 0.6 });
       o.zones.push({ kind: 'piece', name: 'vent', x0: x - 1, z0: z - 1, x1: x + 1, z1: z + 1 });
-    } else if (roll < 0.32) o.items.push({ uid: 'v' + k, id: 'almond_water', x, y, z, rot: 0 });
+    } else if (roll < 0.42) o.items.push({ uid: 'v' + k, id: 'almond_water', x, y, z, rot: 0 });
   }
   return { ...toChunk(ctx, cx, cz, 0, TERRAIN_S, o), terrain };
 }

@@ -97,6 +97,11 @@ export function materialTable(p: Palette): Record<string, MatDef> {
     'floor-thin': lit(p.floorTex, { tint: [0.8, 0.9, 1.08] }),
     outlet: lit('outlet'),
     'wall-manila': lit('wallpaper-manila'),
+    // Pieces of other worlds dropped into random levels (fusion levels).
+    'backrooms-wall': lit('wallpaper-yellow'),
+    'backrooms-carpet': lit('carpet-damp'),
+    'backrooms-ceiling': lit('ceiling-tile'),
+    'studs-wall': lit('studs'),
     'chalk-graffiti': { kind: 'lit-transparent', tex: 'chalk-graffiti' },
     pipe: lit('gen:metal:6a6560:77'),
     crate: lit('gen:wood:8a6a3e:78'),

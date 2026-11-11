@@ -13,6 +13,8 @@ export interface Box {
   mat: string;
   /** A "thin" wall that can be noclipped through (SPEC §5.2 wall). */
   thin?: boolean;
+  /** Added by the fusion overlay (pieces of other worlds); arrival points avoid these. */
+  overlay?: boolean;
 }
 
 export interface LightPanel {

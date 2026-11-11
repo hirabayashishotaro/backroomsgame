@@ -135,6 +135,38 @@ describe('levels', () => {
     expect(labels.size).toBeGreaterThanOrEqual(35);
   });
 
+  it('fusion levels: arrivals are free, and almost every one is a different combination', () => {
+    const labels = new Set<string>();
+    let fusion = 0;
+    let overlaid = 0;
+    for (let n = 3; n < 700 && fusion < 40; n++) {
+      const id = String(n);
+      const g = genomeOf(id);
+      const L = resolveLevel(id);
+      if (g.grammar !== 'fusion') {
+        if ((L.kindLabel ?? '').includes(' + ')) overlaid++;
+        continue;
+      }
+      fusion++;
+      labels.add(L.kindLabel ?? '');
+      for (let k = 0; k < 4; k++) expect(arrivalIsFree(L, entryHash('x', 'e' + k)), `${id}#${k} ${L.kindLabel}`).toBe(true);
+    }
+    expect(fusion).toBe(40);
+    expect(labels.size).toBeGreaterThanOrEqual(38);
+    expect(overlaid).toBeGreaterThan(20);
+  });
+
+  it('levels with pieces of other worlds layered in still have free arrivals', () => {
+    let tested = 0;
+    for (let n = 3; n < 400 && tested < 30; n++) {
+      const L = resolveLevel(String(n));
+      if (!(L.kindLabel ?? '').includes(' + ')) continue;
+      tested++;
+      for (let k = 0; k < 3; k++) expect(arrivalIsFree(L, entryHash('y', 'e' + k)), `${n}#${k} ${L.kindLabel}`).toBe(true);
+    }
+    expect(tested).toBe(30);
+  });
+
   it('U1-U3 and the Void follow SPEC 4.2.1 (sky, groundless U1 with a fall transition)', () => {
     const u1 = resolveLevel('u1');
     expect(u1.groundless).toBe(true);

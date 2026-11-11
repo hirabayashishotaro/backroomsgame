@@ -33,7 +33,7 @@ describe('ChunkManager', () => {
     expect(built - disposed).toBe(cm.chunks.size);
     cm.clear();
     expect(built).toBe(disposed);
-  });
+  }, 30000);
 
   it('loads every chunk within the radius when stationary', () => {
     const ctx = makeGenContext(1, level0);

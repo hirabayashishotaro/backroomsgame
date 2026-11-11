@@ -107,7 +107,7 @@ export function fusionGenome(id: string): FusionGenome {
   const features: FeatureId[] = [];
   while (features.length < nf) features.push(pool.splice(rng.int(0, pool.length - 1), 1)[0]);
   const sky = rng.pick<SkyKind>(hostile ? ['night', 'void', 'dusk', 'overcast'] : ['day', 'dusk', 'night', 'dawn', 'overcast', 'void']);
-  const brightness = roof === 'ceiling' ? (hostile ? 0.06 : 0.12 + rng.float() * 0.3) : { day: 1, dusk: 0.6, dawn: 0.7, night: 0.25, overcast: 0.75, void: 0.15 }[sky] * (hostile ? 0.6 : 1);
+  const brightness = roof === 'ceiling' ? (hostile ? 0.06 : 0.12 + rng.float() * 0.3) : { day: 1, dusk: 0.6, dawn: 0.7, night: 0.25, overcast: 0.75, void: 0.15, synth: 0.35, vapor: 0.95 }[sky] * (hostile ? 0.6 : 1);
   return {
     base,
     amp,

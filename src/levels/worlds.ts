@@ -62,7 +62,7 @@ function sunOf(kind: SkyKind): [number, number, number] {
 }
 
 function daylightOf(kind: SkyKind): number {
-  return { day: 1.0, dusk: 0.6, night: 0.22, dawn: 0.72, void: 0.12, overcast: 0.75 }[kind];
+  return { day: 1.0, dusk: 0.6, night: 0.22, dawn: 0.72, void: 0.12, overcast: 0.75, synth: 0.3, vapor: 0.95 }[kind];
 }
 
 const WIND: AmbienceDef = { humFreq: 0, humGain: 0, noiseGain: 0.05, noiseCutoff: 520 };

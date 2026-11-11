@@ -310,8 +310,8 @@ export function makeMountain(o: ShapeOpts, rng: Rng, v?: MountainLook): LevelDef
   const p: T.MountainParams = { slope: rng.pick([0.18, 0.2, 0.22]), rough: rng.pick([10, 14, 18]), snowMat: 'snow', cliffMat: 'rock', treeMat: 'pine' };
   if (v) Object.assign(p, { snowMat: v.ground, cliffMat: v.cliff, treeMat: v.tree, treeP: v.treeP });
   const sky = o.sky ?? 'day';
-  const ambient = { day: 0.2, dusk: 0.14, dawn: 0.16, night: 0.08, overcast: 0.18, void: 0.06 }[sky];
-  const sun = { day: 1, dusk: 0.6, dawn: 0.7, night: 0.25, overcast: 0.75, void: 0.15 }[sky];
+  const ambient = { day: 0.2, dusk: 0.14, dawn: 0.16, night: 0.08, overcast: 0.18, void: 0.06, synth: 0.1, vapor: 0.2 }[sky];
+  const sun = { day: 1, dusk: 0.6, dawn: 0.7, night: 0.25, overcast: 0.75, void: 0.15, synth: 0.35, vapor: 0.95 }[sky];
   return {
     ...common(o),
     meshDetail: 2,
@@ -369,7 +369,7 @@ export function makeSwamp(o: ShapeOpts, rng: Rng, v?: { water?: string; ground?:
 export function makeVolcano(o: ShapeOpts, v: T.VolcanoParams = T.VOLCANO_LAVA): LevelDefinition {
   const lava = v.liquid === 'lava';
   const sky = o.sky ?? 'dusk';
-  const sun = { day: 1, dusk: 0.6, dawn: 0.7, night: 0.25, overcast: 0.75, void: 0.15 }[sky];
+  const sun = { day: 1, dusk: 0.6, dawn: 0.7, night: 0.25, overcast: 0.75, void: 0.15, synth: 0.35, vapor: 0.95 }[sky];
   return {
     ...common(o),
     meshDetail: 2,
@@ -405,7 +405,7 @@ export function makeIsland(o: ShapeOpts, v: T.IslandParams = T.ISLAND_SAND): Lev
     palette: look('gen:sand:d8c690:205', 'gen:sand:d8c690:205', 'white', SKY_PRESETS.day.horizon, 0.012, 0.2),
     generator: (ctx, cx, cz) => T.generateIsland(ctx, cx, cz, v),
     lightSampler: (_ctx, cx, cz) =>
-      sampler({ day: 1, dusk: 0.6, dawn: 0.7, night: 0.25, overcast: 0.75, void: 0.15 }[o.sky ?? 'day'], SKY_PRESETS[o.sky ?? 'day'].sunDir, Math.abs(cx + 0.5) < 1 && Math.abs(cz + 0.5) < 1 ? [{ x: 0, y: 1, z: 2, I: 2 }] : []),
+      sampler({ day: 1, dusk: 0.6, dawn: 0.7, night: 0.25, overcast: 0.75, void: 0.15, synth: 0.35, vapor: 0.95 }[o.sky ?? 'day'], SKY_PRESETS[o.sky ?? 'day'].sunDir, Math.abs(cx + 0.5) < 1 && Math.abs(cz + 0.5) < 1 ? [{ x: 0, y: 1, z: 2, I: 2 }] : []),
     setPieces: pieces([
       ['campfire', '焚き火', '誰が起こしたのか分からない焚き火。'],
       ['wreck', '難破船', '砂に埋もれた小舟の残骸。'],

@@ -217,7 +217,7 @@ export const GRAMMAR_LABEL: Record<Grammar, string> = {
   fusion: '重ね合わせ',
 };
 
-export const SKY_LABEL: Record<SkyKind, string> = { day: '昼', dusk: '夕暮れ', night: '夜空', dawn: '夜明け', void: '虚無', overcast: '曇り' };
+export const SKY_LABEL: Record<SkyKind, string> = { day: '昼', dusk: '夕暮れ', night: '夜空', dawn: '夜明け', void: '虚無', overcast: '曇り', synth: 'ネオンの夕日', vapor: 'パステルの空' };
 
 const WORLD_NOUN: Partial<Record<Grammar, string[]>> = {
   spiral: ['螺旋階段', '階段室', '吹き抜け'],
@@ -523,7 +523,7 @@ function makeGridGenerated(id: string, openSky: SkyKind | null): LevelDefinition
   };
   if (openSky) {
     const sk = SKY_PRESETS[openSky];
-    def.palette = { ...def.palette, fogColor: sk.horizon, fogDensity: 0.016, ambient: { day: 0.95, dusk: 0.55, night: 0.2, dawn: 0.65, void: 0.1, overcast: 0.7 }[openSky] };
+    def.palette = { ...def.palette, fogColor: sk.horizon, fogDensity: 0.016, ambient: { day: 0.95, dusk: 0.55, night: 0.2, dawn: 0.65, void: 0.1, overcast: 0.7, synth: 0.3, vapor: 0.9 }[openSky] };
     def.exits = genericExits(id, rng, 'ruins');
   }
   return def;

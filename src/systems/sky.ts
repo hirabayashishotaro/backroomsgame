@@ -22,6 +22,8 @@ uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uBottom;
 uniform vec3 uSun; uniform vec3 uSunDir; uniform float uSunSize;
 uniform float uStars; uniform float uClouds; uniform vec3 uCloudColor;
 uniform float uCloudSea; uniform float uTime;
+uniform vec3 uSun2; uniform float uStripes;
+uniform vec3 uMoonDir; uniform float uMoonSize; uniform vec3 uMoon;
 varying vec3 vDir;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
@@ -47,7 +49,22 @@ void main() {
   }
   // Sun / moon
   float sd = dot(d, normalize(uSunDir));
-  if (uSunSize > 0.0) {
+  if (uMoonSize > 0.0) {
+    float md = dot(d, normalize(uMoonDir));
+    col = mix(col, uMoon, smoothstep(1.0 - uMoonSize, 1.0 - uMoonSize * 0.97, md) * 0.92);
+  }
+  if (uSunSize > 0.0 && uStripes > 0.0) {
+    // Retro sun: a gradient disc whose lower half is sliced by widening horizontal gaps.
+    vec3 sdir = normalize(uSunDir);
+    float disc = smoothstep(1.0 - uSunSize, 1.0 - uSunSize * 0.985, sd);
+    float r = sqrt(2.0 * uSunSize);
+    float v = clamp((h - (sdir.y - r)) / (2.0 * r), 0.0, 1.0); // 0 at the bottom, 1 at the top
+    float band = fract(v * 22.0);
+    float gap = v < 0.72 ? step(band, 0.12 + (0.72 - v) * 0.75) : 0.0;
+    vec3 sc = mix(uSun2, uSun, smoothstep(0.1, 0.95, v));
+    col = mix(col, sc * 1.25, disc * (1.0 - gap));
+    col += uSun2 * pow(max(sd, 0.0), 24.0) * 0.45; // neon glow around it
+  } else if (uSunSize > 0.0) {
     col += uSun * smoothstep(1.0 - uSunSize, 1.0 - uSunSize * 0.6, sd);
     col += uSun * pow(max(sd, 0.0), 64.0) * 0.35;
   }
@@ -92,6 +109,11 @@ export class SkyDome {
         uClouds: { value: 0 },
         uCloudColor: { value: new THREE.Color() },
         uCloudSea: { value: 0 },
+        uSun2: { value: new THREE.Color() },
+        uStripes: { value: 0 },
+        uMoonDir: { value: new THREE.Vector3(0, 1, 0) },
+        uMoonSize: { value: 0 },
+        uMoon: { value: new THREE.Color() },
         uTime: { value: 0 },
       },
     });
@@ -113,6 +135,13 @@ export class SkyDome {
     u.uClouds.value = p.clouds;
     u.uCloudColor.value.setHex(p.cloudColor);
     u.uCloudSea.value = def.cloudSea ? 1 : 0;
+    u.uSun2.value.setHex(p.sun2 ?? p.sun);
+    u.uStripes.value = p.stripes ?? 0;
+    u.uMoonSize.value = p.moon?.size ?? 0;
+    if (p.moon) {
+      u.uMoonDir.value.set(...p.moon.dir).normalize();
+      u.uMoon.value.setHex(p.moon.color);
+    }
     this.horizon.setHex(p.horizon);
   }
 

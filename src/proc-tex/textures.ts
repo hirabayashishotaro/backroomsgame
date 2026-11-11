@@ -907,6 +907,142 @@ function almondLabelTexture(): ProcTexture {
   return t;
 }
 
+// --- Vaporwave ------------------------------------------------------------------
+
+/** Wireframe ground: deep violet with glowing cyan grid lines (one cell per tile). */
+function neonGrid(): ProcTexture {
+  const S = 128;
+  const [c, ctx] = canvas(S);
+  const g = ctx.createLinearGradient(0, 0, S, S);
+  g.addColorStop(0, '#1a0838');
+  g.addColorStop(1, '#2a0a4a');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, S, S);
+  ctx.shadowColor = '#3ff0ff';
+  ctx.shadowBlur = 8;
+  ctx.strokeStyle = '#46f4ff';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(2, 2, S - 4, S - 4);
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(255,90,230,0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(2, 2);
+  ctx.lineTo(S - 2, S - 2);
+  ctx.stroke();
+  return finish(c, 2);
+}
+
+/** Pink and navy checkerboard (one square per metre). */
+function vaporCheck(): ProcTexture {
+  const S = 128;
+  const [c, ctx] = canvas(S);
+  for (let i = 0; i < 2; i++)
+    for (let j = 0; j < 2; j++) {
+      ctx.fillStyle = (i + j) % 2 ? '#1c1c78' : '#f6a8ec';
+      ctx.fillRect(i * 64, j * 64, 64, 64);
+    }
+  return finish(c, 2);
+}
+
+/** Smooth plaster, faintly lilac (busts and columns). */
+function plaster(): ProcTexture {
+  const S = 128;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = '#efe4fa';
+  ctx.fillRect(0, 0, S, S);
+  const rng = new Rng(4401);
+  noiseFill(ctx, rng, S, 10);
+  return finish(c, 2);
+}
+
+// --- Memphis -----------------------------------------------------------------------
+
+function memphisStripes(): ProcTexture {
+  const S = 64;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, S, S);
+  ctx.fillStyle = '#111111';
+  for (let x = 0; x < S; x += 16) ctx.fillRect(x, 0, 8, S);
+  return finish(c, 0.5);
+}
+
+/** Offset black-and-white blocks (a jumpy, op-art check). */
+function memphisCheck(): ProcTexture {
+  const S = 128;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, S, S);
+  ctx.fillStyle = '#111111';
+  for (let j = 0; j < 8; j++)
+    for (let i = 0; i < 8; i++) if ((i + j) % 2 === 0) ctx.fillRect(i * 16 + (j % 2) * 6, j * 16, 12, 10);
+  return finish(c, 0.8);
+}
+
+/** Interlocking red and blue squiggles on white. */
+function memphisSquiggle(): ProcTexture {
+  const S = 256;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, S, S);
+  ctx.lineWidth = 22;
+  ctx.lineCap = 'round';
+  for (let k = 0; k < 4; k++) {
+    ctx.strokeStyle = k % 2 ? '#2a5ae8' : '#f0322a';
+    ctx.beginPath();
+    const y0 = k * 64 + 32;
+    for (let x = -16; x <= S + 16; x += 4) {
+      const y = y0 + Math.sin((x / S) * Math.PI * 4 + k) * 20;
+      if (x === -16) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  return finish(c, 3);
+}
+
+/** Terrazzo: speckles of colour and black in white (or white in black). */
+function terrazzo(dark: boolean): ProcTexture {
+  const S = 256;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = dark ? '#151515' : '#f6f4ef';
+  ctx.fillRect(0, 0, S, S);
+  const rng = new Rng(dark ? 991 : 992);
+  const cols = dark ? ['#ffffff', '#e6e6e6', '#ff7aa0'] : ['#111111', '#ff5a8a', '#2a8ad8', '#f6c81e', '#32c860'];
+  for (let i = 0; i < 260; i++) {
+    ctx.fillStyle = cols[rng.int(0, cols.length - 1)];
+    const x = rng.float() * S;
+    const y = rng.float() * S;
+    const r = 1.5 + rng.float() * 5;
+    ctx.beginPath();
+    ctx.ellipse(x, y, r, r * (0.4 + rng.float() * 0.6), rng.float() * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return finish(c, 1.5);
+}
+
+/** White tiles with black grout and little zig-zags. */
+function memphisTile(): ProcTexture {
+  const S = 128;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, S, S);
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, S - 2, S - 2);
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const x = 20 + i * 26;
+    ctx.moveTo(x, 40 + (i % 2) * 40);
+    ctx.lineTo(x + 10, 30 + (i % 2) * 40);
+    ctx.lineTo(x + 20, 40 + (i % 2) * 40);
+  }
+  ctx.stroke();
+  return finish(c, 1);
+}
+
 function flat(color: string): ProcTexture {
   const [c, ctx] = canvas(8);
   ctx.fillStyle = color;
@@ -934,6 +1070,15 @@ const FACTORIES: Record<string, () => ProcTexture> = {
   'clouds-window': cloudsWindow,
 
   white: () => flat('#ffffff'),
+  'neon-grid': neonGrid,
+  'vapor-check': vaporCheck,
+  plaster,
+  'memphis-stripes': memphisStripes,
+  'memphis-check': memphisCheck,
+  'memphis-squiggle': memphisSquiggle,
+  terrazzo: () => terrazzo(false),
+  'terrazzo-dark': () => terrazzo(true),
+  'memphis-tile': memphisTile,
 };
 
 export function getTexture(key: string): ProcTexture {
@@ -947,6 +1092,8 @@ export function getTexture(key: string): ProcTexture {
       else if (type === 'paving') t = paving(hex, n);
       else if (type === 'flowers') t = flowers(hex, n);
       else t = genTexture(type, hex, n);
+    } else if (key.startsWith('flat:')) {
+      t = flat('#' + key.split(':')[1]);
     } else if (key.startsWith('road:')) {
       t = road(key.split(':')[1]);
     } else if (key.startsWith('door:')) {

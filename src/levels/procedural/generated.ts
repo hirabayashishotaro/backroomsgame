@@ -43,6 +43,7 @@ const THEMES: Theme[] = [
   // From the explicit worlds:
   { wall: 'plaster', floor: 'vapor-check', ceiling: 'neon-grid', light: 0xff7ae8, tint: [1.05, 0.62, 1.2], fog: 0x2a0848 }, // vaporwave corridors
   { wall: 'memphis-squiggle', floor: 'memphis-tile', ceiling: 'flat:ffffff', light: 0xffffff, tint: [1, 1, 1], fog: 0xf4f0ea }, // Memphis offices
+  { wall: 'sento-tile', floor: 'sento-floor', ceiling: 'sento-ceiling', light: 0xf4fbff, tint: [0.98, 1.02, 1.04], fog: 0xdff2f4 }, // bathhouse corridors
 ];
 
 /** Hints so known Wiki ids look like their connection (contents remain original). */
@@ -435,6 +436,8 @@ function makeFusionLevel(id: string, rng: Rng): LevelDefinition {
     fall: g.roof === 'void' ? { killY: -40, mode: 'transition' } : undefined,
     lava: g.liquid?.lava ? { y: g.liquid.y, damage: 30 } : undefined,
     kindLabel: label,
+    // Bathhouse pieces bring the bathhouse's sounds with them.
+    soundscape: g.features.some((f) => f === 'washplaces' || f === 'bathtub' || f === 'okepile' || f === 'sentomural') ? 'sento' : undefined,
     spawn: { x: 0.5, y: 2, z: 0.5, yaw: 0 },
     arrival: (ctx, h) => F.fusionArrival(ctx, g, h),
   };

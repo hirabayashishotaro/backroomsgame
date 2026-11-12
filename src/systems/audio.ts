@@ -71,6 +71,7 @@ export class AudioSystem {
     noise.start();
 
     if (this.ambience) this.setAmbience(this.ambience);
+    if (this.soundscape) this.setSoundscape(this.soundscape);
   }
 
   applySettings(s: Settings): void {
@@ -167,8 +168,110 @@ export class AudioSystem {
     this.realityGain.gain.setTargetAtTime(level * 0.9, ctx.currentTime, 1.5);
   }
 
+  // --- Soundscapes of particular worlds -------------------------------------
+
+  private soundscape: 'sento' | null = null;
+  private scapeGain: GainNode | null = null;
+  private bathVerb: ConvolverNode | null = null;
+  private okeT = 3;
+  private dripT = 1;
+
+  /** A big tiled room's echo: a convolver fed with a generated, slowly dying noise impulse. */
+  private bathReverb(): ConvolverNode {
+    const ctx = this.ctx!;
+    if (this.bathVerb) return this.bathVerb;
+    const len = Math.floor(ctx.sampleRate * 2.6);
+    const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    let seed = 777;
+    for (let ch = 0; ch < 2; ch++) {
+      const d = ir.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        const n = seed / 2147483648 - 1;
+        d[i] = n * Math.pow(1 - i / len, 3.2) * (i < 200 ? i / 200 : 1);
+      }
+    }
+    const conv = ctx.createConvolver();
+    conv.buffer = ir;
+    const wet = ctx.createGain();
+    wet.gain.value = 0.55;
+    conv.connect(wet).connect(this.ambienceBus);
+    this.bathVerb = conv;
+    return conv;
+  }
+
+  /** Background sounds of a particular world ('sento': the bathhouse), or none. */
+  setSoundscape(kind: 'sento' | null): void {
+    this.soundscape = kind;
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (!this.scapeGain) {
+      this.scapeGain = ctx.createGain();
+      this.scapeGain.gain.value = 0;
+      this.scapeGain.connect(this.ambienceBus);
+      // Water running into the bath: a soft, high trickle.
+      const src = ctx.createBufferSource();
+      src.buffer = this.noiseBuffer;
+      src.loop = true;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 2400;
+      bp.Q.value = 0.7;
+      const g = ctx.createGain();
+      g.gain.value = 0.05;
+      src.connect(bp).connect(g).connect(this.scapeGain);
+      g.connect(this.bathReverb());
+      src.start();
+    }
+    this.scapeGain.gain.setTargetAtTime(kind ? 1 : 0, ctx.currentTime, 0.8);
+  }
+
+  /**
+   * The bucket: a hollow "ka-poon" as a washbowl is set down on the tiles,
+   * ringing through the room. Two pitched partials, a knock, and the echo.
+   */
+  oke(pan = 0, gain = 0.5): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const p = ctx.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, pan));
+    p.connect(this.ambienceBus);
+    p.connect(this.bathReverb());
+    const base = 380 + Math.random() * 120;
+    // "ka": the rim knock
+    this.noise(t, 0.03, 'bandpass', 2600, 2.5, p, this.env(t, gain * 0.6, 0.001, 0.03));
+    // "poon": the hollow body ringing, pitch sagging a little
+    this.tone(t + 0.005, 'sine', base, base * 0.94, 0.42, this.env(t + 0.005, gain, 0.003, 0.4), p);
+    this.tone(t + 0.005, 'sine', base * 2.76, base * 2.6, 0.22, this.env(t + 0.005, gain * 0.35, 0.002, 0.2), p);
+    this.tone(t + 0.005, 'triangle', base * 0.5, base * 0.48, 0.3, this.env(t + 0.005, gain * 0.25, 0.004, 0.28), p);
+  }
+
+  private updateSoundscape(dt: number): void {
+    if (this.soundscape !== 'sento' || !this.ctx) return;
+    this.okeT -= dt;
+    if (this.okeT <= 0) {
+      this.okeT = 3.5 + Math.random() * 8;
+      this.oke(Math.random() * 1.6 - 0.8, 0.25 + Math.random() * 0.3);
+      // Sometimes it rocks and taps again.
+      if (Math.random() < 0.3) setTimeout(() => this.oke(Math.random() * 1.6 - 0.8, 0.15), 180 + Math.random() * 120);
+    }
+    this.dripT -= dt;
+    if (this.dripT <= 0) {
+      this.dripT = 0.8 + Math.random() * 3;
+      const t = this.ctx.currentTime;
+      const f = 1400 + Math.random() * 1600;
+      const p = this.ctx.createStereoPanner();
+      p.pan.value = Math.random() * 2 - 1;
+      p.connect(this.ambienceBus);
+      p.connect(this.bathReverb());
+      this.tone(t, 'sine', f, f * 1.6, 0.06, this.env(t, 0.05, 0.001, 0.05), p);
+    }
+  }
+
   /** Schedule the one-off city sounds; call every frame. */
   updateReality(dt: number): void {
+    this.updateSoundscape(dt);
     const ctx = this.ctx;
     const L = this.realityLevel;
     if (!ctx || L <= 0 || !this.realityGain) return;

@@ -19,6 +19,8 @@ export interface MatDef {
   metres?: number;
   /** Water wave height (m). */
   wave?: number;
+  /** A picture: stretched once over each side face instead of tiled (murals). */
+  fit?: boolean;
 }
 
 const FIXED_METRES: Record<string, number> = {
@@ -49,6 +51,10 @@ const FIXED_METRES: Record<string, number> = {
   terrazzo: 1.5,
   'terrazzo-dark': 1.5,
   'memphis-tile': 1,
+  'sento-tile': 1.2,
+  'sento-floor': 0.8,
+  'sento-paint': 2,
+  'sento-ceiling': 2,
 };
 
 const GEN_METRES: Record<string, number> = {
@@ -134,6 +140,17 @@ export function materialTable(p: Palette): Record<string, MatDef> {
     'm-peach': lit('flat:f8c8b0'),
     'pink-sheet': clear(0xff6a90, 0.42),
     'mint-glass': clear(0x7affd0, 0.4),
+    // Showa bathhouse
+    'sento-tile': lit('sento-tile'),
+    'sento-floor': lit('sento-floor'),
+    'sento-paint': lit('sento-paint'),
+    'sento-ceiling': lit('sento-ceiling'),
+    'fuji-mural': lit('fuji-mural', { fit: true }),
+    'fuji-mural-evening': lit('fuji-mural-evening', { fit: true }),
+    'sento-tile-mural': lit('sento-tile-mural', { fit: true }),
+    'mirror': lit('flat:d4e6ea'),
+    'oke-yellow': lit('flat:f2c21e'),
+    'stool-white': lit('flat:eeeae0'),
     'chalk-graffiti': { kind: 'lit-transparent', tex: 'chalk-graffiti' },
     pipe: lit('gen:metal:6a6560:77'),
     crate: lit('gen:wood:8a6a3e:78'),

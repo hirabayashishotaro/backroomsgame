@@ -850,6 +850,7 @@ export class Game {
     // The ending is a quiet walk: no weapon in hand, no gauges.
     this.viewmodel.root.visible = id !== ENDING_LEVEL;
     this.hud.setVisible(id !== ENDING_LEVEL && this.settings.showHud);
+    this.audio.setSoundscape(this.level.soundscape ?? null);
     this.mats = new LevelMaterials(this.ctx);
     this.origin.reset(this.level.chunkSize);
     const p = this.level.palette;

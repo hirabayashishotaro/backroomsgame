@@ -102,12 +102,21 @@ let detail = 1;
 const segs = (len: number, per = 1) => Math.max(1, Math.min(32, Math.round(len / (per * detail))));
 const fmod = (a: number, m: number) => ((a % m) + m) % m;
 
-function addBox(gb: GeoBuilder, b: Box, H: number, m: number, oxm: number, ozm: number): void {
+function addBox(gb: GeoBuilder, b: Box, H: number, m: number, oxm: number, ozm: number, fit = false): void {
   const structural = b.mat.startsWith('wall') || b.mat === 'pillar';
   const w = b.maxX - b.minX;
   const h = b.maxY - b.minY;
   const d = b.maxZ - b.minZ;
   const sh = segs(h, 1.2);
+  if (fit) {
+    // A picture (mural, painting): stretched once over each side face, not tiled.
+    const fy = (y: number) => (y - b.minY) / (h || 1);
+    gb.quad([b.maxX, b.minY, b.maxZ], [0, 0, -d], [0, h, 0], [1, 0, 0], segs(d), sh, (_x, y, z) => [(b.maxZ - z) / (d || 1), fy(y)]);
+    gb.quad([b.minX, b.minY, b.minZ], [0, 0, d], [0, h, 0], [-1, 0, 0], segs(d), sh, (_x, y, z) => [(z - b.minZ) / (d || 1), fy(y)]);
+    gb.quad([b.minX, b.minY, b.maxZ], [w, 0, 0], [0, h, 0], [0, 0, 1], segs(w), sh, (x, y) => [(x - b.minX) / (w || 1), fy(y)]);
+    gb.quad([b.maxX, b.minY, b.minZ], [-w, 0, 0], [0, h, 0], [0, 0, -1], segs(w), sh, (x, y) => [(b.maxX - x) / (w || 1), fy(y)]);
+    return;
+  }
   const ux = (x: number) => (x + oxm) / m;
   const uz = (z: number) => (z + ozm) / m;
   gb.quad([b.maxX, b.minY, b.maxZ], [0, 0, -d], [0, h, 0], [1, 0, 0], segs(d), sh, (_x, y, z) => [-uz(z), y / m]);
@@ -213,9 +222,9 @@ export function buildChunkArrays(data: ChunkData, palette: Palette, H: number, s
   }
   for (const b of data.solids) {
     const m = matMetres(table, b.mat);
-    addBox(gbFor(b.mat), b, H, m, fmod(ox, m), fmod(oz, m));
+    addBox(gbFor(b.mat), b, H, m, fmod(ox, m), fmod(oz, m), table[b.mat]?.fit);
   }
-  for (const b of data.decor) addBox(gbFor(b.mat), b, H, matMetres(table, b.mat), 0, 0);
+  for (const b of data.decor) addBox(gbFor(b.mat), b, H, matMetres(table, b.mat), 0, 0, table[b.mat]?.fit);
 
   const meshes: MeshArrays[] = [];
   for (const [key, gb] of builders) {

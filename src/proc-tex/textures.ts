@@ -1043,6 +1043,254 @@ function memphisTile(): ProcTexture {
   return finish(c, 1);
 }
 
+// --- Showa bathhouse (sento) --------------------------------------------------------
+
+/** Small white wall tiles with grey grout. */
+function sentoTile(): ProcTexture {
+  const S = 128;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = '#b8bcbc';
+  ctx.fillRect(0, 0, S, S);
+  const rng = new Rng(5101);
+  for (let j = 0; j < 8; j++)
+    for (let i = 0; i < 8; i++) {
+      const v = 238 + Math.floor(rng.float() * 12);
+      ctx.fillStyle = `rgb(${v},${v},${v - 4})`;
+      ctx.fillRect(i * 16 + 1, j * 16 + 1, 14, 14);
+    }
+  return finish(c, 1.2);
+}
+
+/** Bathhouse floor: little beige and grey mosaic tiles. */
+function sentoFloor(): ProcTexture {
+  const S = 128;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = '#9a948a';
+  ctx.fillRect(0, 0, S, S);
+  const rng = new Rng(5102);
+  const cols = ['#e8e0cc', '#ddd4bf', '#f0eadb', '#cfc8b6', '#e4dccb'];
+  for (let j = 0; j < 16; j++)
+    for (let i = 0; i < 16; i++) {
+      ctx.fillStyle = cols[rng.int(0, cols.length - 1)];
+      ctx.fillRect(i * 8 + 1, j * 8 + 1, 6, 6);
+    }
+  return finish(c, 0.8);
+}
+
+/** Pale aqua gloss paint (upper walls), with faint brush streaks. */
+function sentoPaint(): ProcTexture {
+  const S = 128;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = '#9fdde4';
+  ctx.fillRect(0, 0, S, S);
+  const rng = new Rng(5103);
+  for (let i = 0; i < 40; i++) {
+    ctx.fillStyle = `rgba(255,255,255,${0.04 + rng.float() * 0.05})`;
+    ctx.fillRect(0, rng.float() * S, S, 1 + rng.float() * 3);
+  }
+  return finish(c, 2);
+}
+
+/** Painted wooden ceiling boards, pale aqua. */
+function sentoCeiling(): ProcTexture {
+  const S = 128;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = '#c4ecee';
+  ctx.fillRect(0, 0, S, S);
+  ctx.fillStyle = 'rgba(60,120,130,0.35)';
+  for (let x = 0; x < S; x += 16) ctx.fillRect(x, 0, 1.5, S);
+  return finish(c, 2);
+}
+
+/**
+ * The bathhouse mural: a cheerful, slightly naive painting of a snow-capped
+ * mountain over a blue bay, pine-covered hills, a beach, a little boat.
+ * `evening` paints it at sunset. Drawn once per face (fit material).
+ */
+function fujiMural(evening: boolean): ProcTexture {
+  const W = 1024;
+  const H = 256;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d')!;
+  const rng = new Rng(evening ? 5105 : 5104);
+  // Sky
+  const sky = ctx.createLinearGradient(0, 0, 0, H * 0.6);
+  sky.addColorStop(0, evening ? '#f08a6a' : '#6ec4ee');
+  sky.addColorStop(1, evening ? '#fde2b0' : '#e8f6fb');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+  // Clouds: soft white puffs
+  for (let i = 0; i < 9; i++) {
+    const x = rng.float() * W;
+    const y = 20 + rng.float() * 60;
+    ctx.fillStyle = evening ? 'rgba(255,235,220,0.8)' : 'rgba(255,255,255,0.85)';
+    for (let k = 0; k < 5; k++) {
+      ctx.beginPath();
+      ctx.ellipse(x + k * 18, y + Math.sin(k) * 4, 26, 11, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  // The mountain
+  const mx = W * 0.56;
+  const peak = 46;
+  const base = 175;
+  ctx.fillStyle = evening ? '#6a5a9a' : '#3e6fb8';
+  ctx.beginPath();
+  ctx.moveTo(mx - 330, base);
+  ctx.quadraticCurveTo(mx - 120, peak + 40, mx - 30, peak);
+  ctx.lineTo(mx + 30, peak);
+  ctx.quadraticCurveTo(mx + 120, peak + 40, mx + 330, base);
+  ctx.closePath();
+  ctx.fill();
+  // Snow cap with a jagged lower edge
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(mx - 30, peak);
+  ctx.lineTo(mx + 30, peak);
+  ctx.quadraticCurveTo(mx + 70, peak + 18, mx + 95, peak + 34);
+  for (let i = 0; i <= 10; i++) {
+    const x = mx + 95 - i * 19;
+    ctx.lineTo(x, peak + 34 + (i % 2 ? 16 : 0) + rng.float() * 6);
+  }
+  ctx.quadraticCurveTo(mx - 70, peak + 18, mx - 30, peak);
+  ctx.fill();
+  // Sea
+  ctx.fillStyle = evening ? '#e9a87a' : '#4bb4c8';
+  ctx.fillRect(0, 168, W, 60);
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 18; i++) {
+    const y = 176 + rng.float() * 44;
+    const x = rng.float() * W;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + 30 + rng.float() * 40, y);
+    ctx.stroke();
+  }
+  // Green hills on the left with pines, a headland on the right
+  ctx.fillStyle = '#3f8a4a';
+  ctx.beginPath();
+  ctx.moveTo(0, 200);
+  ctx.quadraticCurveTo(110, 70, 250, 150);
+  ctx.quadraticCurveTo(300, 185, 330, 200);
+  ctx.lineTo(0, 210);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#5aa04f';
+  ctx.beginPath();
+  ctx.moveTo(W, 205);
+  ctx.quadraticCurveTo(W - 120, 130, W - 260, 196);
+  ctx.closePath();
+  ctx.fill();
+  const pine = (x: number, y: number, s: number) => {
+    ctx.fillStyle = '#6a4a2a';
+    ctx.fillRect(x - 2 * s, y - 20 * s, 4 * s, 22 * s);
+    ctx.fillStyle = '#1f5a2e';
+    for (let k = 0; k < 3; k++) {
+      ctx.beginPath();
+      ctx.ellipse(x + (k - 1) * 9 * s, y - 24 * s - k * 6 * s, 14 * s, 6 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+  pine(120, 118, 1.6);
+  pine(190, 135, 1.2);
+  pine(60, 150, 1.4);
+  pine(W - 140, 170, 1.3);
+  // Beach and a little boat
+  ctx.fillStyle = '#f0e2b8';
+  ctx.beginPath();
+  ctx.moveTo(250, 228);
+  ctx.quadraticCurveTo(520, 205, 820, 232);
+  ctx.lineTo(820, H);
+  ctx.lineTo(250, H);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#6a3a1e';
+  ctx.beginPath();
+  ctx.moveTo(380, 195);
+  ctx.lineTo(430, 195);
+  ctx.lineTo(420, 203);
+  ctx.lineTo(388, 203);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#f4f0e0';
+  ctx.beginPath();
+  ctx.moveTo(404, 170);
+  ctx.lineTo(404, 195);
+  ctx.lineTo(422, 192);
+  ctx.closePath();
+  ctx.fill();
+  // Painted on a wall: a thin light frame line along the bottom
+  ctx.fillStyle = 'rgba(80,140,160,0.6)';
+  ctx.fillRect(0, H - 4, W, 4);
+  const t = finish(c, 1);
+  t.texture.wrapS = t.texture.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
+
+/** The tile picture under the mural: a pagoda and gardens, drawn on a tile grid. */
+function sentoTileMural(): ProcTexture {
+  const W = 512;
+  const H = 128;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d')!;
+  const rng = new Rng(5106);
+  ctx.fillStyle = '#f2f4ee';
+  ctx.fillRect(0, 0, W, H);
+  // Greenery
+  for (let i = 0; i < 60; i++) {
+    ctx.fillStyle = rng.pick(['#3f7a4a', '#5a9a5a', '#2f6a3a', '#7ab06a']);
+    ctx.beginPath();
+    ctx.ellipse(rng.float() * W, 70 + rng.float() * 50, 10 + rng.float() * 18, 6 + rng.float() * 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // A pagoda roof in the middle
+  const px = W * 0.5;
+  for (let k = 0; k < 3; k++) {
+    ctx.fillStyle = '#8a2a20';
+    ctx.beginPath();
+    ctx.moveTo(px - 46 + k * 8, 56 - k * 16);
+    ctx.lineTo(px + 46 - k * 8, 56 - k * 16);
+    ctx.lineTo(px + 30 - k * 8, 46 - k * 16);
+    ctx.lineTo(px - 30 + k * 8, 46 - k * 16);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#e8d8b0';
+    ctx.fillRect(px - 20 + k * 6, 56 - k * 16, 40 - k * 12, 8);
+  }
+  // A fence along the water
+  ctx.strokeStyle = '#6a5a4a';
+  ctx.lineWidth = 2;
+  for (let x = 0; x < W; x += 14) {
+    ctx.beginPath();
+    ctx.moveTo(x, 96);
+    ctx.lineTo(x, 112);
+    ctx.stroke();
+  }
+  // Tile grout over everything
+  ctx.strokeStyle = 'rgba(150,150,150,0.55)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= W; x += 16) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= H; y += 16) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+  const t = finish(c, 1);
+  t.texture.wrapS = t.texture.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
+
 function flat(color: string): ProcTexture {
   const [c, ctx] = canvas(8);
   ctx.fillStyle = color;
@@ -1079,6 +1327,13 @@ const FACTORIES: Record<string, () => ProcTexture> = {
   terrazzo: () => terrazzo(false),
   'terrazzo-dark': () => terrazzo(true),
   'memphis-tile': memphisTile,
+  'sento-tile': sentoTile,
+  'sento-floor': sentoFloor,
+  'sento-paint': sentoPaint,
+  'sento-ceiling': sentoCeiling,
+  'fuji-mural': () => fujiMural(false),
+  'fuji-mural-evening': () => fujiMural(true),
+  'sento-tile-mural': sentoTileMural,
 };
 
 export function getTexture(key: string): ProcTexture {

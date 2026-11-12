@@ -10,6 +10,7 @@ import { levelFrontrooms } from './hand/frontrooms';
 import { levelArena } from './hand/arena';
 import { levelEnding } from './hand/ending';
 import { levelMemphis, levelVaporwave } from './hand/aesthetic';
+import { levelSento } from './hand/sento';
 import { SHAPE_LEVELS } from './hand/shapeLevels';
 import { setLevelResolver } from './resolverHook';
 
@@ -33,13 +34,14 @@ const HAND_LEVELS: Record<string, LevelDefinition> = {
   [levelEnding.id]: levelEnding,
   [levelVaporwave.id]: levelVaporwave,
   [levelMemphis.id]: levelMemphis,
+  [levelSento.id]: levelSento,
 };
 
 /** Hand-made levels in display order (developer level select). */
 export const HAND_LEVEL_IDS = [
   '0', '1', '2', '4.3', '7.5', '13', '14', '27', '37', '139', 'u1', 'u2', 'u3', 'void',
   '111', '222', '303', '666', '1000', '808', '120', '512', '77', '451', '313', '900', 'null', '212', '9999', '37.2', '186', 'chaos',
-  'vaporwave', 'memphis',
+  'vaporwave', 'memphis', 'sento',
   'frontrooms',
 ];
 
@@ -101,6 +103,7 @@ export function randomLevelId(h: number): string {
   // Now and then a random exit opens onto one of the two aesthetic worlds.
   if (v >= 0.18 && v < 0.2) return 'vaporwave';
   if (v >= 0.2 && v < 0.22) return 'memphis';
+  if (v >= 0.22 && v < 0.24) return 'sento';
   if (v < 0.12) id = (Math.floor(u * 400) + 3 + Math.floor(v * 80) / 10).toFixed(1); // e.g. 33.7
   else if (v < 0.18) id = String(-1 - Math.floor(u * 99)); // e.g. -12
   else id = String(Math.floor(u * 1990) + 10); // 10 .. 1999

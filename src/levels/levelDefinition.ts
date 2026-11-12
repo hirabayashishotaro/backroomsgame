@@ -135,6 +135,8 @@ export interface LevelDefinition {
   drifters?: { radius: number };
   /** Mesh subdivision for baked lighting (metres per segment, default 1). Bigger = fewer triangles. */
   meshDetail?: number;
+  /** Extra background sounds of the world (e.g. buckets echoing in a bathhouse). */
+  soundscape?: 'sento';
   /** Lava: touching it burns and sends you back to the last safe spot. */
   lava?: { y: number; damage: number };
 }

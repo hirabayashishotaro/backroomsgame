@@ -73,6 +73,7 @@ export function entityTableFor(levelId: string, opts: { dark: boolean; safe: boo
     shibuya: [],
     vaporwave: ['faceling', 'witch', 'bloater'],
     memphis: ['skinstealer', 'duller', 'bomber'],
+    sento: ['faceling', 'skinstealer', 'smiler'],
     '1000': [],
     '1': ['hound', 'skinstealer', 'duller', 'bloater', 'gunman'],
     '2': ['hound', 'smiler', 'skinstealer', 'bloater', 'witch'],

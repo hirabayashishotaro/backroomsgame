@@ -9,6 +9,7 @@
 import type { Box } from '../../world/chunkData';
 import { box, emptyOut, type Light, type Out } from './kit';
 import { bust, column, neonPalm, sculpture } from '../hand/aesthetic';
+import { bathTub, muralWall, washRow } from '../hand/sento';
 
 export type FeatureId =
   | 'books'
@@ -38,7 +39,11 @@ export type FeatureId =
   | 'memphis'
   | 'loudwall'
   | 'pinksheets'
-  | 'vending';
+  | 'vending'
+  | 'sentomural'
+  | 'washplaces'
+  | 'bathtub'
+  | 'okepile';
 
 export const ALL_FEATURES: FeatureId[] = [
   'books',
@@ -68,6 +73,10 @@ export const ALL_FEATURES: FeatureId[] = [
   'loudwall',
   'pinksheets',
   'vending',
+  'sentomural',
+  'washplaces',
+  'bathtub',
+  'okepile',
 ];
 
 /** Height needed at scale 1 (m), footprint half-size, and words for names. */
@@ -99,6 +108,10 @@ export const FEATURE_INFO: Record<FeatureId, { h: number; r: number; name: strin
   loudwall: { h: 6, r: 4.2, name: '波線の壁', adj: '派手な壁の立つ' },
   pinksheets: { h: 8, r: 3.5, name: 'ピンクの幕', adj: 'ピンクの幕が垂れる' },
   vending: { h: 2, r: 0.8, name: '自販機', adj: '自販機の光る' },
+  sentomural: { h: 4.2, r: 4.5, name: '富士の壁画', adj: '富士の壁画が立つ' },
+  washplaces: { h: 1.9, r: 3.2, name: '洗い場', adj: '洗い場の並ぶ' },
+  bathtub: { h: 0.5, r: 3.6, name: '湯船', adj: '湯船の点在する' },
+  okepile: { h: 0.8, r: 1.2, name: '黄色い桶', adj: '桶の転がる' },
 };
 
 /**
@@ -387,6 +400,37 @@ export function drawFeature(o: Out, p: Placement, lights: Light[]): void {
         deco(vx - 0.38, y + 0.85, z - 0.42, vx + 0.38, y + 1.75, z - 0.41, 'daylight');
       }
       lights.push({ x, y: y + 1.3, z: z - 0.8, I: 1.6 });
+      break;
+    }
+    case 'sentomural': {
+      // The bathhouse mountain mural on a freestanding tiled wall.
+      if (Number.isFinite(p.room) && p.room < 4.6) break;
+      borrowed(o, y, p.room, (t) => muralWall(t, x - 4 * s, x + 4 * s, z, k < 0.3, 0, 4.2));
+      break;
+    }
+    case 'washplaces': {
+      // A double row of washing places with taps, mirrors, stools and washbowls.
+      borrowed(o, y, p.room, (t) => {
+        box(t.solids, x - 0.15, 0, z - 2.5, x + 0.15, 1.9, z + 2.5, 'sento-tile');
+        washRow(t, x - 0.15, z - 2.5, z + 2.5, -1, Math.floor(k * 1e6), 0, false);
+        washRow(t, x + 0.15, z - 2.5, z + 2.5, 1, Math.floor(k * 1e6) + 1, 0, false);
+      });
+      deco(x - 2.6, y + 0.005, z - 2.8, x + 2.6, y + 0.015, z + 2.8, 'sento-floor');
+      break;
+    }
+    case 'bathtub': {
+      // A tiled bath of steaming water, wherever it happens to be.
+      borrowed(o, y, p.room, (t) => bathTub(t, x - 3 * s, z - 2 * s, x + 3 * s, z + 2 * s));
+      break;
+    }
+    case 'okepile': {
+      // Yellow washbowls and white stools, stacked and scattered.
+      for (let i = 0; i < 5; i++) {
+        const a = i * 2.1 + k * 6;
+        const bx = x + Math.cos(a) * 0.7;
+        const bz = z + Math.sin(a) * 0.7;
+        solid(bx - 0.16, y + (i === 4 ? 0.17 : 0), bz - 0.16, bx + 0.16, y + 0.17 * (i === 4 ? 2 : 1), bz + 0.16, i % 3 === 2 ? 'stool-white' : 'oke-yellow');
+      }
       break;
     }
     case 'bones': {

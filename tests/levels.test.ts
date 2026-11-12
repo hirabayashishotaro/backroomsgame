@@ -156,8 +156,8 @@ describe('levels', () => {
     expect(overlaid).toBeGreaterThan(20);
   });
 
-  it('pieces of the explicit worlds (vaporwave, Memphis, the city) turn up in random levels', () => {
-    const want = ['石膏の胸像', 'ローマの柱', 'ネオンのヤシ', 'メンフィスの家具', '波線の壁', 'ピンクの幕', '自販機'];
+  it('pieces of the explicit worlds (vaporwave, Memphis, the city, the bathhouse) turn up in random levels', () => {
+    const want = ['石膏の胸像', 'ローマの柱', 'ネオンのヤシ', 'メンフィスの家具', '波線の壁', 'ピンクの幕', '自販機', '富士の壁画', '洗い場', '湯船', '黄色い桶'];
     const found = new Set<string>();
     for (let n = 3; n < 1500; n++) {
       const label = resolveLevel(String(n)).kindLabel ?? '';

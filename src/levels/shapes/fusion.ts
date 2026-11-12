@@ -81,6 +81,7 @@ const GROUND_SETS: Array<[string, string, string]> = [
   ['vapor-check', 'plaster', ''],
   ['memphis-tile', 'terrazzo', ''], // Memphis
   ['terrazzo', 'memphis-stripes', ''],
+  ['sento-floor', 'sento-tile', ''], // Showa bathhouse
 ];
 
 const LIQUIDS: Array<{ mat: string; lava: boolean }> = [
@@ -92,8 +93,8 @@ const LIQUIDS: Array<{ mat: string; lava: boolean }> = [
   { mat: 'lava', lava: true },
 ];
 
-const CEILING_TEX = ['flat:ffffff', 'gen:rock:3a3430:801', 'ceiling-tile', 'gen:concrete:4a4844:802', 'gen:pooltile:f2f0e6:803', 'gen:wood:3e2a18:804', 'gen:flesh:7a2838:805', 'gen:marble:eceae6:806', 'studs'];
-const WALL_TEX = ['memphis-squiggle', 'plaster', 'wallpaper-yellow', 'gen:concrete:8a8680:811', 'gen:tile:d9e3e6:812', 'gen:brick:7a3b2a:813', 'gen:marble:eceae6:814', 'gen:rock:5a5450:815'];
+const CEILING_TEX = ['sento-ceiling', 'flat:ffffff', 'gen:rock:3a3430:801', 'ceiling-tile', 'gen:concrete:4a4844:802', 'gen:pooltile:f2f0e6:803', 'gen:wood:3e2a18:804', 'gen:flesh:7a2838:805', 'gen:marble:eceae6:806', 'studs'];
+const WALL_TEX = ['sento-tile', 'memphis-squiggle', 'plaster', 'wallpaper-yellow', 'gen:concrete:8a8680:811', 'gen:tile:d9e3e6:812', 'gen:brick:7a3b2a:813', 'gen:marble:eceae6:814', 'gen:rock:5a5450:815'];
 
 /** The genome of a fusion level (deterministic from its id). */
 export function fusionGenome(id: string): FusionGenome {
@@ -392,21 +393,41 @@ export function arrivalAvoidingOverlay(def: LevelDefinition, base: LevelDefiniti
     const S = def.chunkSize;
     const cy = def.vertical ? Math.floor(a.y / def.vertical.slab) : 0;
     const blockers: WBox[] = [];
+    const solid: WBox[] = [];
+    const floors: FloorRect[] = [];
+    const terrains: Array<{ cx: number; cz: number; t: NonNullable<ChunkData['terrain']> }> = [];
     for (let dx = -1; dx <= 1; dx++)
       for (let dz = -1; dz <= 1; dz++) {
         const cx = Math.floor(a.x / S) + dx;
         const cz = Math.floor(a.z / S) + dz;
         const d = def.generator(ctx, cx, cz, cy);
-        for (const b of d.solids) if (b.overlay) blockers.push({ minX: b.minX + cx * S, maxX: b.maxX + cx * S, minY: b.minY, maxY: b.maxY, minZ: b.minZ + cz * S, maxZ: b.maxZ + cz * S });
+        for (const b of d.solids) {
+          const w = { minX: b.minX + cx * S, maxX: b.maxX + cx * S, minY: b.minY, maxY: b.maxY, minZ: b.minZ + cz * S, maxZ: b.maxZ + cz * S };
+          if (b.overlay) blockers.push(w);
+          else solid.push(w);
+        }
+        for (const f of d.floors) floors.push({ x0: f.x0 + cx * S, x1: f.x1 + cx * S, z0: f.z0 + cz * S, z1: f.z1 + cz * S, y: f.y });
+        if (d.terrain) terrains.push({ cx, cz, t: d.terrain });
       }
-    const hit = (x: number, z: number) => blockers.some((b) => b.maxY > a.y + 0.3 && b.minY < a.y + 1.9 && x > b.minX - 0.6 && x < b.maxX + 0.6 && z > b.minZ - 0.6 && z < b.maxZ + 0.6);
-    if (!hit(a.x, a.z)) return a;
-    // Overlay pieces stand clear of walls by a margin, so stepping back toward where we came from is free.
+    const hit = (x: number, z: number, y: number) => blockers.some((b) => b.maxY > y + 0.05 && b.minY < y + 1.9 && x > b.minX - 0.6 && x < b.maxX + 0.6 && z > b.minZ - 0.6 && z < b.maxZ + 0.6);
+    if (!hit(a.x, a.z, a.y)) return a;
+    // Ground at a nudged point: floors, original box tops and terrain (never an overlay piece).
+    const groundAt = (x: number, z: number): number => {
+      let g = groundHeight(x, z, 0.2, a.y + 0.6, floors, solid);
+      const tc = terrains.find((q) => Math.floor(x / S) === q.cx && Math.floor(z / S) === q.cz);
+      const th = tc ? sampleTerrain(tc.t, x - tc.cx * S, z - tc.cz * S) : null;
+      if (th !== null && th <= a.y + 0.6 && th > g) g = th;
+      return g;
+    };
     for (let r = 1; r <= 10; r++)
       for (let k = 0; k < 8; k++) {
-        const x = a.x + Math.cos((k / 8) * Math.PI * 2) * r;
-        const z = a.z + Math.sin((k / 8) * Math.PI * 2) * r;
-        if (!hit(x, z)) return { ...a, x, z };
+        // Whole metres on terrain (the mesh passes exactly through the heights there).
+        const x = Math.round(a.x + Math.cos((k / 8) * Math.PI * 2) * r);
+        const z = Math.round(a.z + Math.sin((k / 8) * Math.PI * 2) * r);
+        const y = groundAt(x, z);
+        if (!Number.isFinite(y) || Math.abs(y - a.y) > 0.6) continue;
+        if (solid.some((b) => b.maxY > y + 0.45 && b.minY < y + 1.7 && x > b.minX - 0.4 && x < b.maxX + 0.4 && z > b.minZ - 0.4 && z < b.maxZ + 0.4)) continue;
+        if (!hit(x, z, y)) return { ...a, x, y, z };
       }
     return a;
   };

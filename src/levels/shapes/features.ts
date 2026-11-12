@@ -9,7 +9,7 @@
 import type { Box } from '../../world/chunkData';
 import { box, emptyOut, type Light, type Out } from './kit';
 import { bust, column, neonPalm, sculpture } from '../hand/aesthetic';
-import { bathTub, muralWall, washRow } from '../hand/sento';
+import { bathTub, lockers, muralWall, rockPool, saunaStove, saunaTiers, washRow } from '../hand/sento';
 
 export type FeatureId =
   | 'books'
@@ -43,7 +43,10 @@ export type FeatureId =
   | 'sentomural'
   | 'washplaces'
   | 'bathtub'
-  | 'okepile';
+  | 'okepile'
+  | 'rockpool'
+  | 'saunatiers'
+  | 'lockers';
 
 export const ALL_FEATURES: FeatureId[] = [
   'books',
@@ -77,6 +80,9 @@ export const ALL_FEATURES: FeatureId[] = [
   'washplaces',
   'bathtub',
   'okepile',
+  'rockpool',
+  'saunatiers',
+  'lockers',
 ];
 
 /** Height needed at scale 1 (m), footprint half-size, and words for names. */
@@ -112,6 +118,9 @@ export const FEATURE_INFO: Record<FeatureId, { h: number; r: number; name: strin
   washplaces: { h: 1.9, r: 3.2, name: '洗い場', adj: '洗い場の並ぶ' },
   bathtub: { h: 0.5, r: 3.6, name: '湯船', adj: '湯船の点在する' },
   okepile: { h: 0.8, r: 1.2, name: '黄色い桶', adj: '桶の転がる' },
+  rockpool: { h: 1.8, r: 4.6, name: '岩風呂', adj: '岩風呂の湧く' },
+  saunatiers: { h: 1.4, r: 3.4, name: 'サウナの段', adj: 'サウナの段が光る' },
+  lockers: { h: 2.1, r: 2.4, name: '木のロッカー', adj: 'ロッカーの並ぶ' },
 };
 
 /**
@@ -431,6 +440,29 @@ export function drawFeature(o: Out, p: Placement, lights: Light[]): void {
         const bz = z + Math.sin(a) * 0.7;
         solid(bx - 0.16, y + (i === 4 ? 0.17 : 0), bz - 0.16, bx + 0.16, y + 0.17 * (i === 4 ? 2 : 1), bz + 0.16, i % 3 === 2 ? 'stool-white' : 'oke-yellow');
       }
+      break;
+    }
+    case 'rockpool': {
+      // An open-air rock bath, steaming wherever it surfaces.
+      borrowed(o, y, p.room, (t) => rockPool(t, x, z, 3.2 * s, 2.6 * s, Math.floor(k * 1e6), 0, k < 0.3 ? 'milky-water' : 'hot-spring'));
+      break;
+    }
+    case 'saunatiers': {
+      // Lit cedar sauna benches and a caged stove, out of their room.
+      const ls: typeof lights = [];
+      borrowed(o, y, p.room, (t) => {
+        saunaTiers(t, x - 2.8, x + 2.8, z + 1.8, 1);
+        saunaStove(t, x, z - 2.6, ls);
+      });
+      for (const l of ls) lights.push({ ...l, y: l.y + y });
+      break;
+    }
+    case 'lockers': {
+      // A bank of changing-room lockers, back to back.
+      borrowed(o, y, p.room, (t) => {
+        lockers(t, x - 2.2, x + 2.2, z, -1);
+        lockers(t, x - 2.2, x + 2.2, z, 1);
+      });
       break;
     }
     case 'bones': {

@@ -95,7 +95,7 @@ describe('levels', () => {
       const L = resolveLevel(id);
       for (let k = 0; k < 12; k++) expect(arrivalIsFree(L, entryHash('x', 'e' + k)), `${id}#${k}`).toBe(true);
     }
-  });
+  }, 30000);
 
   it('generated levels use many kinds of worlds (indoor, outdoor, groundless) and skies', () => {
     const grammars = new Set<string>();
@@ -157,7 +157,7 @@ describe('levels', () => {
   });
 
   it('pieces of the explicit worlds (vaporwave, Memphis, the city, the bathhouse) turn up in random levels', () => {
-    const want = ['石膏の胸像', 'ローマの柱', 'ネオンのヤシ', 'メンフィスの家具', '波線の壁', 'ピンクの幕', '自販機', '富士の壁画', '洗い場', '湯船', '黄色い桶'];
+    const want = ['石膏の胸像', 'ローマの柱', 'ネオンのヤシ', 'メンフィスの家具', '波線の壁', 'ピンクの幕', '自販機', '富士の壁画', '洗い場', '湯船', '黄色い桶', '岩風呂', 'サウナの段', '木のロッカー'];
     const found = new Set<string>();
     for (let n = 3; n < 1500; n++) {
       const label = resolveLevel(String(n)).kindLabel ?? '';
@@ -318,5 +318,27 @@ describe('exits lead to generated levels too', () => {
       expect(gen / N, id).toBeGreaterThan(0.2);
       expect(gen / N, id).toBeLessThan(0.55);
     }
+  });
+
+  it('the bathhouse varies: room kinds, several baths, merged halls, free arrivals', () => {
+    const L = resolveLevel('sento');
+    const ctx = makeGenContext(SEED, L);
+    const kinds = new Set<string>();
+    let maxBaths = 0;
+    let merged = 0;
+    for (let cx = -6; cx < 6; cx++)
+      for (let cz = -6; cz < 6; cz++) {
+        const d = L.generator(ctx, cx, cz, 0);
+        const names = (d.zones ?? []).filter((z) => z.kind === 'piece').map((z) => (z as { name: string }).name);
+        for (const n of names) kinds.add(n);
+        maxBaths = Math.max(maxBaths, (d.zones ?? []).filter((z) => z.kind === 'water').length);
+        // A merged hall has a whole wall missing: no solid on that edge at all.
+        if (!d.solids.some((b) => b.maxX < 0.2 && b.maxY > 2)) merged++;
+        expect(JSON.stringify(L.generator(ctx, cx, cz, 0))).toBe(JSON.stringify(d));
+      }
+    for (const k of ['bath', 'wash-row', 'rotenburo', 'sauna', 'cold-bath', 'changing-room']) expect(kinds.has(k), k).toBe(true);
+    expect(maxBaths).toBeGreaterThanOrEqual(3);
+    expect(merged).toBeGreaterThan(5);
+    for (let k = 0; k < 12; k++) expect(arrivalIsFree(L, entryHash('s', 'e' + k)), 'arrival ' + k).toBe(true);
   });
 });

@@ -82,6 +82,9 @@ const GROUND_SETS: Array<[string, string, string]> = [
   ['memphis-tile', 'terrazzo', ''], // Memphis
   ['terrazzo', 'memphis-stripes', ''],
   ['sento-floor', 'sento-tile', ''], // Showa bathhouse
+  ['cedar', 'cedar-dark', ''], // its sauna
+  ['path', 'onsen-rock', ''], // its open-air bath
+  ['tile-aqua', 'sento-tile', ''], // its cold bath
 ];
 
 const LIQUIDS: Array<{ mat: string; lava: boolean }> = [
@@ -90,11 +93,13 @@ const LIQUIDS: Array<{ mat: string; lava: boolean }> = [
   { mat: 'water-dark', lava: false },
   { mat: 'pool-water', lava: false },
   { mat: 'water-shallow', lava: false },
+  { mat: 'hot-spring', lava: false }, // the bathhouse waters
+  { mat: 'milky-water', lava: false },
   { mat: 'lava', lava: true },
 ];
 
 const CEILING_TEX = ['sento-ceiling', 'flat:ffffff', 'gen:rock:3a3430:801', 'ceiling-tile', 'gen:concrete:4a4844:802', 'gen:pooltile:f2f0e6:803', 'gen:wood:3e2a18:804', 'gen:flesh:7a2838:805', 'gen:marble:eceae6:806', 'studs'];
-const WALL_TEX = ['sento-tile', 'memphis-squiggle', 'plaster', 'wallpaper-yellow', 'gen:concrete:8a8680:811', 'gen:tile:d9e3e6:812', 'gen:brick:7a3b2a:813', 'gen:marble:eceae6:814', 'gen:rock:5a5450:815'];
+const WALL_TEX = ['sento-tile', 'gen:wood:dcb88c:931', 'gen:tile:5fb8c8:936', 'memphis-squiggle', 'plaster', 'wallpaper-yellow', 'gen:concrete:8a8680:811', 'gen:tile:d9e3e6:812', 'gen:brick:7a3b2a:813', 'gen:marble:eceae6:814', 'gen:rock:5a5450:815'];
 
 /** The genome of a fusion level (deterministic from its id). */
 export function fusionGenome(id: string): FusionGenome {
@@ -282,7 +287,10 @@ export function fusionSampler(ctx: GenContext, g: FusionGenome, cx: number, cz: 
 export function fusionArrival(ctx: GenContext, g: FusionGenome, h: number): SpawnPoint {
   const seed = ctx.levelSeed;
   const H = (x: number, z: number) => fusionHeight(seed, g, x, z);
-  for (let k = 0; k < 600; k++) {
+  for (let k = 0; k < 1500; k++) {
+    // After 600 tries (big features crowding small islands), accept points closer to the pieces.
+    const pad = k < 600 ? 1.5 : 1.05;
+    const gap = k < 600 ? 2.5 : 1;
     // Whole metres: the terrain mesh passes exactly through the height there.
     const x = Math.round((hash01(seed, 940, h, k) - 0.5) * 400);
     const z = Math.round((hash01(seed, 941, h, k) - 0.5) * 400);
@@ -296,7 +304,7 @@ export function fusionArrival(ctx: GenContext, g: FusionGenome, h: number): Spaw
     const lz = z - cz * FUSION_S;
     if (lx < 1 || lx > FUSION_S - 1 || lz < 1 || lz > FUSION_S - 1) continue;
     const near = [...fusionPlan(seed, g, cx, cz), ...fusionPlan(seed, g, cx - 1, cz).map((p) => ({ ...p, x: p.x - FUSION_S })), ...fusionPlan(seed, g, cx + 1, cz).map((p) => ({ ...p, x: p.x + FUSION_S })), ...fusionPlan(seed, g, cx, cz - 1).map((p) => ({ ...p, z: p.z - FUSION_S })), ...fusionPlan(seed, g, cx, cz + 1).map((p) => ({ ...p, z: p.z + FUSION_S }))];
-    if (near.some((p) => Math.hypot(p.x - lx, p.z - lz) < FEATURE_INFO[p.f].r * p.s * 1.5 + 2.5)) continue;
+    if (near.some((p) => Math.hypot(p.x - lx, p.z - lz) < FEATURE_INFO[p.f].r * p.s * pad + gap)) continue;
     // Not inside a door / gate block either.
     const ex = fusionExtras(seed, g, cx, cz, fusionPlan(seed, g, cx, cz));
     if (ex.some((e) => e.r < 0.3 && Math.hypot(e.x - lx, e.z - lz) < 2)) continue;

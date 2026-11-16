@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BLOATER, BOMBER, GUNMAN, WITCH, hurt, newBrain, think, type Perception } from '../src/entities/brain';
+import { BLOATER, BOMBER, GUNMAN, PEEKER, WITCH, hurt, newBrain, think, type Perception } from '../src/entities/brain';
+import { ENTITIES } from '../src/entities/entityDefs';
 import { Director, entityTableFor } from '../src/entities/director';
 
 const P = (o: Partial<Perception> = {}): Perception => ({ dist: 20, watched: false, los: true, playerRunning: false, playerCrouching: false, playerRetreat: 0, ...o });
@@ -112,6 +113,36 @@ describe('entity behaviour', () => {
     expect(tosses).toBeGreaterThanOrEqual(3);
     expect(tosses).toBeLessThanOrEqual(Math.ceil(12 / BOMBER.cooldown) + 1);
     expect(think(newBrain('bomber'), P({ dist: 4 }), 0.05).speed).toBeLessThan(0);
+  });
+
+  it('peeker stands still and aims (laser) before every sniper shot, and losing sight breaks the aim', () => {
+    const b = newBrain('peeker');
+    let shots = 0;
+    let aimed = 0;
+    for (let t = 0; t < 20; t += 0.05) {
+      const d = think(b, P({ dist: 30 }), 0.05);
+      if (d.aim !== undefined) {
+        aimed += 0.05;
+        expect(d.speed).toBe(0);
+        expect(d.strafe ?? 0).toBe(0);
+      }
+      if (d.snipe) shots++;
+    }
+    expect(shots).toBeGreaterThanOrEqual(2);
+    expect(shots).toBeLessThanOrEqual(Math.ceil(20 / (PEEKER.aim + PEEKER.cooldown)) + 1);
+    expect(aimed).toBeGreaterThanOrEqual(shots * PEEKER.aim - 0.2);
+    // Ducking out of sight mid-aim: no shot.
+    const c = newBrain('peeker');
+    for (let t = 0; t < 3; t += 0.05) think(c, P({ dist: 30 }), 0.05);
+    for (let t = 0; t < 3; t += 0.05) expect(think(c, P({ dist: 30, los: false }), 0.05).snipe).toBeFalsy();
+  });
+
+  it('peeker deals half the health; the spider is very fast and fragile', () => {
+    expect(ENTITIES.peeker.damage).toBe(50);
+    expect(ENTITIES.spider.run).toBeGreaterThan(ENTITIES.skinstealer.run + 2);
+    expect(ENTITIES.spider.hp).toBeLessThan(ENTITIES.bloater.hp);
+    const sp = newBrain('spider');
+    expect(run(sp, P({ dist: 15 }), 1).speed).toBe(ENTITIES.spider.run);
   });
 
   it('a stunned entity cannot move or act for the stun time', () => {

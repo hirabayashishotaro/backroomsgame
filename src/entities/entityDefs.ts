@@ -1,5 +1,5 @@
 /** Entities (SPEC §7). Behaviour is original; Wiki descriptions are not copied. */
-export type EntityKind = 'smiler' | 'hound' | 'duller' | 'faceling' | 'skinstealer' | 'bloater' | 'giant' | 'gunman' | 'witch' | 'bomber' | 'bug';
+export type EntityKind = 'smiler' | 'hound' | 'duller' | 'faceling' | 'skinstealer' | 'bloater' | 'giant' | 'gunman' | 'witch' | 'bomber' | 'peeker' | 'spider' | 'bug';
 
 export interface EntityDef {
   kind: EntityKind;
@@ -125,6 +125,26 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
     life: 120,
     hint: '背中に袋を背負った人影。山なりに爆弾を投げてくる。爆弾は落ちてから少しして爆発し、周りのものを吹き飛ばす。赤い点滅から離れること。',
   },
+  peeker: {
+    kind: 'peeker',
+    name: 'ピーカー',
+    hp: 80 * HP_SCALE,
+    damage: 50,
+    walk: 2.2,
+    run: 4.0,
+    life: 140,
+    hint: '頭が狙撃銃になっている人影。遠くの物陰から顔を出し、赤い光をこちらに向ける。光が止まった直後に撃ってくる。止まった瞬間に横へ動くこと。',
+  },
+  spider: {
+    kind: 'spider',
+    name: 'スパイダー',
+    hp: 15 * HP_SCALE,
+    damage: 15,
+    walk: 5.5,
+    run: 10.5,
+    life: 90,
+    hint: '人より大きな蜘蛛。床を這う乾いた音とともに、ありえない速さで右へ左へ跳ねながら迫る。体はもろい。',
+  },
   bug: {
     kind: 'bug',
     name: 'バグ',
@@ -138,4 +158,4 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
 };
 
 /** Every ordinary kind (the escape condition counts these; the Bug is special). */
-export const ALL_ENTITIES: EntityKind[] = ['smiler', 'hound', 'duller', 'faceling', 'skinstealer', 'bloater', 'giant', 'gunman', 'witch', 'bomber'];
+export const ALL_ENTITIES: EntityKind[] = ['smiler', 'hound', 'duller', 'faceling', 'skinstealer', 'bloater', 'giant', 'gunman', 'witch', 'bomber', 'peeker', 'spider'];

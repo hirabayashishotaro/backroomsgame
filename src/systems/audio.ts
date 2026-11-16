@@ -496,7 +496,7 @@ export class AudioSystem {
   }
 
   /** Positional entity voice: growl, giggle, whisper "help", hum. */
-  entityVoice(kind: 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan' | 'shot' | 'zap' | 'thunder' | 'glitch', pan: number, dist: number): void {
+  entityVoice(kind: 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan' | 'shot' | 'zap' | 'thunder' | 'glitch' | 'aim' | 'snipe' | 'skitter', pan: number, dist: number): void {
     const ctx = this.ctx;
     if (!ctx) return;
     const t = ctx.currentTime;
@@ -560,6 +560,24 @@ export class AudioSystem {
         const vv = Math.min(1, 25 / (dist + 5));
         this.noise(t, 0.25, 'bandpass', 1400, 0.8, p, this.env(t, 0.55 * vv, 0.002, 0.22));
         this.tone(t, 'sine', 140, 50, 0.2, this.env(t, 0.45 * vv, 0.002, 0.2), p);
+        break;
+      }
+      case 'aim':
+        // A thin rising whine as the sniper's laser finds you.
+        this.tone(t, 'sine', 1800, 2600, 1.6, this.env(t, 0.06, 0.3, 0.2), p);
+        break;
+      case 'snipe': {
+        // A heavy rifle report that rolls away.
+        const vv = Math.min(1, 40 / (dist + 8));
+        this.noise(t, 0.08, 'highpass', 2500, 0.7, p, this.env(t, 0.9 * vv, 0.001, 0.08));
+        this.noise(t, 1.4, 'lowpass', 700, 0.7, p, this.env(t, 0.7 * vv, 0.004, 1.3));
+        this.tone(t, 'sine', 110, 35, 0.6, this.env(t, 0.6 * vv, 0.002, 0.55), p);
+        break;
+      }
+      case 'skitter': {
+        // Dry, fast scratching of many legs.
+        const vv = Math.min(1, 14 / (dist + 3));
+        for (let i = 0; i < 9; i++) this.noise(t + i * 0.045, 0.025, 'bandpass', 2400 + (i % 3) * 700, 3, p, this.env(t + i * 0.045, 0.22 * vv, 0.002, 0.02));
         break;
       }
       case 'zap':

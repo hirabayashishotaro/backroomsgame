@@ -149,6 +149,60 @@ export function buildEntityMesh(kind: EntityKind): THREE.Group {
       arm.add(held);
       break;
     }
+    case 'peeker': {
+      // A thin figure in a grey suit whose head is a sniper rifle: the long
+      // barrel points where it looks, a scope on top with a red lens.
+      humanoid(g, m(0x3a3c40), 1.8, 0.9);
+      const head = g.getObjectByName('head')!;
+      g.remove(head);
+      const gun = m(0x1e1f22);
+      part(g, new THREE.BoxGeometry(0.16, 0.2, 0.42), gun, 0, 1.6, 0.02, 'stock'); // receiver where the head was
+      part(g, new THREE.BoxGeometry(0.12, 0.14, 0.2), m(0x4a3a2a), 0, 1.58, 0.28, 'butt');
+      const barrel = part(g, new THREE.CylinderGeometry(0.04, 0.045, 0.95, 8), gun, 0, 1.62, -0.65, 'barrel');
+      barrel.rotation.x = Math.PI / 2;
+      part(g, new THREE.BoxGeometry(0.11, 0.11, 0.14), gun, 0, 1.62, -1.12, 'muzzle');
+      const scope = part(g, new THREE.CylinderGeometry(0.045, 0.045, 0.34, 10), gun, 0, 1.75, -0.05, 'scope');
+      scope.rotation.x = Math.PI / 2;
+      part(g, new THREE.SphereGeometry(0.035, 8, 6), m(0xff2020), 0, 1.75, -0.23, 'lens');
+      part(g, new THREE.BoxGeometry(0.03, 0.22, 0.03), gun, 0, 1.43, -0.15, 'bipod');
+      break;
+    }
+    case 'spider': {
+      // A spider bigger than a person: low round body, eight long jointed legs, red eyes.
+      const body = m(0x1a1512);
+      const abd = part(g, new THREE.SphereGeometry(0.62, 14, 10), body, 0, 0.75, 0.45, 'torso');
+      abd.scale.set(1, 0.75, 1.15);
+      part(g, new THREE.SphereGeometry(0.36, 12, 9), body, 0, 0.6, -0.5, 'head');
+      for (let side = -1; side <= 1; side += 2)
+        for (let k = 0; k < 4; k++) {
+          // Each leg: an upper segment rising outward and a lower one reaching down to the floor.
+          const leg = new THREE.Group();
+          leg.name = k % 2 === 0 ? 'legF' : 'legB';
+          leg.position.set(side * 0.3, 0.65, -0.55 + k * 0.32);
+          leg.rotation.y = side * (0.35 - k * 0.25);
+          const up = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.07, 0.07), body);
+          up.position.set(side * 0.38, 0.3, 0);
+          up.rotation.z = side * 0.65;
+          const low = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.05, 0.06), body);
+          low.position.set(side * 0.8, 0.1, 0);
+          low.rotation.z = -side * 0.35;
+          leg.add(up, low);
+          g.add(leg);
+        }
+      const eye = m(0xff3020);
+      for (const [x, y] of [
+        [-0.12, 0.72],
+        [0.12, 0.72],
+        [-0.22, 0.66],
+        [0.22, 0.66],
+        [-0.07, 0.8],
+        [0.07, 0.8],
+      ])
+        part(g, new THREE.SphereGeometry(0.035, 6, 5), eye, x, y, -0.83);
+      part(g, new THREE.BoxGeometry(0.06, 0.18, 0.06), body, -0.09, 0.42, -0.82, 'fang');
+      part(g, new THREE.BoxGeometry(0.06, 0.18, 0.06), body, 0.09, 0.42, -0.82, 'fang');
+      break;
+    }
     case 'bug': {
       // The "missing texture" look: a black and magenta checkerboard figure.
       humanoid(g, missingMat(), 1.8);

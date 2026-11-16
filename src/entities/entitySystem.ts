@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { PlayerController, type WorldQuery } from '../player/controller';
 import { groundHeight, rayBox, type WBox } from '../world/collision';
 import { ENTITIES, type EntityKind } from './entityDefs';
-import { BLAST_KNOCK, BLOATER, BOMBER, GIANT, WITCH, hurt, newBrain, think, type BrainState } from './brain';
+import { BLAST_KNOCK, BLOATER, BOMBER, GIANT, PEEKER, WITCH, hurt, newBrain, think, type BrainState } from './brain';
 import { animateEntity, buildBombMesh, buildEntityMesh, buildRocketMesh, disposeEntityMesh, setEntityAlpha } from './models';
 import { stepProjectile } from '../weapons/weaponLogic';
 import { falloffFactor, type WeaponDef } from '../weapons/weaponDefs';
@@ -191,11 +191,19 @@ const HITBOXES: Record<EntityKind, HitBox[]> = {
     { f: 0.33, y0: 0.85, y1: 1.45, r: 0.3, d: 0.25, head: false }, // sack on the back
     { f: 0, y0: 1.42, y1: 1.76, r: 0.17, head: true },
   ],
+  peeker: [
+    { f: 0, y0: 0, y1: 1.45, r: 0.3, d: 0.2, head: false },
+    { f: -0.3, y0: 1.45, y1: 1.8, r: 0.12, d: 0.5, head: true }, // the rifle that is its head
+  ],
+  spider: [
+    { f: 0.15, y0: 0.15, y1: 0.95, r: 0.75, d: 0.65, head: false },
+    { f: -0.75, y0: 0.3, y1: 0.8, r: 0.3, d: 0.25, head: true },
+  ],
   bug: HUMAN(1.8),
 };
 
 /** Eye-level height used for line of sight. */
-const CHEST: Partial<Record<EntityKind, number>> = { giant: 4.2, bloater: 1.0, hound: 0.8 };
+const CHEST: Partial<Record<EntityKind, number>> = { giant: 4.2, bloater: 1.0, hound: 0.8, spider: 0.6, peeker: 1.6 };
 
 export interface RayHit {
   t: number;
@@ -245,6 +253,11 @@ export class EntitySystem {
     for (const bm of this.bombs) bm.mesh.removeFromParent();
     this.bombs.length = 0;
     if (this.aimRing) this.aimRing.visible = false;
+    for (const mesh of this.lasers.values()) {
+      (mesh.material as THREE.Material).dispose();
+      mesh.removeFromParent();
+    }
+    this.lasers.clear();
   }
 
   // ------------------------------------------------------------------ spawn --
@@ -356,6 +369,7 @@ export class EntitySystem {
       if (d.fire) this.enemyFire(e, dist);
       if (d.cast) this.cast(e, dist);
       if (d.toss) this.toss(e, dist);
+      if (e.kind === 'peeker') this.aimLaser(e, d.aim, d.snipe === true, dist);
       if (e.brain.mode !== prevMode) {
         if (e.kind === 'bloater' && e.brain.mode === 'fuse') this.host.audio.entityVoice('hiss', this.panTo(b.x, b.z), dist);
         if (e.kind === 'giant' && e.brain.mode === 'attack') this.host.audio.entityVoice('groan', this.panTo(b.x, b.z), dist);
@@ -440,7 +454,7 @@ export class EntitySystem {
       }
       // Contact attack, then it leaves (SPEC: escapable encounters).
       const vertical = Math.abs(b.y - p.y) < 1.6;
-      if (!this.aiStopped && e.kind !== 'bloater' && e.kind !== 'giant' && e.kind !== 'gunman' && e.kind !== 'witch' && e.kind !== 'bomber' && e.kind !== 'bug' && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
+      if (!this.aiStopped && e.kind !== 'bloater' && e.kind !== 'giant' && e.kind !== 'gunman' && e.kind !== 'witch' && e.kind !== 'bomber' && e.kind !== 'peeker' && e.kind !== 'bug' && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
         this.host.onPlayerHit(e.kind, ENTITIES[e.kind].damage);
         e.brain.mode = 'flee';
         e.brain.t = 0;
@@ -449,14 +463,14 @@ export class EntitySystem {
       e.voiceT -= dt;
       if (e.voiceT <= 0 && e.brain.alpha > 0.3) {
         const pan = this.panTo(b.x, b.z);
-        const kind = e.kind === 'bug' ? 'glitch' : e.kind === 'hound' ? 'growl' : e.kind === 'smiler' ? 'giggle' : e.kind === 'skinstealer' ? 'help' : e.kind === 'duller' ? 'hum' : e.kind === 'giant' ? 'groan' : 'step';
+        const kind = e.kind === 'spider' ? 'skitter' : e.kind === 'bug' ? 'glitch' : e.kind === 'hound' ? 'growl' : e.kind === 'smiler' ? 'giggle' : e.kind === 'skinstealer' ? 'help' : e.kind === 'duller' ? 'hum' : e.kind === 'giant' ? 'groan' : 'step';
         if (e.kind !== 'bloater') this.host.audio.entityVoice(kind, pan, dist);
         e.voiceT = e.brain.mode === 'chase' ? 1.6 + Math.random() : 4 + Math.random() * 5;
       }
       // Render
       const [rx, rz] = this.host.toRender(b.x, b.z);
       e.mesh.position.set(rx, b.y, rz);
-      e.mesh.rotation.y = e.kind === 'gunman' || e.kind === 'witch' || e.kind === 'bomber' ? face : yaw;
+      e.mesh.rotation.y = e.kind === 'gunman' || e.kind === 'witch' || e.kind === 'bomber' || e.kind === 'peeker' ? face : yaw;
       e.flash = Math.max(0, e.flash - dt * 5);
       if (e.kind === 'bloater') {
         // Swells and flickers while the fuse burns.
@@ -475,6 +489,13 @@ export class EntitySystem {
       setEntityAlpha(e.mesh, e.brain.alpha);
       animateEntity(e.mesh, e.kind, e.phase, speed, e.flash, dt);
     }
+    // Lasers of peekers that are gone
+    for (const [e, mesh] of this.lasers)
+      if (!this.entities.includes(e)) {
+        (mesh.material as THREE.Material).dispose();
+        mesh.removeFromParent();
+        this.lasers.delete(e);
+      }
     this.updateProjectiles(dt);
     this.updateShots(dt);
     this.updateStrikes(dt);
@@ -914,6 +935,72 @@ export class EntitySystem {
     }
   }
 
+  private lasers = new Map<Entity, THREE.Mesh>();
+  private aimDirs = new Map<Entity, [number, number, number]>();
+
+  /**
+   * Peeker: a red laser from its rifle-head toward you while it aims. It
+   * follows you until it locks (PEEKER.lock), blinks, then the round flies
+   * along the locked line - step aside the moment the laser stops moving.
+   */
+  private aimLaser(e: Entity, aim: number | undefined, snipe: boolean, dist: number): void {
+    const b = e.body;
+    const p = this.host.player;
+    let laser = this.lasers.get(e);
+    if (aim === undefined) {
+      if (laser) laser.visible = false;
+      return;
+    }
+    const fx = -Math.sin(b.yaw);
+    const fz = -Math.cos(b.yaw);
+    const ox = b.x + fx * 1.15; // the muzzle
+    const oy = b.y + 1.62;
+    const oz = b.z + fz * 1.15;
+    let dir = this.aimDirs.get(e);
+    if (!dir || aim < PEEKER.lock) {
+      const dx = p.x - ox;
+      const dy = p.y + 1.2 - oy;
+      const dz = p.z - oz;
+      const l = Math.hypot(dx, dy, dz) || 1;
+      dir = [dx / l, dy / l, dz / l];
+      this.aimDirs.set(e, dir);
+      if (aim === 0) this.host.audio.entityVoice('aim', this.panTo(b.x, b.z), dist);
+    }
+    const wall = this.host.rayWorld(ox, oy, oz, dir[0], dir[1], dir[2], 90);
+    const len = wall ?? 90;
+    if (snipe) {
+      // Does the locked line pass through the player (0.4 m capsule) before a wall?
+      const h2 = dir[0] * dir[0] + dir[2] * dir[2] || 1e-6;
+      const tc = Math.max(0, ((p.x - ox) * dir[0] + (p.z - oz) * dir[2]) / h2);
+      const cx = ox + dir[0] * tc - p.x;
+      const cz = oz + dir[2] * tc - p.z;
+      const cy = oy + dir[1] * tc;
+      if (Math.hypot(cx, cz) < 0.4 && cy > p.y - 0.1 && cy < p.y + 1.9 && tc < len) this.host.onRangedHit('peeker', ENTITIES.peeker.damage);
+      const [rx, rz] = this.host.toRender(ox, oz);
+      this.beam(new THREE.Vector3(rx, oy, rz), [ox + dir[0] * len, oy + dir[1] * len, oz + dir[2] * len], 0xfff0c0);
+      this.spark(ox, oy, oz, 0xffe0a0, 6, 0.12);
+      this.host.audio.entityVoice('snipe', this.panTo(b.x, b.z), dist);
+      this.aimDirs.delete(e);
+      e.flash = 0.5;
+      if (laser) laser.visible = false;
+      return;
+    }
+    if (!laser) {
+      laser = new THREE.Mesh(this.beamGeo, new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.4, depthWrite: false }));
+      this.host.fx.add(laser);
+      this.lasers.set(e, laser);
+    }
+    const [rx, rz] = this.host.toRender(ox, oz);
+    const start = new THREE.Vector3(rx, oy, rz);
+    const end = new THREE.Vector3(rx + dir[0] * len, oy + dir[1] * len, rz + dir[2] * len);
+    laser.visible = true;
+    laser.position.copy(start).lerp(end, 0.5);
+    laser.scale.set(0.6, 0.6, len);
+    laser.lookAt(end);
+    const locked = aim >= PEEKER.lock;
+    (laser.material as THREE.MeshBasicMaterial).opacity = locked ? (Math.sin(performance.now() * 0.05) > 0 ? 0.95 : 0.3) : 0.25 + 0.45 * aim;
+  }
+
   /** Witch: mark the ground under the player; lightning falls there shortly after. */
   private cast(e: Entity, dist: number): void {
     const p = this.host.player;
@@ -1013,18 +1100,18 @@ export class EntitySystem {
   }
 
   /** The staff's bolt: an instant beam from the orb to what it hit. */
-  beam(from: THREE.Vector3, to: [number, number, number]): void {
+  beam(from: THREE.Vector3, to: [number, number, number], color = 0xe0b8ff): void {
     const [tx, tz] = this.host.toRender(to[0], to[2]);
     const end = new THREE.Vector3(tx, to[1], tz);
     const len = from.distanceTo(end);
     if (len < 0.05) return;
-    const mesh = new THREE.Mesh(this.beamGeo, new THREE.MeshBasicMaterial({ color: 0xe0b8ff, transparent: true, opacity: 0.9, depthWrite: false }));
+    const mesh = new THREE.Mesh(this.beamGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false }));
     mesh.position.copy(from).lerp(end, 0.5);
     mesh.scale.set(1, 1, len);
     mesh.lookAt(end);
     this.host.fx.add(mesh);
     this.beams.push({ mesh, t: 0.12 });
-    this.spark(to[0], to[1], to[2], 0xd8a8ff, 3, 0.2);
+    this.spark(to[0], to[1], to[2], color === 0xe0b8ff ? 0xd8a8ff : color, 3, 0.2);
   }
 
   private beams: Array<{ mesh: THREE.Mesh; t: number }> = [];

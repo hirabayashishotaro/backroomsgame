@@ -60,6 +60,10 @@ export interface Decision {
   cast?: boolean;
   /** Bomber: lob a bomb at the player now. */
   toss?: boolean;
+  /** Peeker: aiming progress 0..1 (the red laser), or undefined when not aiming. */
+  aim?: number;
+  /** Peeker: fire the sniper round now (along the locked aim). */
+  snipe?: boolean;
 }
 
 /** Bomber: throw cooldown, fuse after landing, blast radius, knockback, preferred range. */
@@ -69,6 +73,11 @@ export const BLAST_KNOCK = 15;
 
 /** Gunman: magazine, time between shots in a burst, reload, preferred range. */
 export const GUNMAN = { mag: 6, rate: 0.28, reload: 2.6, near: 8, far: 20, maxRange: 38 };
+/**
+ * Peeker: aim time (the laser follows you), the moment it locks before the
+ * shot (aim fraction), cooldown between shots, preferred range.
+ */
+export const PEEKER = { aim: 1.7, lock: 0.8, cooldown: 4.2, near: 16, far: 38, maxRange: 75 };
 /** Witch: spell cooldown, warning time before the strike, blast radius, preferred range. */
 export const WITCH = { cooldown: 4.2, warn: 1.1, radius: 3.5, near: 13, far: 26, maxRange: 42 };
 
@@ -220,6 +229,36 @@ export function think(b: BrainState, p: Perception, dt: number): Decision {
       }
       return d;
     }
+    case 'peeker': {
+      // Keeps far away; stops, aims the red laser for a while, locks, fires.
+      b.cd -= dt;
+      if (b.watch > 0) {
+        // Aiming: stand still. Losing sight of you breaks the aim.
+        if (!p.los || p.dist > PEEKER.maxRange) {
+          b.watch = 0;
+          b.cd = 1.2;
+          return keepRange(b, p, dt, PEEKER.near, PEEKER.far, def.walk, def.run);
+        }
+        b.watch += dt;
+        if (b.watch >= PEEKER.aim) {
+          b.watch = 0;
+          b.cd = PEEKER.cooldown;
+          return { speed: 0, gone: false, snipe: true, aim: 1 };
+        }
+        return { speed: 0, gone: false, aim: b.watch / PEEKER.aim };
+      }
+      const d = keepRange(b, p, dt, PEEKER.near, PEEKER.far, def.walk, def.run);
+      if (p.los && p.dist < PEEKER.maxRange && b.cd <= 0 && b.alpha > 0.6) {
+        b.watch = 0.0001;
+        return { speed: 0, gone: false, aim: 0 };
+      }
+      return d;
+    }
+    case 'spider': {
+      // Always rushing in, very fast (the approach weaves); fragile.
+      if (b.mode !== 'chase') set(b, 'chase');
+      return { speed: p.dist < 25 ? def.run : def.walk, gone: false };
+    }
     case 'bug': {
       // Harmless: drifts around at a distance, sidestepping; never attacks, never leaves.
       return keepRange(b, p, dt, 6, 16, def.walk, def.run);
@@ -261,7 +300,7 @@ export function hurt(b: BrainState, dmg: number): boolean {
   if ((b.kind === 'hound' || b.kind === 'skinstealer') && dmg >= 50) {
     b.mode = 'stagger';
     b.t = 0;
-  } else if (b.kind !== 'bloater' && b.kind !== 'giant' && b.kind !== 'gunman' && b.kind !== 'witch' && b.kind !== 'bomber' && b.kind !== 'bug' && b.mode !== 'stagger') {
+  } else if (b.kind !== 'bloater' && b.kind !== 'giant' && b.kind !== 'gunman' && b.kind !== 'witch' && b.kind !== 'bomber' && b.kind !== 'peeker' && b.kind !== 'bug' && b.mode !== 'stagger') {
     // Shooting it wakes it up.
     if (b.mode !== 'chase') {
       b.mode = 'chase';

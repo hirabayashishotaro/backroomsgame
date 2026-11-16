@@ -1,6 +1,7 @@
 /** Title screen, pause menu, save-slot lists and credits (SPEC §11). */
 import { formatPlayTime, latestSlot, listSlots } from '../core/save';
 import { getNative } from '../core/storage';
+import { feedDevKey, isDevUnlocked } from '../core/devUnlock';
 import { t } from './i18n';
 
 export interface ScreenCallbacks {
@@ -51,6 +52,11 @@ export class Screens {
     this.panel.className = 'sc-panel';
     this.root.appendChild(this.panel);
     parent.appendChild(this.root);
+    // The hidden passphrase (title / pause screen only) shows or hides the developer menus.
+    window.addEventListener('keydown', (e) => {
+      if (!this.visible || (this.view !== 'title' && this.view !== 'pause')) return;
+      if (feedDevKey(e.key) !== null) this.render(this.view);
+    });
   }
 
   get visible(): boolean {
@@ -116,9 +122,11 @@ export class Screens {
         this.btn(t('menu.newGame'), () => this.render('new'), { primary: !latest });
         this.btn(t('menu.load'), () => this.render('load'), { disabled: !latest });
         this.btn(t('menu.settings'), () => this.cb.onSettings());
-        this.btn(t('dev.open'), () => this.cb.onLevelSelect());
-        this.btn(t('lab.open'), () => this.cb.onCombatLab());
-        this.btn(t('ending.open'), () => this.cb.onEndingTest(), { sub: t('ending.openSub') });
+        if (isDevUnlocked()) {
+          this.btn(t('dev.open'), () => this.cb.onLevelSelect());
+          this.btn(t('lab.open'), () => this.cb.onCombatLab());
+          this.btn(t('ending.open'), () => this.cb.onEndingTest(), { sub: t('ending.openSub') });
+        }
         this.btn(t('menu.credits'), () => this.render('credits'));
         if (isElectron) this.btn(t('menu.quit'), () => this.cb.onQuit());
         this.note(t('menu.controls'));
@@ -129,9 +137,11 @@ export class Screens {
         this.btn(t('menu.resume'), () => this.cb.onResume(), { primary: true });
         this.btn(t('menu.journal'), () => this.cb.onJournal());
         this.btn(t('menu.settings'), () => this.cb.onSettings());
-        this.btn(t('dev.open'), () => this.cb.onLevelSelect());
-        this.btn(t('lab.open'), () => this.cb.onCombatLab());
-        this.btn(t('ending.open'), () => this.cb.onEndingTest(), { sub: t('ending.openSub') });
+        if (isDevUnlocked()) {
+          this.btn(t('dev.open'), () => this.cb.onLevelSelect());
+          this.btn(t('lab.open'), () => this.cb.onCombatLab());
+          this.btn(t('ending.open'), () => this.cb.onEndingTest(), { sub: t('ending.openSub') });
+        }
         this.btn(t('menu.toTitle'), () => this.cb.onToTitle(), { sub: t('menu.toTitleSub') });
         if (isElectron) this.btn(t('menu.quit'), () => this.cb.onQuit(), { sub: t('menu.toTitleSub') });
         break;

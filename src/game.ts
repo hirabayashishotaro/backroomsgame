@@ -24,7 +24,7 @@ import { AudioSystem } from './systems/audio';
 import { Hallucinations } from './systems/hallucination';
 import { SkyDome } from './systems/sky';
 import { waterTime } from './systems/water';
-import { ENDING_LEVEL, ESCAPE_GOALS, EscapeProgress, type EscapeStage } from './systems/escape';
+import { ENDING_LEVEL, EscapeProgress, type EscapeStage } from './systems/escape';
 import { Crowd } from './world/crowd';
 import { missingMat } from './entities/models';
 import { Journal } from './systems/journal';
@@ -568,24 +568,9 @@ export class Game {
     }
   }
 
-  /** HUD line for escape mode: what is left to do. */
+  /** No objective text: the player is not told what the goal is (user design). */
   private updateObjective(): void {
-    if (this.mode !== 'escape') return this.hud.setObjective('');
-    const st = this.escape.status(this.journal.data.order);
-    const stage = this.escape.stage;
-    if (stage === 'collect')
-      this.hud.setObjective(
-        t('escape.collect', {
-          levels: Math.min(st.levels, ESCAPE_GOALS.levels),
-          goal: ESCAPE_GOALS.levels,
-          void: st.voidSeen ? '済' : '未',
-          kills: Math.min(st.kills, ESCAPE_GOALS.kills),
-          killGoal: ESCAPE_GOALS.kills,
-          kinds: st.kinds,
-          kindsTotal: st.kindsTotal,
-        }),
-      );
-    else this.hud.setObjective(t('escape.stage.' + stage));
+    this.hud.setObjective('');
   }
 
   /** The conditions are met: the Bug starts to appear. */
@@ -661,16 +646,17 @@ export class Game {
   }
 
   /** Drop an item into the world (e.g. a witch's staff). */
-  private spawnItemAt(id: ItemId, x: number, y: number, z: number): void {
+  private spawnItemAt(id: ItemId, x: number, y: number, z: number, announce = true): string | null {
     const S = this.level.chunkSize;
     const c = this.chunks.column(Math.floor(x / S), Math.floor(z / S), this.chunks.slabCoord(y)).map((h) => h.handle)[0];
-    if (!c) return;
+    if (!c) return null;
     const uid = 'drop' + this.dropCount++;
     const mesh = buildItemMesh(id, c.sampler(x, y + 0.3, z, 0, 1, 0));
     mesh.position.set(x - c.ox, y, z - c.oz);
     c.group.add(mesh);
     c.items.set(uid, { uid, id, mesh, x, y, z });
-    this.hud.message(t('msg.dropped', { name: ITEMS[id].name }), 3);
+    if (announce) this.hud.message(t('msg.dropped', { name: ITEMS[id].name }), 3);
+    return uid;
   }
   private dropCount = 0;
 
@@ -1184,7 +1170,7 @@ export class Game {
         this.hud.message(t('msg.full'));
         return;
       }
-      this.arsenal.gainWeapon(def.weapon!, owned);
+      if (!this.discarded.has(it.uid)) this.arsenal.gainWeapon(def.weapon!, owned);
       msg = owned ? t('msg.pickAmmo', { name: def.name, n: def.weapon === 'kunai' ? 10 : WEAPONS[def.weapon!].mag }) : t('msg.pickWeapon', { name: def.name });
       // Switch to a newly found weapon.
       if (!owned) this.inventory.select(this.inventory.slots.indexOf(it.id));
@@ -1208,6 +1194,28 @@ export class Game {
     this.audio.pickup();
     this.hud.message(msg);
   }
+
+  /** G: put the held item down at your feet (it can be picked up again). */
+  private dropHeld(): void {
+    const id = this.inventory.held;
+    if (!id) {
+      this.hud.message(t('msg.nothingHeld'));
+      return;
+    }
+    const p = this.player;
+    const x = p.x - Math.sin(p.yaw) * 0.8;
+    const z = p.z - Math.cos(p.yaw) * 0.8;
+    // At the feet if something blocks the spot in front.
+    const free = !this.boxesNear(x, z, 0.4).some((b) => b.maxY > p.y + 0.3 && b.minY < p.y + 1.6 && x > b.minX - 0.2 && x < b.maxX + 0.2 && z > b.minZ - 0.2 && z < b.maxZ + 0.2);
+    const uid = this.spawnItemAt(id, free ? x : p.x, p.y, free ? z : p.z, false);
+    if (!uid) return;
+    this.inventory.take(this.inventory.selected);
+    this.discarded.add(uid);
+    this.audio.pickup();
+    this.hud.message(t('msg.discard', { name: ITEMS[id].name }));
+  }
+  /** Items the player put down: picking a weapon back up gives no fresh ammo. */
+  private discarded = new Set<string>();
 
   /** Q: drink almond water (the held bottle, or the first one in the bar). */
   private useHeld(): void {
@@ -1758,6 +1766,8 @@ export class Game {
     this.director.reset(this.entityTable.length > 0);
     this.chunks.loadAllSync(s.x, s.z, 1, s.y);
     this.hud.hideDeath();
+    // ESC on the death screen released the mouse (and the pause menu was skipped then): show it now.
+    if (document.pointerLockElement !== this.renderer.domElement && !this.input.padConnected && !this.paused) this.pause();
   }
 
   // ---------------------------------------------------------------------------
@@ -1790,6 +1800,7 @@ export class Game {
       else this.useAnchor(tg.anchor);
     }
     if (inp.wasPressed('use')) this.useHeld();
+    if (inp.wasPressed('drop')) this.dropHeld();
   }
 
   private frame(): void {

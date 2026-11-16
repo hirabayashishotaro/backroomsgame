@@ -311,6 +311,10 @@ export function poolRoomOut(seed: number, p: PoolParams, cx: number, cz: number)
       // Splash pool under the helix
       holes.push({ x0: sx - 2.2, z0: sz - 2.2, x1: sx + 2.2, z1: sz + 2.2, depth: 1.8 });
       box(o.decor, sx - 2.2, 0.0, sz - 2.2, sx + 2.2, 0.02, sz + 2.2, p.water);
+      // Steps up out of it on the side away from the tower (it is too deep to jump out of).
+      box(o.solids, sx + 0.7, -1.8, sz - 0.7, sx + 2.2, -1.2, sz + 0.7, 'wall');
+      box(o.solids, sx + 1.2, -1.2, sz - 0.7, sx + 2.2, -0.6, sz + 0.7, 'wall');
+      box(o.solids, sx + 1.7, -0.6, sz - 0.7, sx + 2.2, 0.0, sz + 0.7, 'wall');
       o.zones.push({ kind: 'water', x0: sx - 4.5, z0: sz - 4.5, x1: sx + 4.5, z1: sz + 4.5 });
       // A long straight slide from the tower's south edge down to the floor
       const mat3 = p.slideMats[rng.int(0, p.slideMats.length - 1)];

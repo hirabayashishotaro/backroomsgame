@@ -30,6 +30,7 @@ export type Action =
   | 'slot8'
   | 'prevSlot'
   | 'nextSlot'
+  | 'drop'
   | 'journal';
 
 export const ACTIONS: Action[] = [
@@ -45,6 +46,7 @@ export const ACTIONS: Action[] = [
   'reload',
   'interact',
   'use',
+  'drop',
   'slot1',
   'slot2',
   'slot3',
@@ -69,6 +71,7 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   jump: ['Space'],
   interact: ['KeyE'],
   use: ['KeyQ'],
+  drop: ['KeyG'],
   attack: ['Mouse0'],
   aim: ['Mouse2'],
   reload: ['KeyR'],
@@ -96,6 +99,7 @@ export const DEFAULT_PAD_BINDINGS: Partial<Record<Action, number[]>> = {
   reload: [1],
   interact: [2],
   use: [3],
+  drop: [13],
   aim: [6],
   attack: [7],
   sprint: [10],

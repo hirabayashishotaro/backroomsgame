@@ -360,7 +360,12 @@ function poolOut(seed: number, cx: number, cz: number, cy: number): Out {
     else merged.push({ ...f });
   }
   o.floors = merged;
-  for (const f of o.floors) box(o.decor, f.x0, y0 - (POOL_SLAB - H), f.z0, f.x1, f.y - 0.004, f.z1, 'slab');
+  // The top 0.4 m is solid: it is the side wall of a sunken pool tile, and without
+  // it you could wade sideways under the neighbouring floor and drop a storey.
+  for (const f of o.floors) {
+    if (f.y - 0.4 > y0 - (POOL_SLAB - H)) box(o.decor, f.x0, y0 - (POOL_SLAB - H), f.z0, f.x1, f.y - 0.4, f.z1, 'slab');
+    box(o.solids, f.x0, f.y - 0.4, f.z0, f.x1, f.y - 0.004, f.z1, 'slab');
+  }
   for (const f of o.floors) if (f.y === y0) box(o.decor, f.x0, y0 + 0.16, f.z0, f.x1, y0 + 0.18, f.z1, 'pool-water');
   if (hash01(seed, 935, cx, cz, cy) < 0.2) {
     o.props.push({ uid: 'pd', kind: 'plain-door', x: 1 * T, y: y0, z: 1 * T + 0.37, rotY: 0, color: 0xdfe6e8 });

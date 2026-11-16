@@ -109,6 +109,51 @@ describe('walking the vertical worlds (no holes on the intended route)', () => {
       expect(p.grounded).toBe(true);
     }
   });
+
+  it('stacked poolrooms: wading out of a sunken pool tile sideways does not drop you a storey', () => {
+    const w = worldFor('37.2') as WorldQuery & { setY: (y: number) => void };
+    const L = resolveLevel('37.2');
+    const ctx = makeGenContext(31, L);
+    let tested = 0;
+    for (let cx = 0; cx < 4 && tested < 6; cx++) {
+      const d = L.generator(ctx, cx, 0, 0);
+      for (const f of d.floors.filter((q) => q.y < -1)) {
+        for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+          const p = new PlayerController();
+          p.x = cx * 32 + (f.x0 + f.x1) / 2;
+          p.z = (f.z0 + f.z1) / 2;
+          p.y = f.y;
+          const minY = walk(p, w, 3, yaw);
+          expect(minY, `pool at ${cx} ${f.x0},${f.z0} yaw ${yaw}`).toBeGreaterThan(f.y - 0.5);
+        }
+        tested++;
+      }
+    }
+    expect(tested).toBeGreaterThan(0);
+  });
+
+  it('pool rooms: you can climb out of the splash pool under the water slide', () => {
+    const L = resolveLevel('37');
+    const ctx = makeGenContext(31, L);
+    const w = worldFor('37');
+    let tested = 0;
+    for (let cx = -8; cx < 8 && tested < 3; cx++)
+      for (let cz = -8; cz < 8 && tested < 3; cz++) {
+        const d = L.generator(ctx, cx, cz);
+        const z = d.zones.find((q) => q.kind === 'piece' && (q as { name: string }).name === 'water-slide');
+        if (!z) continue;
+        // The splash pool is centred at (20, 8) in the room.
+        const p = new PlayerController();
+        p.x = cx * 32 + 20;
+        p.z = cz * 32 + 8;
+        p.y = -1.8;
+        p.yaw = -Math.PI / 2; // toward +x, where the steps are
+        for (let i = 0; i < 250; i++) p.step(0.02, go({ jump: i % 25 === 0 }), w);
+        expect(p.y, `room ${cx},${cz}`).toBeGreaterThan(-0.05);
+        tested++;
+      }
+    expect(tested).toBeGreaterThan(0);
+  });
 });
 
 describe('smooth terrain', () => {

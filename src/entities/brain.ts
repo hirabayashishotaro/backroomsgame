@@ -64,7 +64,16 @@ export interface Decision {
   aim?: number;
   /** Peeker: fire the sniper round now (along the locked aim). */
   snipe?: boolean;
+  /** Namahage: the blade comes down now (an arc in front of it). */
+  slash?: boolean;
+  /** Fanman: blow a slow ball of wind at the player now. */
+  blow?: boolean;
 }
+
+/** Namahage: reach, wind-up (blade raised), recovery after the swing, the arc it covers (rad from forward). */
+export const NAMAHAGE = { reach: 2.6, windup: 0.55, recover: 1.1, arc: 1.2 };
+/** Fanman: shot cooldown, ball speed (slow), knockback (m/s sideways + up), preferred range. */
+export const FANMAN = { cooldown: 2.6, speed: 7, knock: 17, lift: 4.5, near: 8, far: 20, maxRange: 32 };
 
 /** Bomber: throw cooldown, fuse after landing, blast radius, knockback, preferred range. */
 export const BOMBER = { cooldown: 3.2, fuse: 1.3, radius: 4.5, knock: 13, near: 9, far: 22, maxRange: 30 };
@@ -259,6 +268,35 @@ export function think(b: BrainState, p: Perception, dt: number): Decision {
       if (b.mode !== 'chase') set(b, 'chase');
       return { speed: p.dist < 25 ? def.run : def.walk, gone: false };
     }
+    case 'namahage': {
+      // Stamps toward you; in reach it raises the blade, then brings it down.
+      if (b.mode === 'attack') {
+        if (b.t >= NAMAHAGE.windup) {
+          set(b, 'chase');
+          b.watch = NAMAHAGE.recover;
+          return { speed: 0, gone: false, slash: true };
+        }
+        return { speed: 0.6, gone: false };
+      }
+      b.watch = Math.max(0, b.watch - dt);
+      if (b.watch > 0) return { speed: 0.8, gone: false };
+      if (p.dist < NAMAHAGE.reach) {
+        set(b, 'attack');
+        return { speed: 0, gone: false };
+      }
+      if (b.mode !== 'chase') set(b, 'chase');
+      return { speed: p.dist < 25 ? def.run : def.walk, gone: false };
+    }
+    case 'fanman': {
+      // Keeps its distance and blows slow balls of wind.
+      const d = keepRange(b, p, dt, FANMAN.near, FANMAN.far, def.walk, def.run);
+      b.cd -= dt;
+      if (p.los && p.dist < FANMAN.maxRange && b.cd <= 0 && b.alpha > 0.6) {
+        b.cd = FANMAN.cooldown;
+        d.blow = true;
+      }
+      return d;
+    }
     case 'bug': {
       // Harmless: drifts around at a distance, sidestepping; never attacks, never leaves.
       return keepRange(b, p, dt, 6, 16, def.walk, def.run);
@@ -300,7 +338,7 @@ export function hurt(b: BrainState, dmg: number): boolean {
   if ((b.kind === 'hound' || b.kind === 'skinstealer') && dmg >= 50) {
     b.mode = 'stagger';
     b.t = 0;
-  } else if (b.kind !== 'bloater' && b.kind !== 'giant' && b.kind !== 'gunman' && b.kind !== 'witch' && b.kind !== 'bomber' && b.kind !== 'peeker' && b.kind !== 'bug' && b.mode !== 'stagger') {
+  } else if (b.kind !== 'bloater' && b.kind !== 'giant' && b.kind !== 'gunman' && b.kind !== 'witch' && b.kind !== 'bomber' && b.kind !== 'peeker' && b.kind !== 'fanman' && b.kind !== 'namahage' && b.kind !== 'bug' && b.mode !== 'stagger') {
     // Shooting it wakes it up.
     if (b.mode !== 'chase') {
       b.mode = 'chase';

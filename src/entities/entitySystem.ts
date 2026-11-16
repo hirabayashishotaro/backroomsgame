@@ -7,8 +7,8 @@ import * as THREE from 'three';
 import { PlayerController, type WorldQuery } from '../player/controller';
 import { groundHeight, rayBox, type WBox } from '../world/collision';
 import { ENTITIES, type EntityKind } from './entityDefs';
-import { BLAST_KNOCK, BLOATER, BOMBER, GIANT, PEEKER, WITCH, hurt, newBrain, think, type BrainState } from './brain';
-import { animateEntity, buildBombMesh, buildEntityMesh, buildRocketMesh, disposeEntityMesh, setEntityAlpha } from './models';
+import { BLAST_KNOCK, BLOATER, BOMBER, FANMAN, GIANT, NAMAHAGE, PEEKER, WITCH, hurt, newBrain, think, type BrainState } from './brain';
+import { animateEntity, buildBombMesh, buildEntityMesh, buildWindMesh, buildRocketMesh, disposeEntityMesh, setEntityAlpha } from './models';
 import { stepProjectile } from '../weapons/weaponLogic';
 import { falloffFactor, type WeaponDef } from '../weapons/weaponDefs';
 import { buildWeaponModel } from '../weapons/weaponModels';
@@ -86,6 +86,17 @@ interface Strike {
   def: WeaponDef | null;
   ring: THREE.Mesh;
   bolt: THREE.Mesh | null;
+}
+
+/** Fanman's ball of wind: slow, straight, throws the player aside. */
+interface Wind {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vz: number;
+  life: number;
+  mesh: THREE.Group;
 }
 
 /** A thrown bomb: flies in an arc, lands, blinks, then explodes. */
@@ -199,6 +210,14 @@ const HITBOXES: Record<EntityKind, HitBox[]> = {
     { f: 0.15, y0: 0.15, y1: 0.95, r: 0.75, d: 0.65, head: false },
     { f: -0.75, y0: 0.3, y1: 0.8, r: 0.3, d: 0.25, head: true },
   ],
+  namahage: [
+    { f: 0, y0: 0, y1: 1.55, r: 0.42, d: 0.35, head: false }, // body in its straw cape
+    { f: -0.05, y0: 1.55, y1: 2.05, r: 0.22, d: 0.2, head: true }, // the mask
+  ],
+  fanman: [
+    { f: 0, y0: 0, y1: 1.45, r: 0.3, d: 0.2, head: false },
+    { f: 0, y0: 1.45, y1: 2.05, r: 0.32, d: 0.15, head: true }, // the fan
+  ],
   bug: HUMAN(1.8),
 };
 
@@ -218,6 +237,7 @@ export class EntitySystem {
   readonly shots: EnemyShot[] = [];
   readonly strikes: Strike[] = [];
   readonly bombs: Bomb[] = [];
+  readonly winds: Wind[] = [];
   /** Developer combat lab: entities stand still and never attack. */
   aiStopped = false;
   private sparks: Spark[] = [];
@@ -252,6 +272,8 @@ export class EntitySystem {
     this.strikes.length = 0;
     for (const bm of this.bombs) bm.mesh.removeFromParent();
     this.bombs.length = 0;
+    for (const w of this.winds) disposeEntityMesh(w.mesh);
+    this.winds.length = 0;
     if (this.aimRing) this.aimRing.visible = false;
     for (const mesh of this.lasers.values()) {
       (mesh.material as THREE.Material).dispose();
@@ -370,6 +392,9 @@ export class EntitySystem {
       if (d.cast) this.cast(e, dist);
       if (d.toss) this.toss(e, dist);
       if (e.kind === 'peeker') this.aimLaser(e, d.aim, d.snipe === true, dist);
+      if (d.slash) this.slash(e, dist);
+      if (d.blow) this.blow(e, dist);
+      if (e.kind === 'namahage' && e.brain.mode === 'attack' && prevMode !== 'attack') this.host.audio.entityVoice('roar', this.panTo(b.x, b.z), dist);
       if (e.brain.mode !== prevMode) {
         if (e.kind === 'bloater' && e.brain.mode === 'fuse') this.host.audio.entityVoice('hiss', this.panTo(b.x, b.z), dist);
         if (e.kind === 'giant' && e.brain.mode === 'attack') this.host.audio.entityVoice('groan', this.panTo(b.x, b.z), dist);
@@ -454,7 +479,7 @@ export class EntitySystem {
       }
       // Contact attack, then it leaves (SPEC: escapable encounters).
       const vertical = Math.abs(b.y - p.y) < 1.6;
-      if (!this.aiStopped && e.kind !== 'bloater' && e.kind !== 'giant' && e.kind !== 'gunman' && e.kind !== 'witch' && e.kind !== 'bomber' && e.kind !== 'peeker' && e.kind !== 'bug' && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
+      if (!this.aiStopped && e.kind !== 'bloater' && e.kind !== 'giant' && e.kind !== 'gunman' && e.kind !== 'witch' && e.kind !== 'bomber' && e.kind !== 'peeker' && e.kind !== 'fanman' && e.kind !== 'namahage' && e.kind !== 'bug' && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
         this.host.onPlayerHit(e.kind, ENTITIES[e.kind].damage);
         e.brain.mode = 'flee';
         e.brain.t = 0;
@@ -463,14 +488,14 @@ export class EntitySystem {
       e.voiceT -= dt;
       if (e.voiceT <= 0 && e.brain.alpha > 0.3) {
         const pan = this.panTo(b.x, b.z);
-        const kind = e.kind === 'spider' ? 'skitter' : e.kind === 'bug' ? 'glitch' : e.kind === 'hound' ? 'growl' : e.kind === 'smiler' ? 'giggle' : e.kind === 'skinstealer' ? 'help' : e.kind === 'duller' ? 'hum' : e.kind === 'giant' ? 'groan' : 'step';
+        const kind = e.kind === 'fanman' ? 'whirr' : e.kind === 'namahage' ? 'stamp' : e.kind === 'spider' ? 'skitter' : e.kind === 'bug' ? 'glitch' : e.kind === 'hound' ? 'growl' : e.kind === 'smiler' ? 'giggle' : e.kind === 'skinstealer' ? 'help' : e.kind === 'duller' ? 'hum' : e.kind === 'giant' ? 'groan' : 'step';
         if (e.kind !== 'bloater') this.host.audio.entityVoice(kind, pan, dist);
         e.voiceT = e.brain.mode === 'chase' ? 1.6 + Math.random() : 4 + Math.random() * 5;
       }
       // Render
       const [rx, rz] = this.host.toRender(b.x, b.z);
       e.mesh.position.set(rx, b.y, rz);
-      e.mesh.rotation.y = e.kind === 'gunman' || e.kind === 'witch' || e.kind === 'bomber' || e.kind === 'peeker' ? face : yaw;
+      e.mesh.rotation.y = e.kind === 'gunman' || e.kind === 'witch' || e.kind === 'bomber' || e.kind === 'peeker' || e.kind === 'fanman' || e.kind === 'namahage' ? face : yaw;
       e.flash = Math.max(0, e.flash - dt * 5);
       if (e.kind === 'bloater') {
         // Swells and flickers while the fuse burns.
@@ -484,6 +509,19 @@ export class EntitySystem {
         if (Math.random() < 0.06) e.mesh.position.z += (Math.random() - 0.5) * 0.8;
         e.mesh.scale.set(1, Math.random() < 0.05 ? 0.6 + Math.random() * 0.8 : 1, 1);
         if (Math.random() < 0.04) e.mesh.position.x += (Math.random() - 0.5) * 0.6;
+      }
+      if (e.kind === 'namahage') {
+        // Blade raised during the wind-up, swung down after.
+        const arm = e.mesh.getObjectByName('armR');
+        if (arm) {
+          const up = e.brain.mode === 'attack' ? Math.min(1, e.brain.t / NAMAHAGE.windup) : 0;
+          const after = e.brain.mode !== 'attack' && e.brain.watch > NAMAHAGE.recover - 0.25 ? 1 : 0;
+          arm.rotation.x = after ? 1.1 : 0.3 + 2.4 * up; // + = forward and up (overhead at ~2.7)
+        }
+      }
+      if (e.kind === 'fanman') {
+        const blades = e.mesh.getObjectByName('blades');
+        if (blades) blades.rotation.z += dt * (e.brain.cd > FANMAN.cooldown - 0.4 ? 40 : 14);
       }
       if (e.kind === 'giant') e.mesh.rotation.x = e.brain.mode === 'attack' ? -0.12 * Math.min(1, e.brain.t / GIANT.windup) : 0;
       setEntityAlpha(e.mesh, e.brain.alpha);
@@ -500,6 +538,7 @@ export class EntitySystem {
     this.updateShots(dt);
     this.updateStrikes(dt);
     this.updateBombs(dt);
+    this.updateWinds(dt);
     this.updateBeams(dt);
     this.updateFx(dt);
   }
@@ -932,6 +971,74 @@ export class EntitySystem {
       const [rx, rz] = this.host.toRender(s.x, s.z);
       s.mesh.position.set(rx, s.y, rz);
       s.mesh.lookAt(rx + s.vx, s.y + s.vy, rz + s.vz);
+    }
+  }
+
+  /** Namahage: the blade comes down in an arc in front of it. */
+  private slash(e: Entity, dist: number): void {
+    const b = e.body;
+    const p = this.host.player;
+    const fx = -Math.sin(b.yaw);
+    const fz = -Math.cos(b.yaw);
+    this.spark(b.x + fx * 1.4, b.y + 0.9, b.z + fz * 1.4, 0xe8e8f0, 14, 0.18);
+    this.host.audio.entityVoice('swish', this.panTo(b.x, b.z), dist);
+    const dx = p.x - b.x;
+    const dz = p.z - b.z;
+    const ang = Math.acos(Math.max(-1, Math.min(1, (dx * fx + dz * fz) / (Math.hypot(dx, dz) || 1))));
+    if (dist < NAMAHAGE.reach + 0.5 && ang < NAMAHAGE.arc && Math.abs(p.y - b.y) < 1.8) {
+      this.host.onRangedHit('namahage', ENTITIES.namahage.damage);
+      p.knock(dx || 0.01, dz, 5, 2);
+    }
+  }
+
+  /** Fanman: a slow ball of swirling air toward the player. */
+  private blow(e: Entity, dist: number): void {
+    const b = e.body;
+    const p = this.host.player;
+    const fx = -Math.sin(b.yaw);
+    const fz = -Math.cos(b.yaw);
+    const x = b.x + fx * 0.6;
+    const z = b.z + fz * 0.6;
+    const y = b.y + 1.5;
+    const dx = p.x - x;
+    const dz = p.z - z;
+    const l = Math.hypot(dx, dz) || 1;
+    const mesh = buildWindMesh();
+    this.host.fx.add(mesh);
+    this.winds.push({ x, y, z, vx: (dx / l) * FANMAN.speed, vz: (dz / l) * FANMAN.speed, life: FANMAN.maxRange / FANMAN.speed + 1, mesh });
+    this.host.audio.entityVoice('whoosh', this.panTo(b.x, b.z), dist);
+  }
+
+  private updateWinds(dt: number): void {
+    const p = this.host.player;
+    for (let i = this.winds.length - 1; i >= 0; i--) {
+      const w = this.winds[i];
+      w.life -= dt;
+      // The ball drifts down toward chest height so it can be jumped over only barely.
+      const ty = p.y + 1.0;
+      w.y += Math.max(-1, Math.min(1, ty - w.y)) * dt * 0.8;
+      const sp = Math.hypot(w.vx, w.vz);
+      const step = sp * dt;
+      const wall = this.host.rayWorld(w.x, w.y, w.z, w.vx / sp, 0, w.vz / sp, step + 0.4);
+      const hitPlayer = Math.hypot(p.x - w.x, p.z - w.z) < 0.85 && w.y > p.y - 0.3 && w.y < p.y + 2.1;
+      if (hitPlayer) {
+        this.host.onRangedHit('fanman', ENTITIES.fanman.damage);
+        // Thrown far aside, along the way the wind was going.
+        p.knock(w.vx, w.vz, FANMAN.knock, FANMAN.lift);
+        this.spark(w.x, w.y, w.z, 0xd8f4ff, 22, 0.35);
+        this.host.audio.entityVoice('whoosh', this.panTo(w.x, w.z), 0);
+      } else if (wall !== null) this.spark(w.x, w.y, w.z, 0xd8f4ff, 10, 0.3);
+      if (hitPlayer || wall !== null || w.life <= 0) {
+        disposeEntityMesh(w.mesh);
+        this.winds.splice(i, 1);
+        continue;
+      }
+      w.x += w.vx * dt;
+      w.z += w.vz * dt;
+      const [rx, rz] = this.host.toRender(w.x, w.z);
+      w.mesh.position.set(rx, w.y, rz);
+      w.mesh.rotation.y += dt * 9;
+      w.mesh.rotation.x += dt * 5;
     }
   }
 

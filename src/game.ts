@@ -1483,7 +1483,7 @@ export class Game {
       // Always a warning first (SPEC §7.1): a sound, flickering lights, the hum faltering.
       this.flickerT = 3;
       this.audio.humDip(2.5);
-      const voice = ev.kind === 'hound' ? 'growl' : ev.kind === 'smiler' ? 'giggle' : ev.kind === 'skinstealer' ? 'help' : ev.kind === 'giant' ? 'stomp' : ev.kind === 'gunman' ? 'shot' : ev.kind === 'witch' ? 'zap' : ev.kind === 'bomber' ? 'hiss' : ev.kind === 'peeker' ? 'aim' : ev.kind === 'spider' ? 'skitter' : 'hum';
+      const voice = ev.kind === 'hound' ? 'growl' : ev.kind === 'smiler' ? 'giggle' : ev.kind === 'skinstealer' ? 'help' : ev.kind === 'giant' ? 'stomp' : ev.kind === 'gunman' ? 'shot' : ev.kind === 'witch' ? 'zap' : ev.kind === 'bomber' ? 'hiss' : ev.kind === 'peeker' ? 'aim' : ev.kind === 'spider' ? 'skitter' : ev.kind === 'namahage' ? 'roar' : ev.kind === 'fanman' ? 'whirr' : 'hum';
       this.audio.entityVoice(voice, (this.rng.float() - 0.5) * 2, 40);
       this.hud.subtitle(t('omen.' + ev.kind), 3.5);
     } else if (ev?.type === 'spawn') {

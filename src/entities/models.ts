@@ -203,6 +203,74 @@ export function buildEntityMesh(kind: EntityKind): THREE.Group {
       part(g, new THREE.BoxGeometry(0.06, 0.18, 0.06), body, 0.09, 0.42, -0.82, 'fang');
       break;
     }
+    case 'namahage': {
+      // A tall figure in a shaggy straw cape, a red horned mask with bared
+      // teeth and wild hair, a big blade in its right hand.
+      humanoid(g, m(0x3a2a1c), 1.95, 1.15);
+      const straw = m(0xb09a5a);
+      part(g, new THREE.ConeGeometry(0.62, 1.25, 12), straw, 0, 0.95, 0, 'cape');
+      part(g, new THREE.CylinderGeometry(0.42, 0.5, 0.35, 12), straw, 0, 1.52, 0, 'collar');
+      const head = g.getObjectByName('head')!;
+      g.remove(head);
+      const red = m(0xc0281c);
+      part(g, new THREE.BoxGeometry(0.34, 0.4, 0.26), red, 0, 1.82, -0.02, 'mask');
+      part(g, new THREE.BoxGeometry(0.42, 0.22, 0.2), m(0x2a2420), 0, 2.02, 0.06, 'hair');
+      const horn = m(0xe8dcc0);
+      for (const sx of [-1, 1]) {
+        const h = part(g, new THREE.ConeGeometry(0.05, 0.22, 8), horn, sx * 0.12, 2.1, -0.04, 'horn');
+        h.rotation.z = -sx * 0.35;
+      }
+      const gold = m(0xf2c040);
+      part(g, new THREE.SphereGeometry(0.04, 8, 6), gold, -0.08, 1.88, -0.15);
+      part(g, new THREE.SphereGeometry(0.04, 8, 6), gold, 0.08, 1.88, -0.15);
+      part(g, new THREE.BoxGeometry(0.22, 0.05, 0.02), m(0xf0f0e8), 0, 1.7, -0.16, 'teeth');
+      // The blade: held in the right hand (lower end of the arm), pointing forward/up when raised.
+      const arm = g.getObjectByName('armR') as THREE.Mesh;
+      arm.userData.aim = true;
+      // Pivot at the shoulder so the swing looks right.
+      const half = 0.35 * (1.95 / 1.8);
+      arm.geometry.translate(0, -half, 0);
+      arm.position.y += half;
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.25, 0.05), m(0x3a2a18));
+      handle.position.set(0, -2 * half - 0.05, 0);
+      arm.add(handle);
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.85, 0.18), m(0xc8ccd4));
+      blade.position.set(0, -2 * half - 0.6, -0.04);
+      arm.add(blade);
+      break;
+    }
+    case 'fanman': {
+      // An office worker whose head is an electric fan: a round cage, spinning blades.
+      humanoid(g, m(0x5a6a7a), 1.8);
+      const head = g.getObjectByName('head')!;
+      g.remove(head);
+      const metal = m(0xd8dcd8);
+      part(g, new THREE.CylinderGeometry(0.04, 0.05, 0.22, 8), metal, 0, 1.55, 0, 'neck');
+      part(g, new THREE.BoxGeometry(0.16, 0.16, 0.18), m(0xe8e8e2), 0, 1.72, 0.12, 'motor');
+      const cage = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.02, 6, 24), metal);
+      cage.position.set(0, 1.75, -0.04);
+      cage.name = 'cage';
+      g.add(cage);
+      for (let k = 0; k < 4; k++) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.012, 0.012), metal);
+        bar.position.copy(cage.position);
+        bar.rotation.z = (k * Math.PI) / 4;
+        g.add(bar);
+      }
+      const blades = new THREE.Group();
+      blades.name = 'blades';
+      blades.position.set(0, 1.75, -0.02);
+      const bl = m(0x8ac8e8, { opacity: 0.85 });
+      for (let k = 0; k < 3; k++) {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.26, 0.01), bl);
+        b.position.set(Math.sin((k * 2 * Math.PI) / 3) * 0.14, Math.cos((k * 2 * Math.PI) / 3) * 0.14, 0);
+        b.rotation.z = (-k * 2 * Math.PI) / 3;
+        blades.add(b);
+      }
+      blades.add(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 10).rotateX(Math.PI / 2), m(0x4a6a8a)));
+      g.add(blades);
+      break;
+    }
     case 'bug': {
       // The "missing texture" look: a black and magenta checkerboard figure.
       humanoid(g, missingMat(), 1.8);
@@ -267,6 +335,19 @@ export function buildBombMesh(): THREE.Group {
   light.position.y = 0.2;
   light.name = 'light';
   g.add(light);
+  return g;
+}
+
+/** Fanman's ball of wind: pale swirling rings. */
+export function buildWindMesh(): THREE.Group {
+  const g = new THREE.Group();
+  for (let k = 0; k < 3; k++) {
+    const r = new THREE.Mesh(new THREE.TorusGeometry(0.32 - k * 0.07, 0.035, 6, 18), new THREE.MeshBasicMaterial({ color: 0xe0f4ff, transparent: true, opacity: 0.6 - k * 0.12, depthWrite: false }));
+    r.rotation.set(k * 1.1, k * 0.7, 0);
+    g.add(r);
+  }
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false }));
+  g.add(core);
   return g;
 }
 

@@ -1,5 +1,5 @@
 /** Entities (SPEC §7). Behaviour is original; Wiki descriptions are not copied. */
-export type EntityKind = 'smiler' | 'hound' | 'duller' | 'faceling' | 'skinstealer' | 'bloater' | 'giant' | 'gunman' | 'witch' | 'bomber' | 'peeker' | 'spider' | 'bug';
+export type EntityKind = 'smiler' | 'hound' | 'duller' | 'faceling' | 'skinstealer' | 'bloater' | 'giant' | 'gunman' | 'witch' | 'bomber' | 'peeker' | 'spider' | 'namahage' | 'fanman' | 'bug';
 
 export interface EntityDef {
   kind: EntityKind;
@@ -145,6 +145,26 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
     life: 90,
     hint: '人より大きな蜘蛛。床を這う乾いた音とともに、ありえない速さで右へ左へ跳ねながら迫る。体はもろい。',
   },
+  namahage: {
+    kind: 'namahage',
+    name: 'なまはげ',
+    hp: 160 * HP_SCALE,
+    damage: 30,
+    walk: 2.4,
+    run: 4.6,
+    life: 130,
+    hint: '赤い鬼の面に藁の蓑、大きな刃物を持った人影。足を踏み鳴らして迫り、間合いに入ると刃を振り上げる。振り上げたら下がること。',
+  },
+  fanman: {
+    kind: 'fanman',
+    name: 'ファンマン',
+    hp: 90 * HP_SCALE,
+    damage: 10,
+    walk: 2.6,
+    run: 4.0,
+    life: 120,
+    hint: '頭が扇風機になっている人影。羽根の唸りとともに、ゆっくり飛ぶ風の玉を撃ってくる。当たると大きく吹き飛ばされる。崖の近くでは特に危ない。',
+  },
   bug: {
     kind: 'bug',
     name: 'バグ',
@@ -158,4 +178,4 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
 };
 
 /** Every ordinary kind (the escape condition counts these; the Bug is special). */
-export const ALL_ENTITIES: EntityKind[] = ['smiler', 'hound', 'duller', 'faceling', 'skinstealer', 'bloater', 'giant', 'gunman', 'witch', 'bomber', 'peeker', 'spider'];
+export const ALL_ENTITIES: EntityKind[] = ['smiler', 'hound', 'duller', 'faceling', 'skinstealer', 'bloater', 'giant', 'gunman', 'witch', 'bomber', 'peeker', 'spider', 'namahage', 'fanman'];

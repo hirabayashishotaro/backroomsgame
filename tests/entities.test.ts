@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BLOATER, BOMBER, GUNMAN, PEEKER, WITCH, hurt, newBrain, think, type Perception } from '../src/entities/brain';
+import { BLOATER, BOMBER, FANMAN, GUNMAN, NAMAHAGE, PEEKER, WITCH, hurt, newBrain, think, type Perception } from '../src/entities/brain';
 import { ENTITIES } from '../src/entities/entityDefs';
 import { Director, entityTableFor } from '../src/entities/director';
 
@@ -143,6 +143,39 @@ describe('entity behaviour', () => {
     expect(ENTITIES.spider.hp).toBeLessThan(ENTITIES.bloater.hp);
     const sp = newBrain('spider');
     expect(run(sp, P({ dist: 15 }), 1).speed).toBe(ENTITIES.spider.run);
+  });
+
+  it('namahage raises its blade in reach, swings after the wind-up, then recovers', () => {
+    const b = newBrain('namahage');
+    expect(think(b, P({ dist: 20 }), 0.05).speed).toBe(ENTITIES.namahage.run);
+    let slashes = 0;
+    let firstAt = -1;
+    for (let t = 0; t < 6; t += 0.05) {
+      const d = think(b, P({ dist: 2 }), 0.05);
+      if (d.slash) {
+        slashes++;
+        if (firstAt < 0) firstAt = t;
+      }
+    }
+    expect(firstAt).toBeGreaterThanOrEqual(NAMAHAGE.windup - 0.1);
+    expect(slashes).toBeGreaterThanOrEqual(2);
+    expect(slashes).toBeLessThanOrEqual(Math.ceil(6 / (NAMAHAGE.windup + NAMAHAGE.recover)) + 1);
+    // Getting shot does not cancel a raised blade.
+    const c = newBrain('namahage');
+    think(c, P({ dist: 2 }), 0.05);
+    expect(c.mode).toBe('attack');
+    hurt(c, 10);
+    expect(c.mode).toBe('attack');
+  });
+
+  it('fanman keeps its distance and blows slow wind on a cooldown', () => {
+    const b = newBrain('fanman');
+    let blows = 0;
+    for (let t = 0; t < 12; t += 0.05) if (think(b, P({ dist: 14 }), 0.05).blow) blows++;
+    expect(blows).toBeGreaterThanOrEqual(3);
+    expect(blows).toBeLessThanOrEqual(Math.ceil(12 / FANMAN.cooldown) + 1);
+    expect(FANMAN.speed).toBeLessThan(10); // slow enough to sidestep
+    expect(think(newBrain('fanman'), P({ dist: 4 }), 0.05).speed).toBeLessThan(0);
   });
 
   it('a stunned entity cannot move or act for the stun time', () => {

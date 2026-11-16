@@ -496,7 +496,7 @@ export class AudioSystem {
   }
 
   /** Positional entity voice: growl, giggle, whisper "help", hum. */
-  entityVoice(kind: 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan' | 'shot' | 'zap' | 'thunder' | 'glitch' | 'aim' | 'snipe' | 'skitter', pan: number, dist: number): void {
+  entityVoice(kind: 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan' | 'shot' | 'zap' | 'thunder' | 'glitch' | 'aim' | 'snipe' | 'skitter' | 'roar' | 'swish' | 'stamp' | 'whirr' | 'whoosh', pan: number, dist: number): void {
     const ctx = this.ctx;
     if (!ctx) return;
     const t = ctx.currentTime;
@@ -572,6 +572,36 @@ export class AudioSystem {
         this.noise(t, 0.08, 'highpass', 2500, 0.7, p, this.env(t, 0.9 * vv, 0.001, 0.08));
         this.noise(t, 1.4, 'lowpass', 700, 0.7, p, this.env(t, 0.7 * vv, 0.004, 1.3));
         this.tone(t, 'sine', 110, 35, 0.6, this.env(t, 0.6 * vv, 0.002, 0.55), p);
+        break;
+      }
+      case 'roar': {
+        // A low, growling shout as the blade goes up.
+        const vv = Math.min(1, 20 / (dist + 4));
+        this.tone(t, 'sawtooth', 120, 85, 0.7, this.env(t, 0.22 * vv, 0.05, 0.5), p);
+        this.noise(t, 0.7, 'bandpass', 500, 1.5, p, this.env(t, 0.25 * vv, 0.05, 0.5));
+        break;
+      }
+      case 'swish': {
+        const vv = Math.min(1, 15 / (dist + 3));
+        this.noise(t, 0.3, 'bandpass', 1800, 2, p, this.env(t, 0.5 * vv, 0.08, 0.2));
+        break;
+      }
+      case 'stamp': {
+        // Heavy straw-booted stamping.
+        const vv = Math.min(1, 15 / (dist + 3));
+        for (let i = 0; i < 2; i++) this.tone(t + i * 0.22, 'sine', 90, 45, 0.15, this.env(t + i * 0.22, 0.4 * vv, 0.003, 0.14), p);
+        break;
+      }
+      case 'whirr': {
+        // An electric fan's hum.
+        const vv = Math.min(1, 12 / (dist + 3));
+        this.tone(t, 'triangle', 100, 100, 1.2, this.env(t, 0.06 * vv, 0.2, 0.6), p);
+        this.noise(t, 1.2, 'bandpass', 900, 1, p, this.env(t, 0.08 * vv, 0.2, 0.6));
+        break;
+      }
+      case 'whoosh': {
+        const vv = Math.min(1, 18 / (dist + 3));
+        this.noise(t, 0.9, 'lowpass', 1200, 0.6, p, this.env(t, 0.5 * vv, 0.15, 0.6));
         break;
       }
       case 'skitter': {

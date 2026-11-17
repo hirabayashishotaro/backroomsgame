@@ -7,13 +7,13 @@ import * as THREE from 'three';
 import { PlayerController, type WorldQuery } from '../player/controller';
 import { groundHeight, rayBox, type WBox } from '../world/collision';
 import { ENTITIES, type EntityKind } from './entityDefs';
-import type { ChimeraGenome } from './chimera';
+import type { ChimeraGenome, ChimeraSound } from './chimera';
 import { BLAST_KNOCK, BLOATER, BOMBER, BOULDER, FANMAN, GIANT, GUST, NAMAHAGE, PEEKER, WITCH, inSlash, chimeraReach, hurt, newBrain, think, type BrainState } from './brain';
 import { animateEntity, buildBombMesh, buildBoulderMesh, buildChimeraMesh, buildEntityMesh, buildFxProjectile, buildWindMesh, buildRocketMesh, disposeEntityMesh, setEntityAlpha } from './models';
 import { stepProjectile } from '../weapons/weaponLogic';
 import { falloffFactor, type WeaponDef } from '../weapons/weaponDefs';
 import { buildWeaponModel } from '../weapons/weaponModels';
-import type { AudioSystem } from '../systems/audio';
+import type { AudioSystem, EntityVoiceKind } from '../systems/audio';
 
 export interface Host {
   fx: THREE.Object3D;
@@ -89,6 +89,7 @@ interface EnemyShot {
 interface Strike {
   /** Colours of the ring and the bolt (a random entity's own; default: the witch's pale blue). */
   colors?: [number, number];
+  snd?: ChimeraSound;
   x: number;
   y: number;
   z: number;
@@ -118,6 +119,7 @@ interface Wind {
   damage?: number;
   /** Spark colour when it bursts (a random entity's own). */
   color?: number;
+  snd?: ChimeraSound;
 }
 
 /** The giant's boulder: flies in an arc to a marked spot and crushes what is there. */
@@ -136,6 +138,7 @@ interface Boulder {
   mesh: THREE.Group;
   ring: THREE.Group;
   colors?: [number, number];
+  snd?: ChimeraSound;
 }
 
 /** A thrown bomb: flies in an arc, lands, blinks, then explodes. */
@@ -153,9 +156,15 @@ interface Bomb {
   damage: number;
   /** Blink colours and explosion colours (a random entity's own). */
   colors?: [number, number];
+  snd?: ChimeraSound;
 }
 
 const BOMB_GRAVITY = 14;
+
+/** Which sounds are a warning cue, an attack, an impact (random entities swap them for their own). */
+const SOUND_CUE = new Set<EntityVoiceKind>(['aim', 'roar', 'hiss', 'zap', 'groan']);
+const SOUND_FIRE = new Set<EntityVoiceKind>(['shot', 'snipe', 'swish', 'whoosh']);
+const SOUND_IMPACT = new Set<EntityVoiceKind>(['thunder', 'boom', 'stomp']);
 
 /** Max upward speed from your own rocket: v^2 / 2g = 15^2 / 32 = about 7 m of height. */
 export const ROCKET_JUMP_VY = 15;
@@ -449,14 +458,14 @@ export class EntitySystem {
       if (d.hurl) this.hurl(e, dist);
       if (d.gust) this.gust(e, dist);
       if ((e.kind === 'namahage' || e.genome?.attack === 'slash') && e.brain.mode === 'attack' && prevMode !== 'attack') {
-        this.host.audio.entityVoice('roar', this.panTo(b.x, b.z), dist);
+        this.say(e.genome?.sound, 'roar', this.panTo(b.x, b.z), dist);
         e.slashYaw = Math.atan2(-(p.x - b.x), -(p.z - b.z));
         this.slashWarning(e);
       }
       if (e.brain.mode !== prevMode) {
-        if ((e.kind === 'bloater' || e.genome) && e.brain.mode === 'fuse') this.host.audio.entityVoice('hiss', this.panTo(b.x, b.z), dist);
-        if (e.genome?.attack === 'stomp' && e.brain.mode === 'attack') this.host.audio.entityVoice('groan', this.panTo(b.x, b.z), dist);
-        if (e.kind === 'giant' && e.brain.mode === 'attack') this.host.audio.entityVoice('groan', this.panTo(b.x, b.z), dist);
+        if ((e.kind === 'bloater' || e.genome) && e.brain.mode === 'fuse') this.say(e.genome?.sound, 'hiss', this.panTo(b.x, b.z), dist);
+        if (e.genome?.attack === 'stomp' && e.brain.mode === 'attack') this.say(e.genome?.sound, 'groan', this.panTo(b.x, b.z), dist);
+        if (e.kind === 'giant' && e.brain.mode === 'attack') this.say(e.genome?.sound, 'groan', this.panTo(b.x, b.z), dist);
       }
       if (d.gone || dist > 110) {
         disposeEntityMesh(e.mesh);
@@ -548,7 +557,7 @@ export class EntitySystem {
         e.phase += moved * (e.kind === 'giant' ? 1.1 : 3);
         if (e.kind === 'giant' && Math.floor(e.phase / Math.PI) !== e.lastStep) {
           e.lastStep = Math.floor(e.phase / Math.PI);
-          this.host.audio.entityVoice('stomp', this.panTo(b.x, b.z), dist);
+          this.say(e.genome?.sound, 'stomp', this.panTo(b.x, b.z), dist);
         }
       } else b.step(dt, { forward: 0, strafe: 0, sprint: false, crouch: false, jump: false }, this.host.world);
       if (b.y < p.y - 30) {
@@ -571,7 +580,7 @@ export class EntitySystem {
       if (e.voiceT <= 0 && e.brain.alpha > 0.3) {
         const pan = this.panTo(b.x, b.z);
         const kind = e.genome ? e.genome.voice : e.kind === 'fanman' ? 'whirr' : e.kind === 'namahage' ? 'stamp' : e.kind === 'spider' ? 'skitter' : e.kind === 'bug' ? 'glitch' : e.kind === 'hound' ? 'growl' : e.kind === 'smiler' ? 'giggle' : e.kind === 'skinstealer' ? 'help' : e.kind === 'duller' ? 'hum' : e.kind === 'giant' ? 'groan' : 'step';
-        if (e.kind !== 'bloater') this.host.audio.entityVoice(kind, pan, dist);
+        if (e.kind !== 'bloater') this.say(e.genome?.sound, kind, pan, dist);
         e.voiceT = e.brain.mode === 'chase' ? 1.6 + Math.random() : 4 + Math.random() * 5;
       }
       // Render
@@ -848,7 +857,7 @@ export class EntitySystem {
    * Explosion (bloater burst, bomber's bomb): damage falls off with distance,
    * and everything inside the radius - player and entities - is blown away.
    */
-  private explode(x: number, y: number, z: number, radius: number, damage: number, knock: number, kind: EntityKind, source: Entity | null, colors?: [number, number]): void {
+  private explode(x: number, y: number, z: number, radius: number, damage: number, knock: number, kind: EntityKind, source: Entity | null, colors?: [number, number], snd?: ChimeraSound): void {
     const p = this.host.player;
     const dist = Math.hypot(p.x - x, p.z - z);
     const s = radius / 5.5;
@@ -856,7 +865,7 @@ export class EntitySystem {
     this.spark(x, y + 1, z, c ? c[0] : 0xffb050, 55 * s, 0.45);
     this.spark(x, y + 1, z, c ? c[1] : 0xfff0c0, 25 * s, 0.25);
     for (let k = 0; k < 14; k++) this.spark(x + (Math.random() - 0.5) * 3 * s, y + 0.3 + Math.random() * 2.2, z + (Math.random() - 0.5) * 3 * s, c ? c[1] : 0x6a5a40, 4, 0.7);
-    this.host.audio.entityVoice('boom', this.panTo(x, z), dist);
+    this.say(snd ?? source?.genome?.sound, 'boom', this.panTo(x, z), dist);
     if (dist < radius && Math.abs(p.y - y) < 3) {
       const k = 1 - dist / radius;
       const dmg = damage * (0.25 + 0.75 * k);
@@ -970,8 +979,9 @@ export class EntitySystem {
       mesh.add(buildFxProjectile(e.genome.fx, e.genome.seed, 0.15));
     }
     this.host.fx.add(mesh);
-    this.bombs.push({ x: ox, y: oy, z: oz, vx, vy, vz, landed: false, fuse: BOMBER.fuse, life: 6, mesh, damage: e.genome?.damage ?? ENTITIES.bomber.damage, colors: e.genome ? [e.genome.fx.warn, e.genome.fx.main] : undefined });
-    this.host.audio.throwWhoosh();
+    this.bombs.push({ x: ox, y: oy, z: oz, vx, vy, vz, landed: false, fuse: BOMBER.fuse, life: 6, mesh, damage: e.genome?.damage ?? ENTITIES.bomber.damage, colors: e.genome ? [e.genome.fx.warn, e.genome.fx.main] : undefined, snd: e.genome?.sound });
+    if (e.genome) this.say(e.genome.sound, 'whoosh', this.panTo(b.x, b.z), dist);
+    else this.host.audio.throwWhoosh();
     void dist;
   }
 
@@ -1011,7 +1021,7 @@ export class EntitySystem {
         bm.mesh.traverse((o) => ((o as THREE.Mesh).isMesh ? ((o as THREE.Mesh).material as THREE.Material).dispose() : undefined));
         bm.mesh.removeFromParent();
         this.bombs.splice(i, 1);
-        this.explode(bm.x, bm.y - 0.14, bm.z, BOMBER.radius, bm.damage, BOMBER.knock, 'bomber', null, bm.colors);
+        this.explode(bm.x, bm.y - 0.14, bm.z, BOMBER.radius, bm.damage, BOMBER.knock, 'bomber', null, bm.colors, bm.snd);
         continue;
       }
       const [rx, rz] = this.host.toRender(bm.x, bm.z);
@@ -1049,7 +1059,7 @@ export class EntitySystem {
     this.host.fx.add(mesh);
     this.shots.push({ x: ox, y: oy, z: oz, vx: (dx / n) * ENEMY_SHOT_SPEED, vy: (dy / n) * ENEMY_SHOT_SPEED, vz: (dz / n) * ENEMY_SHOT_SPEED, life: 1.5, mesh, damage: e.genome?.damage ?? ENTITIES.gunman.damage, kind: e.kind });
     this.spark(ox, oy, oz, e.genome?.fx.second ?? 0xffc060, 3, 0.08);
-    this.host.audio.entityVoice('shot', this.panTo(b.x, b.z), dist);
+    this.say(e.genome?.sound, 'shot', this.panTo(b.x, b.z), dist);
   }
 
   private updateShots(dt: number): void {
@@ -1101,7 +1111,7 @@ export class EntitySystem {
     const k = e.genome ? chimeraReach(e.genome) / NAMAHAGE.reach : 1;
     const dmg = e.genome?.damage ?? ENTITIES.namahage.damage;
     this.slashEffect(b.x, b.y, b.z, yaw, k, e.genome ? [e.genome.fx.main, e.genome.fx.second] : undefined);
-    this.host.audio.entityVoice('swish', this.panTo(b.x, b.z), dist);
+    this.say(e.genome?.sound, 'swish', this.panTo(b.x, b.z), dist);
     // Everything in the box in front of it is cut (the player, and other entities too).
     if (inSlash(b.x, b.y, b.z, yaw, p.x, p.y, p.z, 0.3, k)) {
       this.host.onRangedHit(e.kind, dmg);
@@ -1133,6 +1143,16 @@ export class EntitySystem {
     if (g.effect === 'pulse' && e.brain.mode !== 'fuse') m.scale.setScalar(g.scale * (1 + Math.sin(t * 4) * 0.06));
     if (g.effect === 'flicker') m.visible = Math.sin(t * 23) + Math.sin(t * 7.3) > -1.4;
     if (g.effect === 'trail' && speed > 0.5 && Math.random() < dt * 25) this.spark(e.body.x, e.body.y + g.hipY * 0.6, e.body.z, g.glow, 2, 0.5);
+  }
+
+  /**
+   * Play an entity sound; a random entity's sounds go through its own sound
+   * genome (its own cue, attack and impact sounds, its own soft pitch).
+   */
+  private say(snd: ChimeraSound | undefined, name: EntityVoiceKind, pan: number, dist: number): void {
+    if (!snd) return this.host.audio.entityVoice(name, pan, dist);
+    const role = SOUND_CUE.has(name) ? snd.cue : SOUND_FIRE.has(name) ? snd.fire : SOUND_IMPACT.has(name) ? snd.impact : name;
+    this.host.audio.entityVoice(role, pan, dist, { pitch: snd.pitch });
   }
 
   /** Short-lived effect meshes (slash arcs, warnings) that fade out. */
@@ -1229,8 +1249,8 @@ export class EntitySystem {
     const mesh = e.genome ? buildWindMesh(e.genome.fx.main, e.genome.fx.second) : buildWindMesh();
     if (e.genome && e.genome.fx.shape !== 'ring') mesh.add(buildFxProjectile(e.genome.fx, e.genome.seed, 0.12));
     this.host.fx.add(mesh);
-    this.winds.push({ x, y, z, vx: (dx / l) * FANMAN.speed, vz: (dz / l) * FANMAN.speed, life: FANMAN.maxRange / FANMAN.speed + 1, mesh, kind: 'fanman', damage: e.genome?.damage, color: e.genome?.fx.second });
-    this.host.audio.entityVoice('whoosh', this.panTo(b.x, b.z), dist);
+    this.winds.push({ x, y, z, vx: (dx / l) * FANMAN.speed, vz: (dz / l) * FANMAN.speed, life: FANMAN.maxRange / FANMAN.speed + 1, mesh, kind: 'fanman', damage: e.genome?.damage, color: e.genome?.fx.second, snd: e.genome?.sound });
+    this.say(e.genome?.sound, 'whoosh', this.panTo(b.x, b.z), dist);
   }
 
   private updateWinds(dt: number): void {
@@ -1250,7 +1270,7 @@ export class EntitySystem {
         // Thrown far aside, along the way the wind was going.
         p.knock(w.vx, w.vz, w.kind === 'witch' ? GUST.knock : FANMAN.knock, w.kind === 'witch' ? GUST.lift : FANMAN.lift);
         this.spark(w.x, w.y, w.z, w.color ?? 0xd8f4ff, 22, 0.35);
-        this.host.audio.entityVoice('whoosh', this.panTo(w.x, w.z), 0);
+        this.say(w.snd, 'whoosh', this.panTo(w.x, w.z), 0);
       } else if (wall !== null) this.spark(w.x, w.y, w.z, w.color ?? 0xd8f4ff, 10, 0.3);
       if (hitPlayer || wall !== null || w.life <= 0) {
         disposeEntityMesh(w.mesh);
@@ -1296,9 +1316,9 @@ export class EntitySystem {
     const [rx, rz] = this.host.toRender(tx, tz);
     ring.position.set(rx, ty + 0.24, rz);
     this.host.fx.add(ring);
-    this.boulders.push({ x, y, z, vx: (tx - x) / flight, vy: (ty + 0.6 - y + 0.5 * g * flight * flight) / flight, vz: (tz - z) / flight, tx, ty, tz, t: 0, flight, mesh, ring, colors: e.genome ? [e.genome.fx.main, e.genome.fx.second] : undefined });
+    this.boulders.push({ x, y, z, vx: (tx - x) / flight, vy: (ty + 0.6 - y + 0.5 * g * flight * flight) / flight, vz: (tz - z) / flight, tx, ty, tz, t: 0, flight, mesh, ring, colors: e.genome ? [e.genome.fx.main, e.genome.fx.second] : undefined, snd: e.genome?.sound });
     e.actT = 0.9;
-    this.host.audio.entityVoice('groan', this.panTo(b.x, b.z), dist);
+    this.say(e.genome?.sound, 'groan', this.panTo(b.x, b.z), dist);
   }
 
   private updateBoulders(dt: number): void {
@@ -1319,7 +1339,7 @@ export class EntitySystem {
       (disc.material as THREE.MeshBasicMaterial).opacity = 0.18 + 0.4 * k;
       (edge.material as THREE.MeshBasicMaterial).opacity = Math.sin(r.t * (8 + 20 * k)) > -0.3 ? 0.95 : 0.4;
       if (landed || (wall !== null && r.t > 0.3)) {
-        this.crush(r.x, Math.min(r.y, r.ty + 0.6) - 0.6, r.z, r.colors);
+        this.crush(r.x, Math.min(r.y, r.ty + 0.6) - 0.6, r.z, r.colors, r.snd);
         disposeEntityMesh(r.mesh);
         disposeEntityMesh(r.ring);
         this.boulders.splice(i, 1);
@@ -1333,12 +1353,12 @@ export class EntitySystem {
   }
 
   /** The boulder lands: damage and knockback around it (the player and entities, giants excepted). */
-  private crush(x: number, y: number, z: number, colors?: [number, number]): void {
+  private crush(x: number, y: number, z: number, colors?: [number, number], snd?: ChimeraSound): void {
     const p = this.host.player;
     this.spark(x, y + 0.5, z, colors?.[0] ?? 0x8a8070, 50, 0.6);
     this.spark(x, y + 0.3, z, colors?.[1] ?? 0xc8b898, 20, 0.35);
     const d = Math.hypot(p.x - x, p.z - z);
-    this.host.audio.entityVoice('stomp', this.panTo(x, z), d);
+    this.say(snd, 'stomp', this.panTo(x, z), d);
     if (d < BOULDER.radius && Math.abs(p.y - y) < 2.5) {
       const k = 1 - d / BOULDER.radius;
       this.host.onRangedHit('giant', BOULDER.damage * (0.5 + 0.5 * k));
@@ -1363,12 +1383,12 @@ export class EntitySystem {
       const vz = Math.cos(a) * GUST.speed;
       const mesh = e.genome ? buildWindMesh(e.genome.fx.second, e.genome.fx.main) : buildWindMesh();
       this.host.fx.add(mesh);
-      this.winds.push({ x: b.x + Math.sin(a) * 0.6, y: b.y + 1.1, z: b.z + Math.cos(a) * 0.6, vx, vz, life: GUST.range / GUST.speed, mesh, kind: 'witch', color: e.genome?.fx.main });
+      this.winds.push({ x: b.x + Math.sin(a) * 0.6, y: b.y + 1.1, z: b.z + Math.cos(a) * 0.6, vx, vz, life: GUST.range / GUST.speed, mesh, kind: 'witch', color: e.genome?.fx.main, snd: e.genome?.sound });
     }
     this.spark(b.x, b.y + 1.2, b.z, e.genome?.fx.second ?? 0xd8f4ff, 30, 0.4);
     e.actT = 0.6;
     e.flash = 0.4;
-    this.host.audio.entityVoice('whoosh', this.panTo(b.x, b.z), dist);
+    this.say(e.genome?.sound, 'whoosh', this.panTo(b.x, b.z), dist);
   }
 
   private lasers = new Map<Entity, THREE.Mesh>();
@@ -1401,7 +1421,7 @@ export class EntitySystem {
       const l = Math.hypot(dx, dy, dz) || 1;
       dir = [dx / l, dy / l, dz / l];
       this.aimDirs.set(e, dir);
-      if (aim === 0) this.host.audio.entityVoice('aim', this.panTo(b.x, b.z), dist);
+      if (aim === 0) this.say(e.genome?.sound, 'aim', this.panTo(b.x, b.z), dist);
     }
     const wall = this.host.rayWorld(ox, oy, oz, dir[0], dir[1], dir[2], 90);
     const len = wall ?? 90;
@@ -1416,7 +1436,7 @@ export class EntitySystem {
       const [rx, rz] = this.host.toRender(ox, oz);
       this.beam(new THREE.Vector3(rx, oy, rz), [ox + dir[0] * len, oy + dir[1] * len, oz + dir[2] * len], e.genome?.fx.main ?? 0xfff0c0);
       this.spark(ox, oy, oz, 0xffe0a0, 6, 0.12);
-      this.host.audio.entityVoice('snipe', this.panTo(b.x, b.z), dist);
+      this.say(e.genome?.sound, 'snipe', this.panTo(b.x, b.z), dist);
       this.aimDirs.delete(e);
       e.flash = 0.5;
       if (laser) laser.visible = false;
@@ -1444,9 +1464,9 @@ export class EntitySystem {
     const ring = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: e.genome?.fx.warn ?? 0x9ad8ff, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2;
     this.host.fx.add(ring);
-    this.strikes.push({ x: p.x, y: p.y, z: p.z, t: WITCH.warn, warn: WITCH.warn, radius: WITCH.radius, damage: e.genome?.damage ?? ENTITIES.witch.damage, stun: 0, owner: 'witch', def: null, ring, bolt: null, colors: e.genome ? [e.genome.fx.warn, e.genome.fx.main] : undefined });
+    this.strikes.push({ x: p.x, y: p.y, z: p.z, t: WITCH.warn, warn: WITCH.warn, radius: WITCH.radius, damage: e.genome?.damage ?? ENTITIES.witch.damage, stun: 0, owner: 'witch', def: null, ring, bolt: null, colors: e.genome ? [e.genome.fx.warn, e.genome.fx.main] : undefined, snd: e.genome?.sound });
     e.flash = 0.6;
-    this.host.audio.entityVoice('zap', this.panTo(p.x, p.z), 0);
+    this.say(e.genome?.sound, 'zap', this.panTo(p.x, p.z), 0);
     void dist;
   }
 
@@ -1472,7 +1492,7 @@ export class EntitySystem {
         s.bolt = bolt;
         this.spark(s.x, s.y + 0.5, s.z, s.colors?.[1] ?? 0xbfe6ff, 60, 0.35);
         const d = Math.hypot(p.x - s.x, p.z - s.z);
-        this.host.audio.entityVoice('thunder', this.panTo(s.x, s.z), d);
+        this.say(s.snd, 'thunder', this.panTo(s.x, s.z), d);
         if (s.owner === 'witch' && d < s.radius && Math.abs(p.y - s.y) < 3) this.host.onRangedHit('witch', s.damage);
         for (const e of this.entities) {
           // Lightning hurts anything standing in it (a witch is not hurt by its own kind's spell).
@@ -1573,7 +1593,7 @@ export class EntitySystem {
     const fx = -Math.sin(b.yaw);
     const fz = -Math.cos(b.yaw);
     this.spark(b.x + fx * 1.2, b.y + 0.2, b.z + fz * 1.2, e.genome?.fx.main ?? 0x9a9080, 40, 0.4);
-    this.host.audio.entityVoice('stomp', this.panTo(b.x, b.z), Math.max(0, dist - 10));
+    this.say(e.genome?.sound, 'stomp', this.panTo(b.x, b.z), Math.max(0, dist - 10));
     const p = this.host.player;
     const reach = e.genome ? chimeraReach(e.genome) : GIANT.reach;
     if (dist < reach + 1.2 && Math.abs(p.y - b.y) < 3) this.host.onPlayerHit(e.kind, e.genome?.damage ?? ENTITIES.giant.damage, e.name);

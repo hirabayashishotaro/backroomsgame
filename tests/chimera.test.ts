@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHIMERA_MAX_H_NARROW, chimeraGenome, chimeraSpecies } from '../src/entities/chimera';
 import { giantAllowed } from '../src/entities/director';
+import { MOD_LOWPASS, MOD_TONE_MAX } from '../src/systems/audio';
 import { chimeraReach, newBrain, think, type Perception } from '../src/entities/brain';
 import { ALL_ENTITIES } from '../src/entities/entityDefs';
 import { EscapeProgress } from '../src/systems/escape';
@@ -109,6 +110,22 @@ describe('random entities', () => {
     }
     expect(looks.size).toBeGreaterThan(290);
     expect(shapes.size).toBe(6);
+  });
+
+  it('their sounds are their own and never shrill: own pitch (mostly lower), own cue / attack / impact sounds', () => {
+    const combos = new Set<string>();
+    for (let s = 0; s < 500; s++) {
+      const snd = chimeraGenome(s * 29 + 3).sound;
+      expect(snd.pitch).toBeGreaterThanOrEqual(0.6);
+      expect(snd.pitch).toBeLessThanOrEqual(1.15);
+      // The thin, high sounds are never chosen as their own cues or attack sounds.
+      expect(['aim', 'zap', 'glitch', 'skitter', 'giggle']).not.toContain(snd.cue);
+      expect(['aim', 'zap', 'glitch', 'skitter', 'giggle']).not.toContain(snd.fire);
+      combos.add([snd.pitch.toFixed(2), snd.cue, snd.fire, snd.impact].join('/'));
+    }
+    expect(combos.size).toBeGreaterThan(300);
+    expect(MOD_TONE_MAX).toBeLessThanOrEqual(1500);
+    expect(MOD_LOWPASS).toBeLessThanOrEqual(3000);
   });
 
   it('count toward the kills of the escape condition, but are not one of the kinds to defeat', () => {

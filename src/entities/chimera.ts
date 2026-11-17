@@ -10,6 +10,7 @@
  */
 import { hashString, Rng } from '../core/rng';
 import { HP_SCALE, type EntityKind } from './entityDefs';
+import type { EntityVoiceKind } from '../systems/audio';
 
 export type Lower = 'biped' | 'quad' | 'spider' | 'float' | 'serpent' | 'wheel' | 'tripod';
 export type Upper = 'humanoid' | 'blob' | 'box' | 'tower' | 'orb' | 'ribs';
@@ -34,6 +35,19 @@ export interface ChimeraFx {
   pattern: Pattern;
   /** Opacity of its projectiles (0.5 ghostly .. 1 solid). */
   opacity: number;
+}
+
+/**
+ * How it sounds: every sound shifted to its own pitch (mostly lower, never
+ * shrill - the audio system caps the frequencies), and its own cue before an
+ * attack, its own sound for the attack and for the impact, so no technique
+ * sounds like the entity it was borrowed from.
+ */
+export interface ChimeraSound {
+  pitch: number;
+  cue: EntityVoiceKind;
+  fire: EntityVoiceKind;
+  impact: EntityVoiceKind;
 }
 
 export interface ChimeraHitBox {
@@ -86,6 +100,7 @@ export interface ChimeraGenome {
   voice: Voice;
   /** The look of its attacks (so no technique looks like the entity it was borrowed from). */
   fx: ChimeraFx;
+  sound: ChimeraSound;
   hitboxes: ChimeraHitBox[];
   chest: number;
 }
@@ -263,7 +278,14 @@ export function chimeraGenome(seed: number, opts: ChimeraOptions = {}): ChimeraG
     pattern: rng.pick<Pattern>(['flat', 'stripes', 'spots', 'checker', 'noise', 'gradient', 'scales']),
     opacity: rng.chance(0.3) ? 0.55 + rng.float() * 0.3 : 1,
   };
-  return { seed, name, hint, lower, upper, head, arms, attack, close, move, effect, pattern, color, accent, glow, scale, hipY, shoulderY, height, width, walk, run, hp, damage, cooldown, burst, near: st.near, far: st.far, voice, fx, hitboxes, chest };
+  const sound: ChimeraSound = {
+    // 0.6 .. 1.15, leaning low
+    pitch: 0.6 + Math.pow(rng.float(), 1.4) * 0.55,
+    cue: rng.pick<EntityVoiceKind>(['groan', 'hum', 'whirr', 'growl', 'roar']),
+    fire: rng.pick<EntityVoiceKind>(['shot', 'whoosh', 'swish', 'stamp']),
+    impact: rng.pick<EntityVoiceKind>(['boom', 'stomp', 'thunder']),
+  };
+  return { seed, name, hint, lower, upper, head, arms, attack, close, move, effect, pattern, color, accent, glow, scale, hipY, shoulderY, height, width, walk, run, hp, damage, cooldown, burst, near: st.near, far: st.far, voice, fx, sound, hitboxes, chest };
 }
 
 function chimeraHint(attack: Attack, move: Move, close: 'gust' | 'none'): string {

@@ -5,6 +5,13 @@
 import type { AmbienceDef } from '../levels/levelDefinition';
 import type { Settings } from '../core/settings';
 
+export type EntityVoiceKind = 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan' | 'shot' | 'zap' | 'thunder' | 'glitch' | 'aim' | 'snipe' | 'skitter' | 'roar' | 'swish' | 'stamp' | 'whirr' | 'whoosh';
+
+/** Random entities' sounds: highest tone, highest noise band and the low-pass on everything (Hz). */
+export const MOD_TONE_MAX = 1200;
+export const MOD_NOISE_MAX = 2200;
+export const MOD_LOWPASS = 2600;
+
 export class AudioSystem {
   ctx: AudioContext | null = null;
   private master!: GainNode;
@@ -392,6 +399,11 @@ export class AudioSystem {
     const src = this.ctx!.createBufferSource();
     src.buffer = this.noiseBuffer;
     const f = this.ctx!.createBiquadFilter();
+    // A random entity's sound: shifted, never above MOD_NOISE_MAX, and no thin high-pass hiss.
+    if (this.vp) {
+      freq = Math.min(MOD_NOISE_MAX, freq * this.vp);
+      if (type === 'highpass') type = 'bandpass';
+    }
     f.type = type;
     f.frequency.value = freq;
     f.Q.value = q;
@@ -401,6 +413,11 @@ export class AudioSystem {
 
   private tone(t: number, type: OscillatorType, f0: number, f1: number, dur: number, gain: GainNode, out: AudioNode): void {
     const o = this.ctx!.createOscillator();
+    if (this.vp) {
+      f0 = Math.min(MOD_TONE_MAX, f0 * this.vp);
+      f1 = Math.min(MOD_TONE_MAX, f1 * this.vp);
+      if (type === 'square' || type === 'sawtooth') type = 'triangle'; // softer
+    }
     o.type = type;
     o.frequency.setValueAtTime(f0, t);
     o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
@@ -496,13 +513,37 @@ export class AudioSystem {
   }
 
   /** Positional entity voice: growl, giggle, whisper "help", hum. */
-  entityVoice(kind: 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan' | 'shot' | 'zap' | 'thunder' | 'glitch' | 'aim' | 'snipe' | 'skitter' | 'roar' | 'swish' | 'stamp' | 'whirr' | 'whoosh', pan: number, dist: number): void {
+  /**
+   * An entity's sound. `mod` (random entities): shift every pitch and filter
+   * by `pitch`, and keep it soft - frequencies are capped and a low-pass
+   * takes the edge off, so no piercing high tones.
+   */
+  entityVoice(kind: EntityVoiceKind, pan: number, dist: number, mod?: { pitch: number }): void {
     const ctx = this.ctx;
     if (!ctx) return;
     const t = ctx.currentTime;
     const p = ctx.createStereoPanner();
     p.pan.value = Math.max(-1, Math.min(1, pan));
-    p.connect(this.entityBus);
+    if (mod) {
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = MOD_LOWPASS;
+      p.connect(lp).connect(this.entityBus);
+      this.vp = mod.pitch;
+    } else p.connect(this.entityBus);
+    try {
+      this.voiceBody(kind, t, p, dist);
+    } finally {
+      this.vp = 0;
+    }
+  }
+
+  /** Pitch shift for the random entities' sounds (0 = off). */
+  private vp = 0;
+
+  private voiceBody(kind: EntityVoiceKind, t: number, p: StereoPannerNode, dist: number): void {
+    const ctx = this.ctx!;
+    void ctx;
     const v = Math.min(1, 10 / (dist + 2));
     switch (kind) {
       case 'growl': {

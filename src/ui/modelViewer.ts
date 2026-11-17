@@ -5,6 +5,11 @@
  */
 import * as THREE from 'three';
 
+/** Front view, a little from the model's right (the camera sits on the -Z side). */
+const FRONT_YAW = Math.PI - 0.35;
+/** Seconds of leaving it alone before it starts to turn by itself. */
+const IDLE_SPIN_DELAY = 4;
+
 export class ModelViewer {
   readonly canvas: HTMLCanvasElement;
   private renderer: THREE.WebGLRenderer | null = null;
@@ -12,7 +17,8 @@ export class ModelViewer {
   private camera = new THREE.PerspectiveCamera(35, 1, 0.05, 200);
   private holder = new THREE.Group();
   private model: THREE.Object3D | null = null;
-  private yaw = 0.5;
+  /** Camera angle around the model: models face -Z, so FRONT_YAW looks at their face. */
+  private yaw = FRONT_YAW;
   private pitch = 0.12;
   private dragging = false;
   private lastX = 0;
@@ -75,6 +81,9 @@ export class ModelViewer {
     this.centerY = box.min.y + size.y / 2;
     const disc = this.scene.getObjectByName('floor')!;
     disc.scale.setScalar(Math.max(0.7, Math.max(size.x, size.z) * 0.75));
+    // Every new model starts seen from the front (slightly from its right), then turns slowly.
+    this.yaw = FRONT_YAW;
+    this.pitch = 0.12;
     this.idle = 0;
   }
 
@@ -103,7 +112,7 @@ export class ModelViewer {
       this.lastT = now;
       // Spin slowly unless the player is turning it.
       this.idle += dt;
-      if (!this.dragging && this.idle > 1.5) this.yaw += dt * 0.6;
+      if (!this.dragging && this.idle > IDLE_SPIN_DELAY) this.yaw += dt * 0.5;
       const dist = this.fitH * 1.9 + 0.6;
       const cp = Math.cos(this.pitch);
       this.camera.position.set(Math.sin(this.yaw) * cp * dist, this.centerY + Math.sin(this.pitch) * dist, Math.cos(this.yaw) * cp * dist);

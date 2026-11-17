@@ -393,7 +393,6 @@ function hex(c: number): string {
 
 /** A small canvas texture in the genome's pattern and colours (deterministic from the seed). */
 function patternMat(pattern: Pattern, color: number, accent: number, seed: number): THREE.MeshBasicMaterial {
-  if (pattern === 'missing') return missingMat(3);
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const x = c.getContext('2d')!;

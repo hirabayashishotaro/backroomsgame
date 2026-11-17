@@ -581,7 +581,7 @@ export class EntitySystem {
         if (k > 0 && Math.sin(e.brain.t * (8 + 30 * k)) > 0) e.flash = Math.max(e.flash, 0.8);
       }
       if (e.genome) this.chimeraEffects(e, dt, speed);
-      if (e.kind === 'bug' || e.genome?.effect === 'glitch') {
+      if (e.kind === 'bug') {
         // Glitch: now and then it skips sideways or flickers out of place for a frame.
         // (Visual only: the body never moves through walls.)
         if (Math.random() < 0.06) e.mesh.position.z += (Math.random() - 0.5) * 0.8;

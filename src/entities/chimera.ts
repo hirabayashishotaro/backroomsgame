@@ -18,9 +18,10 @@ export type Head = 'sphere' | 'eye' | 'tv' | 'skull' | 'mask' | 'fan' | 'none' |
 export type Attack = 'contact' | 'slash' | 'shoot' | 'snipe' | 'lob' | 'lightning' | 'wind' | 'burst' | 'stomp' | 'boulder';
 /** How it moves: rush in, keep its distance, creep only while unwatched, hop aside, drift slowly. */
 export type Move = 'rush' | 'range' | 'creep' | 'hopper' | 'drift';
-export type Effect = 'none' | 'aura' | 'orbit' | 'trail' | 'flicker' | 'glitch' | 'pulse';
-export type Pattern = 'flat' | 'stripes' | 'spots' | 'checker' | 'noise' | 'gradient' | 'scales' | 'missing';
-export type Voice = 'growl' | 'giggle' | 'hum' | 'step' | 'groan' | 'skitter' | 'whirr' | 'glitch';
+// No 'missing texture' look, glitching or glitch noises: those belong to the Bug alone.
+export type Effect = 'none' | 'aura' | 'orbit' | 'trail' | 'flicker' | 'pulse';
+export type Pattern = 'flat' | 'stripes' | 'spots' | 'checker' | 'noise' | 'gradient' | 'scales';
+export type Voice = 'growl' | 'giggle' | 'hum' | 'step' | 'groan' | 'skitter' | 'whirr';
 
 export interface ChimeraHitBox {
   f: number;
@@ -195,8 +196,8 @@ export function chimeraGenome(seed: number, opts: ChimeraOptions = {}): ChimeraG
   };
   const move: Move = RANGED.includes(attack) ? (rng.chance(0.85) ? 'range' : 'drift') : attack === 'burst' ? rng.pick(moveOk(['rush', 'creep'])) : rng.pick(moveOk(['rush', 'rush', 'creep', 'hopper', 'drift']));
   const close = RANGED.includes(attack) && free(['witch']) && rng.chance(0.35) ? 'gust' : 'none';
-  const effect = rng.pick<Effect>(['none', 'none', 'aura', 'orbit', 'trail', 'flicker', 'glitch', 'pulse']);
-  const pattern = rng.chance(0.06) ? 'missing' : rng.pick<Pattern>(['flat', 'flat', 'stripes', 'spots', 'checker', 'noise', 'gradient', 'scales']);
+  const effect = rng.pick<Effect>(['none', 'none', 'aura', 'orbit', 'trail', 'flicker', 'pulse']);
+  const pattern = rng.pick<Pattern>(['flat', 'flat', 'stripes', 'spots', 'checker', 'noise', 'gradient', 'scales']);
   // Size: mostly human-sized; big ones only where there is room.
   // Where the giant can go, some are huge; where it cannot, nothing grows taller than a corridor allows.
   const r = rng.float();
@@ -224,7 +225,7 @@ export function chimeraGenome(seed: number, opts: ChimeraOptions = {}): ChimeraG
   const damage = Math.round(st.dmg[0] + rng.float() * (st.dmg[1] - st.dmg[0]));
   const cooldown = st.cd[0] + rng.float() * (st.cd[1] - st.cd[0]);
   const burst = attack === 'shoot' ? rng.int(1, 6) : 1;
-  const voice = rng.pick<Voice>(['growl', 'giggle', 'hum', 'step', 'groan', 'skitter', 'whirr', 'glitch']);
+  const voice = rng.pick<Voice>(['growl', 'giggle', 'hum', 'step', 'groan', 'skitter', 'whirr']);
   // Name and hint
   // e.g. 雷を呼ぶ / 大きな / (宙に浮く) / 青い / (多脚の) / 一つ目
   const verb = rng.pick(ATTACK_WORD[attack]);

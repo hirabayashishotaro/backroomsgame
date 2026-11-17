@@ -32,8 +32,8 @@ describe('random entities', () => {
     expect(seen.head.size).toBe(10);
     expect(seen.attack.size).toBe(10);
     expect(seen.move.size).toBe(5);
-    expect(seen.effect.size).toBe(7);
-    expect(seen.pattern.size).toBe(8);
+    expect(seen.effect.size).toBe(6);
+    expect(seen.pattern.size).toBe(7);
   });
 
   it('sizes, speeds and health vary but stay sane; big ones only where there is room', () => {
@@ -87,6 +87,15 @@ describe('random entities', () => {
       if (g.attack !== 'contact') expect(acted, `${g.name} (${g.attack}/${g.move})`).toBe(true);
       else expect(moved || g.move === 'creep').toBe(true);
       checked++;
+    }
+  });
+
+  it("never use the Bug's look: no missing-texture pattern, no glitching, no glitch noise", () => {
+    for (let s = 0; s < 3000; s++) {
+      const g = chimeraGenome(s * 97 + 1);
+      expect(g.pattern as string).not.toBe('missing');
+      expect(g.effect as string).not.toBe('glitch');
+      expect(g.voice as string).not.toBe('glitch');
     }
   });
 

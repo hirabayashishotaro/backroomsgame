@@ -189,6 +189,11 @@
   "omen.gunman": "(遠くで撃鉄を起こす音がした)",
   "omen.witch": "(空気がぴりぴりと張りつめた)",
   "omen.bomber": "(どこかで導火線の燃える音がした)",
+  "omen.peeker": "(遠くで、何かが光った気がする)",
+  "omen.spider": "(床を何かが素早く這う音がした)",
+  "omen.namahage": "(どこかで、足を踏み鳴らす音がする)",
+  "omen.fanman": "(扇風機の唸りが近づいてくる)",
+  "omen.chimera": "(見たことのない何かの気配がする)",
   "entity.seen": "記録に追加: {name}",
   "entity.killed": "{name} を倒した",
   "msg.caught": "{name} に襲われた!"

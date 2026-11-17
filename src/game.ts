@@ -35,6 +35,7 @@ import { AMMO_MAX, AMMO_PICKUP, WEAPONS, type WeaponId } from './weapons/weaponD
 import { ViewModel } from './weapons/viewmodel';
 import { EntitySystem } from './entities/entitySystem';
 import { Director, entityTableFor } from './entities/director';
+import { chimeraGenome, chimeraSpecies, type ChimeraGenome } from './entities/chimera';
 import { ALL_ENTITIES, ENTITIES, type EntityKind } from './entities/entityDefs';
 import { augmentLoot } from './items/weaponLoot';
 import { isWeapon } from './items/itemDefs';
@@ -290,7 +291,7 @@ export class Game {
       isSafe: (x, z) => this.isSafeSpot(x, z),
       spawnRange: () => (this.level.topology === 'closed' ? [9, 22] : [30, 55]),
       isHazard: (gy) => !!this.level.lava && gy <= this.level.lava.y + 0.05,
-      onPlayerHit: (kind, dmg) => this.onEntityHit(kind, dmg),
+      onPlayerHit: (kind, dmg, name) => this.onEntityHit(kind, dmg, name),
       onSelfBlast: () => {
         this.blastAirborne = true;
         this.blastT = 0;
@@ -301,15 +302,15 @@ export class Game {
         this.audio.hurt();
         this.hud.hurtFlash();
       },
-      onSeen: (kind) => {
+      onSeen: (kind, name) => {
         const lv = this.journal.data.levels[this.level.id];
         if (lv && !lv.entities.includes(kind)) {
           lv.entities.push(kind);
-          this.hud.message(t('entity.seen', { name: ENTITIES[kind].name }), 2.5);
+          this.hud.message(t('entity.seen', { name: name ?? ENTITIES[kind].name }), 2.5);
         }
       },
-      onKilled: (kind, at) => {
-        this.hud.message(t('entity.killed', { name: ENTITIES[kind].name }), 2);
+      onKilled: (kind, at, name) => {
+        this.hud.message(t('entity.killed', { name: name ?? ENTITIES[kind].name }), 2);
         // Often a witch leaves its staff behind (30%).
         if (kind === 'witch' && this.rng.float() < STAFF_DROP_P) this.spawnItemAt('staff', at.x, at.y, at.z);
         if (this.mode === 'escape') {
@@ -720,7 +721,12 @@ export class Game {
     const lim = ARENA_HALF - 1.5;
     const x = Math.max(-lim, Math.min(lim, this.player.x + this.player.dirX * d));
     const z = Math.max(-lim, Math.min(lim, this.player.z + this.player.dirZ * d));
-    this.ents.spawnAt(kind, x, 0, z);
+    this.ents.spawnAt(kind, x, 0, z, kind === 'chimera' ? this.labChimera() : undefined);
+  }
+
+  /** Developer combat lab: a brand-new random entity each time. */
+  private labChimera(): ChimeraGenome {
+    return chimeraGenome(Math.floor(this.rng.float() * 0x7fffffff), { open: true });
   }
 
   /** Thrown by your own rocket: no fall damage until you land. */
@@ -749,7 +755,7 @@ export class Game {
       const x = this.player.x + Math.cos(a) * d;
       const z = this.player.z + Math.sin(a) * d;
       if (arenaBlocked(x, z, kind === 'giant' ? 2 : 1)) continue;
-      this.ents.spawnAt(kind, x, 0, z);
+      this.ents.spawnAt(kind, x, 0, z, kind === 'chimera' ? this.labChimera() : undefined);
       return;
     }
   }
@@ -763,9 +769,10 @@ export class Game {
       on
         ? this.ents.entities.map((e) => ({
             kind: e.kind,
+            name: e.name,
             mode: e.brain.mode,
             hp: e.brain.hp,
-            maxHp: ENTITIES[e.kind].hp,
+            maxHp: e.maxHp,
             dist: Math.hypot(e.body.x - this.player.x, e.body.z - this.player.z),
             alpha: e.brain.alpha,
           }))
@@ -888,7 +895,9 @@ export class Game {
     this.player.grounded = true;
     this.walkWarned = false;
     for (const a of this.anchors[this.level.id] ?? []) this.showAnchor(a);
-    this.entityTable = entityTableFor(this.level.id, { dark: this.level.palette.ambient < 0.12, safe: this.level.id === 'frontrooms', open: this.level.environment === 'open-sky' || this.level.ceilingHeight >= 9 });
+    const open = this.level.environment === 'open-sky' || this.level.ceilingHeight >= 9;
+    this.entityTable = entityTableFor(this.level.id, { dark: this.level.palette.ambient < 0.12, safe: this.level.id === 'frontrooms', open });
+    this.chimeras = chimeraSpecies(this.level.id, open);
     this.director?.reset(this.entityTable.length > 0);
     if (this.history[this.history.length - 1] !== this.level.id) this.history.push(this.level.id);
     if (this.started) this.audio.setAmbience(this.level.ambience);
@@ -1464,13 +1473,19 @@ export class Game {
   // Entities
   // ---------------------------------------------------------------------------
 
-  private onEntityHit(kind: EntityKind, dmg: number): void {
+  /** The random entities that live in this level (1-3 species). */
+  private chimeras: ChimeraGenome[] = [];
+  private pickChimera(): ChimeraGenome {
+    return this.chimeras[Math.floor(this.rng.float() * this.chimeras.length)] ?? chimeraGenome(1);
+  }
+
+  private onEntityHit(kind: EntityKind, dmg: number, name?: string): void {
     const k = this.settings.difficulty === 'easy' ? 0.7 : this.settings.difficulty === 'hard' ? 1.3 : 1;
     this.stats.damage(dmg * k);
     this.hud.jumpscare(this.settings.jumpscare, kind === 'smiler' ? '#f0f0e8' : kind === 'faceling' ? '#d8cfc4' : '#c8b8a8');
     this.audio.sting(this.settings.jumpscare === 'full' ? 1 : this.settings.jumpscare === 'mild' ? 0.5 : 0);
     this.audio.hurt();
-    this.hud.message(t('msg.caught', { name: ENTITIES[kind].name }), 2);
+    this.hud.message(t('msg.caught', { name: name ?? ENTITIES[kind].name }), 2);
     this.flickerT = 1.2;
     this.director.encounterOver({ rate: DIFFICULTY[this.settings.difficulty].entity, maxActive: 1 });
   }
@@ -1483,11 +1498,11 @@ export class Game {
       // Always a warning first (SPEC §7.1): a sound, flickering lights, the hum faltering.
       this.flickerT = 3;
       this.audio.humDip(2.5);
-      const voice = ev.kind === 'hound' ? 'growl' : ev.kind === 'smiler' ? 'giggle' : ev.kind === 'skinstealer' ? 'help' : ev.kind === 'giant' ? 'stomp' : ev.kind === 'gunman' ? 'shot' : ev.kind === 'witch' ? 'zap' : ev.kind === 'bomber' ? 'hiss' : ev.kind === 'peeker' ? 'aim' : ev.kind === 'spider' ? 'skitter' : ev.kind === 'namahage' ? 'roar' : ev.kind === 'fanman' ? 'whirr' : 'hum';
+      const voice = ev.kind === 'hound' ? 'growl' : ev.kind === 'smiler' ? 'giggle' : ev.kind === 'skinstealer' ? 'help' : ev.kind === 'giant' ? 'stomp' : ev.kind === 'gunman' ? 'shot' : ev.kind === 'witch' ? 'zap' : ev.kind === 'bomber' ? 'hiss' : ev.kind === 'peeker' ? 'aim' : ev.kind === 'spider' ? 'skitter' : ev.kind === 'namahage' ? 'roar' : ev.kind === 'fanman' ? 'whirr' : ev.kind === 'chimera' ? 'glitch' : 'hum';
       this.audio.entityVoice(voice, (this.rng.float() - 0.5) * 2, 40);
       this.hud.subtitle(t('omen.' + ev.kind), 3.5);
     } else if (ev?.type === 'spawn') {
-      if (!this.ents.trySpawn(ev.kind, () => this.rng.float())) this.director.retrySoon();
+      if (!this.ents.trySpawn(ev.kind, () => this.rng.float(), ev.kind === 'chimera' ? this.pickChimera() : undefined)) this.director.retrySoon();
     }
     // Escape mode: once the conditions are met, the Bug keeps turning up (one at a time).
     if (this.mode === 'escape' && this.escape.stage === 'bug' && !this.transition && !this.inArena) {

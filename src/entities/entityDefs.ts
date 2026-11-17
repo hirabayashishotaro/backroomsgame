@@ -1,5 +1,5 @@
 /** Entities (SPEC §7). Behaviour is original; Wiki descriptions are not copied. */
-export type EntityKind = 'smiler' | 'hound' | 'duller' | 'faceling' | 'skinstealer' | 'bloater' | 'giant' | 'gunman' | 'witch' | 'bomber' | 'peeker' | 'spider' | 'namahage' | 'fanman' | 'bug';
+export type EntityKind = 'smiler' | 'hound' | 'duller' | 'faceling' | 'skinstealer' | 'bloater' | 'giant' | 'gunman' | 'witch' | 'bomber' | 'peeker' | 'spider' | 'namahage' | 'fanman' | 'chimera' | 'bug';
 
 export interface EntityDef {
   kind: EntityKind;
@@ -164,6 +164,17 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
     run: 4.0,
     life: 120,
     hint: '頭が扇風機になっている人影。羽根の唸りとともに、ゆっくり飛ぶ風の玉を撃ってくる。当たると大きく吹き飛ばされる。崖の近くでは特に危ない。',
+  },
+  chimera: {
+    // Random entities: every instance carries its own genome (chimera.ts); these are fallbacks.
+    kind: 'chimera',
+    name: 'ランダムエンティティ',
+    hp: 80 * HP_SCALE,
+    damage: 20,
+    walk: 2,
+    run: 5,
+    life: 130,
+    hint: 'どこにも記録のない、その場限りの存在。姿も技も、出会うたびに違う。',
   },
   bug: {
     kind: 'bug',

@@ -1,6 +1,8 @@
 /** Procedural stand-in models for entities (replaceable by models/<kind>.glb). */
 import * as THREE from 'three';
 import type { EntityKind } from './entityDefs';
+import type { ChimeraGenome, Pattern } from './chimera';
+import { Rng } from '../core/rng';
 import { swapInGLB } from '../world/glbModels';
 
 function m(color: number, opts: Partial<THREE.MeshBasicMaterialParameters> = {}) {
@@ -381,6 +383,371 @@ export function buildRocketMesh(): THREE.Group {
   return g;
 }
 
+// ---------------------------------------------------------------------------
+// Random entities: the model is assembled from the genome's parts
+// ---------------------------------------------------------------------------
+
+function hex(c: number): string {
+  return '#' + c.toString(16).padStart(6, '0');
+}
+
+/** A small canvas texture in the genome's pattern and colours (deterministic from the seed). */
+function patternMat(pattern: Pattern, color: number, accent: number, seed: number): THREE.MeshBasicMaterial {
+  if (pattern === 'missing') return missingMat(3);
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d')!;
+  const rng = new Rng(seed ^ 0x9a77);
+  x.fillStyle = hex(color);
+  x.fillRect(0, 0, 64, 64);
+  x.fillStyle = hex(accent);
+  switch (pattern) {
+    case 'stripes':
+      for (let y = 0; y < 64; y += 16) x.fillRect(0, y, 64, 6 + rng.int(0, 4));
+      break;
+    case 'spots':
+      for (let k = 0; k < 9; k++) {
+        x.beginPath();
+        x.arc(rng.float() * 64, rng.float() * 64, 3 + rng.float() * 7, 0, Math.PI * 2);
+        x.fill();
+      }
+      break;
+    case 'checker':
+      for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) if ((i + j) % 2) x.fillRect(i * 8, j * 8, 8, 8);
+      break;
+    case 'gradient': {
+      const gr = x.createLinearGradient(0, 0, 0, 64);
+      gr.addColorStop(0, hex(color));
+      gr.addColorStop(1, hex(accent));
+      x.fillStyle = gr;
+      x.fillRect(0, 0, 64, 64);
+      break;
+    }
+    case 'scales':
+      x.strokeStyle = hex(accent);
+      x.lineWidth = 2;
+      for (let j = 0; j < 8; j++)
+        for (let i = 0; i < 5; i++) {
+          x.beginPath();
+          x.arc(i * 16 + (j % 2) * 8, j * 8 + 8, 8, Math.PI, 0);
+          x.stroke();
+        }
+      break;
+    case 'noise':
+    case 'flat':
+    default: {
+      // Grain: a little (flat) or a lot (noise) of light and dark speckle.
+      const n = pattern === 'noise' ? 700 : 160;
+      for (let k = 0; k < n; k++) {
+        x.fillStyle = rng.chance(0.5) ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.18)';
+        x.fillRect(rng.int(0, 63), rng.int(0, 63), pattern === 'noise' ? 3 : 2, pattern === 'noise' ? 3 : 2);
+      }
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.magFilter = THREE.NearestFilter;
+  return new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+}
+
+/** A box whose geometry is moved so its top is at the origin (arms and legs swing from there). */
+function hanging(w: number, h: number, d: number): THREE.BoxGeometry {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  geo.translate(0, -h / 2, 0);
+  return geo;
+}
+
+export function buildChimeraMesh(gn: ChimeraGenome): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'entity:chimera';
+  const sc = gn.scale;
+  const hip = gn.hipY / sc;
+  const sh = gn.shoulderY / sc;
+  const uw = gn.width / sc / (gn.lower === 'quad' || gn.lower === 'spider' ? 1.6 : 1);
+  const skin = patternMat(gn.pattern, gn.color, gn.accent, gn.seed);
+  const acc = m(gn.accent);
+  const glow = m(gn.glow);
+  const dark = m(0x111111);
+  const rng = new Rng(gn.seed ^ 0x51ab);
+  // The upper body and head go into 'body' (it bobs when the entity floats).
+  const body = new THREE.Group();
+  body.name = 'body';
+  g.add(body);
+
+  // ---- Lower body
+  switch (gn.lower) {
+    case 'biped':
+      for (const sx of [-1, 1]) {
+        const leg = new THREE.Mesh(hanging(0.17, hip, 0.19), skin);
+        leg.position.set(sx * Math.max(0.1, uw * 0.45), hip, 0);
+        leg.name = sx < 0 ? 'legL' : 'legR';
+        g.add(leg);
+      }
+      break;
+    case 'quad': {
+      part(g, new THREE.BoxGeometry(uw * 1.6, 0.3, 1.05), skin, 0, hip - 0.08, 0.15, 'barrel');
+      for (const [sx, sz] of [
+        [-1, -0.25],
+        [1, -0.25],
+        [-1, 0.55],
+        [1, 0.55],
+      ]) {
+        const leg = new THREE.Mesh(hanging(0.12, hip - 0.1, 0.12), skin);
+        leg.position.set(sx * uw * 0.6, hip - 0.1, sz);
+        leg.name = sz < 0 ? 'legF' : 'legB';
+        g.add(leg);
+      }
+      break;
+    }
+    case 'spider': {
+      const abd = part(g, new THREE.SphereGeometry(0.4, 12, 9), skin, 0, hip, 0.55, 'abdomen');
+      abd.scale.set(1, 0.75, 1.2);
+      for (let side = -1; side <= 1; side += 2)
+        for (let k = 0; k < 4; k++) {
+          const leg = new THREE.Group();
+          leg.name = k % 2 === 0 ? 'legF' : 'legB';
+          leg.position.set(side * 0.2, hip, -0.3 + k * 0.22);
+          leg.rotation.y = side * (0.35 - k * 0.25);
+          const up = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 0.05), skin);
+          up.position.set(side * 0.27, 0.2, 0);
+          up.rotation.z = side * 0.6;
+          const low = new THREE.Mesh(new THREE.BoxGeometry(0.05, hip + 0.3, 0.05), skin);
+          low.position.set(side * 0.56, (0.2 - hip) / 2 + 0.05, 0);
+          low.rotation.z = -side * 0.3;
+          leg.add(up, low);
+          g.add(leg);
+        }
+      break;
+    }
+    case 'float': {
+      // A ghostly tail tapering to a point under it.
+      const tail = new THREE.Mesh(new THREE.ConeGeometry(uw * 0.9, hip, 12), skin);
+      tail.rotation.x = Math.PI;
+      tail.position.set(0, hip / 2 + 0.05, 0);
+      body.add(tail);
+      break;
+    }
+    case 'serpent': {
+      part(g, new THREE.CylinderGeometry(uw * 0.55, uw * 0.7, hip, 10), skin, 0, hip / 2, 0, 'neck');
+      let parent: THREE.Object3D = g;
+      let r = uw * 0.7;
+      for (let k = 0; k < 6; k++) {
+        const seg = new THREE.Group();
+        seg.name = 'tail';
+        seg.position.set(0, k === 0 ? 0.12 : 0, k === 0 ? 0.25 : r * 1.5);
+        const ball = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), k % 2 ? acc : skin);
+        ball.scale.set(1, 0.6, 1);
+        seg.add(ball);
+        parent.add(seg);
+        parent = seg;
+        r *= 0.82;
+      }
+      break;
+    }
+    case 'wheel': {
+      const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.08, 8, 18), dark);
+      wheel.rotation.y = Math.PI / 2;
+      wheel.position.set(0, 0.32, 0);
+      wheel.name = 'wheel';
+      g.add(wheel);
+      for (let k = 0; k < 4; k++) {
+        const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.56, 0.03), acc);
+        spoke.rotation.x = (k * Math.PI) / 4;
+        wheel.add(spoke);
+        spoke.rotation.set(0, 0, (k * Math.PI) / 4);
+      }
+      part(g, new THREE.BoxGeometry(0.08, hip - 0.3, 0.08), acc, 0, 0.32 + (hip - 0.3) / 2, 0, 'strut');
+      break;
+    }
+    case 'tripod':
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI * 2;
+        const leg = part(g, new THREE.CylinderGeometry(0.03, 0.04, hip * 1.12, 6), skin, Math.sin(a) * 0.25, hip / 2, Math.cos(a) * 0.25, k === 0 ? 'legF' : 'legB');
+        leg.rotation.set(Math.cos(a) * 0.45, 0, -Math.sin(a) * 0.45);
+      }
+      part(g, new THREE.SphereGeometry(0.12, 8, 6), acc, 0, hip, 0, 'hub');
+      break;
+  }
+
+  // ---- Upper body (from hip to shoulder)
+  const uh = sh - hip;
+  const mid = hip + uh / 2;
+  switch (gn.upper) {
+    case 'humanoid':
+      part(body, new THREE.BoxGeometry(uw * 1.8, uh, 0.26), skin, 0, mid, 0, 'torso');
+      break;
+    case 'blob': {
+      const b = part(body, new THREE.SphereGeometry(uw, 14, 10), skin, 0, mid, 0, 'torso');
+      b.scale.set(1, uh / (uw * 2) + 0.2, 0.85);
+      break;
+    }
+    case 'box':
+      part(body, new THREE.BoxGeometry(uw * 2, uh, uw * 1.6), skin, 0, mid, 0, 'torso');
+      break;
+    case 'tower':
+      for (let k = 0; k < 3; k++) part(body, new THREE.BoxGeometry(uw * (2 - k * 0.45), uh / 3, uw * (1.4 - k * 0.3)), k === 1 ? acc : skin, 0, hip + uh * (k + 0.5) / 3, 0, 'torso');
+      break;
+    case 'orb': {
+      part(body, new THREE.SphereGeometry(uw, 16, 12), skin, 0, mid, 0, 'torso');
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(uw * 1.35, 0.03, 6, 28), acc);
+      ring.position.set(0, mid, 0);
+      ring.rotation.x = Math.PI / 2 + 0.3;
+      body.add(ring);
+      break;
+    }
+    case 'ribs':
+      part(body, new THREE.CylinderGeometry(0.05, 0.06, uh, 6), acc, 0, mid, 0.05, 'spine');
+      for (let k = 0; k < 4; k++) {
+        const rib = new THREE.Mesh(new THREE.TorusGeometry(uw * (1 - k * 0.12), 0.03, 5, 14, Math.PI * 1.4), skin);
+        rib.rotation.set(Math.PI / 2, 0, Math.PI * 0.8);
+        rib.position.set(0, hip + uh * (0.2 + k * 0.22), 0);
+        body.add(rib);
+      }
+      break;
+  }
+
+  // ---- Arms (pivot at the shoulder); the first pair animates, the right hand holds the tool of its technique.
+  const armLen = 0.55 + rng.float() * 0.35;
+  for (let pair = 0; pair < gn.arms / 2; pair++)
+    for (const sx of [-1, 1]) {
+      const arm = new THREE.Mesh(hanging(0.1, armLen * (pair ? 0.8 : 1), 0.12), pair ? acc : skin);
+      arm.position.set(sx * (uw + 0.1), sh - 0.05 - pair * uh * 0.4, 0);
+      arm.name = pair === 0 ? (sx < 0 ? 'armL' : 'armR') : 'armX';
+      g.add(arm);
+    }
+  const hand = g.getObjectByName('armR');
+  if (hand) {
+    const at = -armLen - 0.05;
+    switch (gn.attack) {
+      case 'shoot': {
+        hand.userData.aim = true;
+        hand.rotation.x = 1.45;
+        const gun = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.3, 0.1), dark);
+        gun.position.set(0, at - 0.1, 0.03);
+        hand.add(gun);
+        break;
+      }
+      case 'slash': {
+        hand.userData.aim = true;
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.8, 0.16), m(0xc8ccd4));
+        blade.position.set(0, at - 0.45, -0.04);
+        hand.add(blade);
+        break;
+      }
+      case 'lob': {
+        const bomb = buildBombMesh();
+        bomb.position.set(0, at, 0);
+        hand.add(bomb);
+        break;
+      }
+      case 'lightning': {
+        const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 1.4, 6), m(0x5a4632));
+        staff.position.set(0, at, -0.1);
+        hand.add(staff);
+        const tip = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), glow);
+        tip.position.set(0, at + 0.72, -0.1);
+        hand.add(tip);
+        break;
+      }
+    }
+  }
+
+  // ---- Head (from the shoulders up)
+  const hy = sh;
+  const eyes = (y: number, z: number, gap = 0.06, r = 0.03) => {
+    part(body, new THREE.SphereGeometry(r, 6, 5), glow, -gap, y, z, 'eye');
+    part(body, new THREE.SphereGeometry(r, 6, 5), glow, gap, y, z, 'eye');
+  };
+  switch (gn.head) {
+    case 'sphere':
+      part(body, new THREE.SphereGeometry(0.16, 12, 10), skin, 0, hy + 0.16, 0, 'head');
+      eyes(hy + 0.19, -0.14);
+      break;
+    case 'eye': {
+      part(body, new THREE.SphereGeometry(0.18, 14, 10), m(0xf0ece0), 0, hy + 0.18, 0, 'head');
+      part(body, new THREE.SphereGeometry(0.09, 10, 8), glow, 0, hy + 0.18, -0.12, 'iris');
+      part(body, new THREE.SphereGeometry(0.045, 8, 6), dark, 0, hy + 0.18, -0.19, 'pupil');
+      break;
+    }
+    case 'tv':
+      part(body, new THREE.BoxGeometry(0.4, 0.32, 0.3), acc, 0, hy + 0.17, 0, 'head');
+      part(body, new THREE.BoxGeometry(0.32, 0.24, 0.01), glow, 0, hy + 0.17, -0.155, 'screen');
+      break;
+    case 'skull':
+      part(body, new THREE.SphereGeometry(0.16, 12, 10), m(0xe8e2d0), 0, hy + 0.17, 0, 'head');
+      part(body, new THREE.BoxGeometry(0.2, 0.07, 0.16), m(0xe8e2d0), 0, hy + 0.04, -0.04, 'jaw');
+      part(body, new THREE.SphereGeometry(0.045, 6, 5), dark, -0.06, hy + 0.19, -0.13);
+      part(body, new THREE.SphereGeometry(0.045, 6, 5), dark, 0.06, hy + 0.19, -0.13);
+      break;
+    case 'mask':
+      part(body, new THREE.BoxGeometry(0.3, 0.38, 0.2), acc, 0, hy + 0.19, 0, 'head');
+      part(body, new THREE.BoxGeometry(0.08, 0.025, 0.02), dark, -0.07, hy + 0.24, -0.105);
+      part(body, new THREE.BoxGeometry(0.08, 0.025, 0.02), dark, 0.07, hy + 0.24, -0.105);
+      part(body, new THREE.BoxGeometry(0.14, 0.03, 0.02), dark, 0, hy + 0.1, -0.105);
+      break;
+    case 'fan': {
+      const metal = m(0xd8dcd8);
+      part(body, new THREE.CylinderGeometry(0.04, 0.05, 0.2, 8), metal, 0, hy + 0.08, 0, 'neck');
+      const cage = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.02, 6, 24), metal);
+      cage.position.set(0, hy + 0.32, -0.04);
+      body.add(cage);
+      const blades = new THREE.Group();
+      blades.name = 'blades';
+      blades.position.set(0, hy + 0.32, -0.02);
+      for (let k = 0; k < 3; k++) {
+        const bl = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.24, 0.01), acc);
+        bl.position.set(Math.sin((k * 2 * Math.PI) / 3) * 0.13, Math.cos((k * 2 * Math.PI) / 3) * 0.13, 0);
+        bl.rotation.z = (-k * 2 * Math.PI) / 3;
+        blades.add(bl);
+      }
+      body.add(blades);
+      break;
+    }
+    case 'none':
+      part(body, new THREE.CylinderGeometry(0.07, 0.08, 0.06, 8), m(0x5a1010), 0, hy + 0.03, 0, 'stump');
+      break;
+    case 'lantern':
+      part(body, new THREE.CylinderGeometry(0.15, 0.15, 0.34, 12), glow, 0, hy + 0.2, 0, 'head');
+      part(body, new THREE.CylinderGeometry(0.17, 0.17, 0.04, 12), dark, 0, hy + 0.38, 0);
+      part(body, new THREE.CylinderGeometry(0.17, 0.17, 0.04, 12), dark, 0, hy + 0.02, 0);
+      break;
+    case 'cone':
+      part(body, new THREE.ConeGeometry(0.18, 0.5, 12), acc, 0, hy + 0.25, 0, 'head');
+      eyes(hy + 0.16, -0.12, 0.05);
+      break;
+    case 'rifle': {
+      part(body, new THREE.BoxGeometry(0.15, 0.18, 0.4), dark, 0, hy + 0.12, 0.02, 'head');
+      const barrel = part(body, new THREE.CylinderGeometry(0.035, 0.04, 0.9, 8), dark, 0, hy + 0.14, -0.62, 'barrel');
+      barrel.rotation.x = Math.PI / 2;
+      part(body, new THREE.SphereGeometry(0.035, 8, 6), m(0xff2020), 0, hy + 0.27, -0.2, 'lens');
+      break;
+    }
+  }
+
+  // ---- Effects
+  if (gn.effect === 'aura') {
+    const aura = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.6, (gn.height / sc) * 0.55), 16, 12), m(gn.glow, { opacity: 0.14, depthWrite: false }));
+    aura.position.set(0, gn.height / sc / 2, 0);
+    aura.name = 'aura';
+    g.add(aura);
+  }
+  if (gn.effect === 'orbit') {
+    const orbit = new THREE.Group();
+    orbit.name = 'orbit';
+    orbit.position.set(0, sh, 0);
+    for (let k = 0; k < 3; k++) {
+      const a = (k / 3) * Math.PI * 2;
+      const o = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), glow);
+      o.position.set(Math.cos(a) * (uw + 0.45), Math.sin(a * 2) * 0.15, Math.sin(a) * (uw + 0.45));
+      orbit.add(o);
+    }
+    g.add(orbit);
+  }
+  g.scale.setScalar(sc);
+  g.traverse((o) => ((o as THREE.Mesh).isMesh ? (o.userData.keep = false) : undefined));
+  return g;
+}
+
 /** Set overall opacity (fade in/out). */
 export function setEntityAlpha(g: THREE.Group, a: number): void {
   g.traverse((o) => {
@@ -423,7 +790,9 @@ export function disposeEntityMesh(g: THREE.Group): void {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
     mesh.geometry.dispose();
-    (mesh.material as THREE.Material).dispose();
+    const mat = mesh.material as THREE.MeshBasicMaterial;
+    mat.map?.dispose();
+    mat.dispose();
   });
   g.removeFromParent();
 }

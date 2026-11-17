@@ -7,8 +7,9 @@ import * as THREE from 'three';
 import { PlayerController, type WorldQuery } from '../player/controller';
 import { groundHeight, rayBox, type WBox } from '../world/collision';
 import { ENTITIES, type EntityKind } from './entityDefs';
-import { BLAST_KNOCK, BLOATER, BOMBER, BOULDER, FANMAN, GIANT, GUST, NAMAHAGE, PEEKER, WITCH, inSlash, hurt, newBrain, think, type BrainState } from './brain';
-import { animateEntity, buildBombMesh, buildBoulderMesh, buildEntityMesh, buildWindMesh, buildRocketMesh, disposeEntityMesh, setEntityAlpha } from './models';
+import type { ChimeraGenome } from './chimera';
+import { BLAST_KNOCK, BLOATER, BOMBER, BOULDER, FANMAN, GIANT, GUST, NAMAHAGE, PEEKER, WITCH, inSlash, chimeraReach, hurt, newBrain, think, type BrainState } from './brain';
+import { animateEntity, buildBombMesh, buildBoulderMesh, buildChimeraMesh, buildEntityMesh, buildWindMesh, buildRocketMesh, disposeEntityMesh, setEntityAlpha } from './models';
 import { stepProjectile } from '../weapons/weaponLogic';
 import { falloffFactor, type WeaponDef } from '../weapons/weaponDefs';
 import { buildWeaponModel } from '../weapons/weaponModels';
@@ -28,13 +29,13 @@ export interface Host {
   spawnRange: () => [number, number];
   /** Ground at this height is hazardous (under the lava line): entities keep out. */
   isHazard: (groundY: number) => boolean;
-  onPlayerHit: (kind: EntityKind, damage: number) => void;
+  onPlayerHit: (kind: EntityKind, damage: number, name?: string) => void;
   /** The player was thrown by their own rocket's blast (no fall damage until they land). */
   onSelfBlast: () => void;
   /** Hit by a ranged attack (bullet, lightning): damage without the jump scare. */
   onRangedHit: (kind: EntityKind, damage: number) => void;
-  onSeen: (kind: EntityKind) => void;
-  onKilled: (kind: EntityKind, at: { x: number; y: number; z: number }) => void;
+  onSeen: (kind: EntityKind, name?: string) => void;
+  onKilled: (kind: EntityKind, at: { x: number; y: number; z: number }, name?: string) => void;
   onHit: (head: boolean, kill: boolean) => void;
 }
 
@@ -64,6 +65,11 @@ interface Entity {
   actT?: number;
   /** Hound: time until it may leap aside again. */
   hopT?: number;
+  /** Random entities: the genome. */
+  genome?: ChimeraGenome;
+  /** Display name and full health (a random entity's own). */
+  name: string;
+  maxHp: number;
 }
 
 interface EnemyShot {
@@ -75,6 +81,8 @@ interface EnemyShot {
   vz: number;
   life: number;
   mesh: THREE.Mesh;
+  damage: number;
+  kind: EntityKind;
 }
 
 /** A lightning strike: a glowing ring on the ground, then the bolt. */
@@ -105,6 +113,7 @@ interface Wind {
   mesh: THREE.Group;
   /** Who blew it (damage, knockback); a witch's gust does not chase chest height. */
   kind: 'fanman' | 'witch';
+  damage?: number;
 }
 
 /** The giant's boulder: flies in an arc to a marked spot and crushes what is there. */
@@ -136,6 +145,7 @@ interface Bomb {
   fuse: number;
   life: number;
   mesh: THREE.Group;
+  damage: number;
 }
 
 const BOMB_GRAVITY = 14;
@@ -244,6 +254,7 @@ const HITBOXES: Record<EntityKind, HitBox[]> = {
     { f: 0, y0: 1.45, y1: 2.05, r: 0.32, d: 0.15, head: true }, // the fan
   ],
   bug: HUMAN(1.8),
+  chimera: HUMAN(1.8), // replaced by each random entity's own boxes
 };
 
 /** Eye-level height used for line of sight. */
@@ -318,7 +329,7 @@ export class EntitySystem {
   // ------------------------------------------------------------------ spawn --
 
   /** Find a spawn point 30-55 m away, on ground at the player's level, out of sight. */
-  trySpawn(kind: EntityKind, rng: () => number): boolean {
+  trySpawn(kind: EntityKind, rng: () => number, genome?: ChimeraGenome): boolean {
     const p = this.host.player;
     const fx = p.dirX;
     const fz = p.dirZ;
@@ -336,8 +347,8 @@ export class EntitySystem {
       let g = groundHeight(x, z, 0.3, p.y + 2.5, floors, boxes);
       if (terr !== null && terr <= p.y + 2.5 && terr > g) g = terr;
       if (!Number.isFinite(g) || Math.abs(g - p.y) > 3) continue;
-      const top = kind === 'giant' ? 7 : 1.9;
-      const pad = kind === 'giant' ? 1.3 : 0.5;
+      const top = kind === 'giant' ? 7 : genome ? Math.max(1.9, genome.height + 0.2) : 1.9;
+      const pad = kind === 'giant' ? 1.3 : genome ? Math.max(0.5, genome.width + 0.3) : 0.5;
       if (boxes.some((b) => b.maxY > g + 0.3 && b.minY < g + top && x > b.minX - pad && x < b.maxX + pad && z > b.minZ - pad && z < b.maxZ + pad)) continue;
       if (this.host.isSafe(x, z)) continue;
       if (this.host.isHazard(g)) continue;
@@ -354,21 +365,21 @@ export class EntitySystem {
         const hit = this.host.rayWorld(p.x, ey, p.z, dx / dl, (g + 1.2 - ey) / dl, dz / dl, dl);
         if (hit === null || hit > dl - 1) continue;
       }
-      this.spawnAt(kind, x, g, z);
+      this.spawnAt(kind, x, g, z, genome);
       return true;
     }
     return false;
   }
 
-  spawnAt(kind: EntityKind, x: number, y: number, z: number): void {
+  spawnAt(kind: EntityKind, x: number, y: number, z: number, genome?: ChimeraGenome): void {
     const body = new PlayerController();
     body.x = x;
     body.y = y;
     body.z = z;
-    const mesh = buildEntityMesh(kind);
+    const mesh = genome ? buildChimeraMesh(genome) : buildEntityMesh(kind);
     setEntityAlpha(mesh, 0);
     this.host.fx.add(mesh);
-    this.entities.push({ kind, brain: newBrain(kind), body, mesh, phase: 0, flash: 0, seen: false, voiceT: 2, stuck: 0, detour: 0, detourT: 0, lastStep: 0, tries: 0, freeT: 0, weave: Math.random() * 6.28, weaveF: 1.4 + Math.random() * 0.9 });
+    this.entities.push({ kind, genome, name: genome?.name ?? ENTITIES[kind].name, maxHp: genome?.hp ?? ENTITIES[kind].hp, brain: newBrain(kind, genome), body, mesh, phase: 0, flash: 0, seen: false, voiceT: 2, stuck: 0, detour: 0, detourT: 0, lastStep: 0, tries: 0, freeT: 0, weave: Math.random() * 6.28, weaveF: 1.4 + Math.random() * 0.9 });
   }
 
   // ---------------------------------------------------------------- update --
@@ -394,7 +405,7 @@ export class EntitySystem {
       const dz = p.z - b.z;
       const dist = Math.hypot(dx, dz) || 0.001;
       // Perception
-      const chestY = b.y + (CHEST[e.kind] ?? 1.3);
+      const chestY = b.y + (e.genome?.chest ?? CHEST[e.kind] ?? 1.3);
       const tx = b.x - p.x;
       const ty = chestY - ey;
       const tz = b.z - p.z;
@@ -406,7 +417,7 @@ export class EntitySystem {
       const retreat = (vx * -dx + vz * -dz) / dist; // moving away from it
       if (watched && !e.seen && e.brain.alpha > 0.5 && dist < 40) {
         e.seen = true;
-        this.host.onSeen(e.kind);
+        this.host.onSeen(e.kind, e.name);
       }
       const stop = this.aiStopped && e.brain.hp > 0;
       const prevMode = e.brain.mode;
@@ -415,7 +426,8 @@ export class EntitySystem {
         : think(e.brain, { dist, watched, los, playerRunning: running, playerCrouching: crouching, playerRetreat: retreat }, dt);
       if (stop) e.brain.alpha = Math.min(1, e.brain.alpha + dt);
       if (d.explode) {
-        this.explode(b.x, b.y, b.z, BLOATER.radius, ENTITIES.bloater.damage, BLAST_KNOCK, 'bloater', e);
+        const g0 = e.genome;
+        this.explode(b.x, b.y, b.z, g0 ? BLOATER.radius * Math.max(0.7, g0.scale) : BLOATER.radius, g0 ? g0.damage : ENTITIES.bloater.damage, BLAST_KNOCK, e.kind, e);
         disposeEntityMesh(e.mesh);
         this.entities.splice(i, 1);
         continue;
@@ -424,18 +436,19 @@ export class EntitySystem {
       if (d.fire) this.enemyFire(e, dist);
       if (d.cast) this.cast(e, dist);
       if (d.toss) this.toss(e, dist);
-      if (e.kind === 'peeker') this.aimLaser(e, d.aim, d.snipe === true, dist);
+      if (e.kind === 'peeker' || e.genome?.attack === 'snipe') this.aimLaser(e, d.aim, d.snipe === true, dist);
       if (d.slash) this.slash(e, dist);
       if (d.blow) this.blow(e, dist);
       if (d.hurl) this.hurl(e, dist);
       if (d.gust) this.gust(e, dist);
-      if (e.kind === 'namahage' && e.brain.mode === 'attack' && prevMode !== 'attack') {
+      if ((e.kind === 'namahage' || e.genome?.attack === 'slash') && e.brain.mode === 'attack' && prevMode !== 'attack') {
         this.host.audio.entityVoice('roar', this.panTo(b.x, b.z), dist);
         e.slashYaw = Math.atan2(-(p.x - b.x), -(p.z - b.z));
         this.slashWarning(e);
       }
       if (e.brain.mode !== prevMode) {
-        if (e.kind === 'bloater' && e.brain.mode === 'fuse') this.host.audio.entityVoice('hiss', this.panTo(b.x, b.z), dist);
+        if ((e.kind === 'bloater' || e.genome) && e.brain.mode === 'fuse') this.host.audio.entityVoice('hiss', this.panTo(b.x, b.z), dist);
+        if (e.genome?.attack === 'stomp' && e.brain.mode === 'attack') this.host.audio.entityVoice('groan', this.panTo(b.x, b.z), dist);
         if (e.kind === 'giant' && e.brain.mode === 'attack') this.host.audio.entityVoice('groan', this.panTo(b.x, b.z), dist);
       }
       if (d.gone || dist > 110) {
@@ -449,14 +462,14 @@ export class EntitySystem {
       if (e.detourT > 0) {
         e.detourT -= dt;
         yaw += e.detour;
-      } else if (e.kind !== 'giant' && d.speed > 0 && dist > 3) {
+      } else if (e.kind !== 'giant' && (e.genome?.scale ?? 1) < 2 && d.speed > 0 && dist > 3) {
         // Weave from side to side while closing in, as if dodging bullets.
         e.weave += dt * e.weaveF;
         yaw += Math.sin(e.weave) * 1.0 * Math.min(1, (dist - 3) / 4);
       }
       // Hound: when you aim at it (or now and then while weaving in), it leaps aside.
       let hopSide = 0;
-      if (e.kind === 'hound' && !stop && (e.brain.mode === 'chase' || e.brain.mode === 'stalk') && b.grounded && dist > 3.5) {
+      if ((e.kind === 'hound' || e.genome?.move === 'hopper') && !stop && (e.brain.mode === 'chase' || e.brain.mode === 'stalk') && b.grounded && dist > 3.5) {
         e.hopT = (e.hopT ?? 0.6) - dt;
         if (e.hopT <= 0 && (watched || (e.brain.mode === 'chase' && Math.random() < dt * 0.6))) {
           e.hopT = 1.1 + Math.random() * 0.8;
@@ -476,7 +489,7 @@ export class EntitySystem {
         }
       }
       // Never walk through the player: hold just short of contact range.
-      const fwd = d.speed > 0 && dist < (e.kind === 'giant' ? 2 : 0.85) ? 0 : d.speed;
+      const fwd = d.speed > 0 && dist < (e.kind === 'giant' ? 2 : e.genome ? Math.max(0.85, e.genome.width + 0.5) : 0.85) ? 0 : d.speed;
       const side = d.strafe ?? 0;
       const speed = Math.hypot(fwd, side);
       const ox = b.x;
@@ -539,8 +552,10 @@ export class EntitySystem {
       }
       // Contact attack, then it leaves (SPEC: escapable encounters).
       const vertical = Math.abs(b.y - p.y) < 1.6;
-      if (!this.aiStopped && e.kind !== 'bloater' && e.kind !== 'giant' && e.kind !== 'gunman' && e.kind !== 'witch' && e.kind !== 'bomber' && e.kind !== 'peeker' && e.kind !== 'fanman' && e.kind !== 'namahage' && e.kind !== 'bug' && dist < 1.15 && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
-        this.host.onPlayerHit(e.kind, ENTITIES[e.kind].damage);
+      const contact = e.genome ? e.genome.attack === 'contact' : e.kind !== 'bloater' && e.kind !== 'giant' && e.kind !== 'gunman' && e.kind !== 'witch' && e.kind !== 'bomber' && e.kind !== 'peeker' && e.kind !== 'fanman' && e.kind !== 'namahage' && e.kind !== 'bug';
+      const reachC = e.genome ? chimeraReach(e.genome) : 1.15;
+      if (!this.aiStopped && contact && dist < reachC && vertical && e.brain.alpha > 0.35 && e.brain.mode !== 'fade' && e.brain.mode !== 'flee' && e.brain.mode !== 'frozen') {
+        this.host.onPlayerHit(e.kind, e.genome?.damage ?? ENTITIES[e.kind].damage, e.name);
         e.brain.mode = 'flee';
         e.brain.t = 0;
       }
@@ -548,38 +563,41 @@ export class EntitySystem {
       e.voiceT -= dt;
       if (e.voiceT <= 0 && e.brain.alpha > 0.3) {
         const pan = this.panTo(b.x, b.z);
-        const kind = e.kind === 'fanman' ? 'whirr' : e.kind === 'namahage' ? 'stamp' : e.kind === 'spider' ? 'skitter' : e.kind === 'bug' ? 'glitch' : e.kind === 'hound' ? 'growl' : e.kind === 'smiler' ? 'giggle' : e.kind === 'skinstealer' ? 'help' : e.kind === 'duller' ? 'hum' : e.kind === 'giant' ? 'groan' : 'step';
+        const kind = e.genome ? e.genome.voice : e.kind === 'fanman' ? 'whirr' : e.kind === 'namahage' ? 'stamp' : e.kind === 'spider' ? 'skitter' : e.kind === 'bug' ? 'glitch' : e.kind === 'hound' ? 'growl' : e.kind === 'smiler' ? 'giggle' : e.kind === 'skinstealer' ? 'help' : e.kind === 'duller' ? 'hum' : e.kind === 'giant' ? 'groan' : 'step';
         if (e.kind !== 'bloater') this.host.audio.entityVoice(kind, pan, dist);
         e.voiceT = e.brain.mode === 'chase' ? 1.6 + Math.random() : 4 + Math.random() * 5;
       }
       // Render
       const [rx, rz] = this.host.toRender(b.x, b.z);
       e.mesh.position.set(rx, b.y, rz);
-      e.mesh.rotation.y = e.kind === 'gunman' || e.kind === 'witch' || e.kind === 'bomber' || e.kind === 'peeker' || e.kind === 'fanman' || e.kind === 'namahage' ? (e.kind === 'namahage' && e.brain.mode === 'attack' && e.slashYaw !== undefined ? e.slashYaw : face) : yaw;
+      const facesYou = e.genome ? e.genome.move === 'range' || e.genome.attack === 'slash' : e.kind === 'gunman' || e.kind === 'witch' || e.kind === 'bomber' || e.kind === 'peeker' || e.kind === 'fanman' || e.kind === 'namahage';
+      e.mesh.rotation.y = facesYou ? (e.brain.mode === 'attack' && e.slashYaw !== undefined ? e.slashYaw : face) : yaw;
       e.flash = Math.max(0, e.flash - dt * 5);
-      if (e.kind === 'bloater') {
+      const base = e.genome?.scale ?? 1;
+      if (e.kind === 'bloater' || e.genome?.attack === 'burst') {
         // Swells and flickers while the fuse burns.
         const k = e.brain.mode === 'fuse' ? Math.min(1, e.brain.t / BLOATER.fuse) : 0;
-        e.mesh.scale.setScalar(1 + 0.4 * k * k);
+        e.mesh.scale.setScalar(base * (1 + 0.4 * k * k));
         if (k > 0 && Math.sin(e.brain.t * (8 + 30 * k)) > 0) e.flash = Math.max(e.flash, 0.8);
       }
-      if (e.kind === 'bug') {
+      if (e.genome) this.chimeraEffects(e, dt, speed);
+      if (e.kind === 'bug' || e.genome?.effect === 'glitch') {
         // Glitch: now and then it skips sideways or flickers out of place for a frame.
         // (Visual only: the body never moves through walls.)
         if (Math.random() < 0.06) e.mesh.position.z += (Math.random() - 0.5) * 0.8;
-        e.mesh.scale.set(1, Math.random() < 0.05 ? 0.6 + Math.random() * 0.8 : 1, 1);
+        e.mesh.scale.set(base, base * (Math.random() < 0.05 ? 0.6 + Math.random() * 0.8 : 1), base);
         if (Math.random() < 0.04) e.mesh.position.x += (Math.random() - 0.5) * 0.6;
       }
-      if (e.kind === 'namahage') {
+      if (e.kind === 'namahage' || e.genome?.attack === 'slash') {
         // Blade raised during the wind-up, swung down after.
         const arm = e.mesh.getObjectByName('armR');
         if (arm) {
           const up = e.brain.mode === 'attack' ? Math.min(1, e.brain.t / NAMAHAGE.windup) : 0;
-          const after = e.brain.mode !== 'attack' && e.brain.watch > NAMAHAGE.recover - 0.25 ? 1 : 0;
+          const after = e.brain.mode !== 'attack' && e.brain.watch > (e.genome?.cooldown ?? NAMAHAGE.recover) - 0.25 ? 1 : 0;
           arm.rotation.x = after ? 1.1 : 0.3 + 2.4 * up; // + = forward and up (overhead at ~2.7)
         }
       }
-      if (e.kind === 'fanman') {
+      if (e.kind === 'fanman' || e.genome?.head === 'fan') {
         const blades = e.mesh.getObjectByName('blades');
         if (blades) blades.rotation.z += dt * (e.brain.cd > FANMAN.cooldown - 0.4 ? 40 : 14);
       }
@@ -589,12 +607,12 @@ export class EntitySystem {
       if (e.actT !== undefined && e.actT > 0) {
         e.actT -= dt;
         const k = Math.max(0, e.actT);
-        if (e.kind === 'giant') {
+        if (e.kind === 'giant' || e.genome?.attack === 'boulder') {
           // Right arm swings from behind the head forward as it lets go.
           const arm = e.mesh.getObjectByName('armR');
           if (arm) arm.rotation.x = k > 0.45 ? -2.4 * ((0.9 - k) / 0.45) : -2.4 + 3.4 * ((0.45 - k) / 0.45);
         }
-        if (e.kind === 'witch') {
+        if (e.kind === 'witch' || e.genome?.close === 'gust') {
           // Staff raised high over its head, the orb flaring.
           const st = e.mesh.getObjectByName('staff');
           const orb = e.mesh.getObjectByName('orb');
@@ -652,10 +670,13 @@ export class EntitySystem {
       const loz = rx * sn + rz * c;
       const ldx = dx * c - dz * sn;
       const ldz = dx * sn + dz * c;
-      const k = e.mesh.scale.x; // bloater swelling
-      for (const hb of HITBOXES[e.kind]) {
+      // Swelling (bloaters) scales the boxes; a random entity's boxes are already at its size.
+      const base = e.genome?.scale ?? 1;
+      const k = e.mesh.scale.x / base;
+      const ky = (e.mesh.scale.y || base) / base;
+      for (const hb of e.genome ? e.genome.hitboxes : HITBOXES[e.kind]) {
         const d = (hb.d ?? hb.r) * k;
-        const box: WBox = { minX: -hb.r * k, maxX: hb.r * k, minY: b.y + hb.y0 * (e.mesh.scale.y || 1), maxY: b.y + hb.y1 * (e.mesh.scale.y || 1), minZ: hb.f - d, maxZ: hb.f + d };
+        const box: WBox = { minX: -hb.r * k, maxX: hb.r * k, minY: b.y + hb.y0 * ky, maxY: b.y + hb.y1 * ky, minZ: hb.f - d, maxZ: hb.f + d };
         const h = rayBox(lox, oy, loz, ldx, dy, ldz, box, max);
         if (h && (!best || h.t < best.t - 1e-4 || (Math.abs(h.t - best.t) < 0.05 && hb.head))) best = { t: h.t, entity: e, head: hb.head };
       }
@@ -677,7 +698,7 @@ export class EntitySystem {
     e.flash = 1;
     this.host.audio.impact(true, this.panTo(at[0], at[2]), Math.hypot(at[0] - this.host.player.x, at[2] - this.host.player.z));
     this.host.onHit(head, dead);
-    if (dead) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z });
+    if (dead) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z }, e.name);
     this.spark(at[0], at[1], at[2], 0xa01010);
   }
 
@@ -831,7 +852,7 @@ export class EntitySystem {
     if (dist < radius && Math.abs(p.y - y) < 3) {
       const k = 1 - dist / radius;
       const dmg = damage * (0.25 + 0.75 * k);
-      if (kind === 'bloater') this.host.onPlayerHit(kind, dmg);
+      if (kind === 'bloater' || kind === 'chimera') this.host.onPlayerHit(kind, dmg, source?.name);
       else this.host.onRangedHit(kind, dmg);
       // Blown back (and a little up): stronger the closer you were.
       p.knock(p.x - x || 0.01, p.z - z, knock * (0.4 + 0.6 * k), 3 + 4 * k);
@@ -843,7 +864,7 @@ export class EntitySystem {
       const k = 1 - d / radius;
       const dead = hurt(e.brain, damage * (0.25 + 0.75 * k));
       e.flash = 1;
-      if (dead) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z });
+      if (dead) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z }, e.name);
       if (e.kind !== 'giant') e.body.knock(e.body.x - x || 0.01, e.body.z - z, knock * (0.4 + 0.6 * k), 3 + 4 * k);
     }
   }
@@ -924,7 +945,7 @@ export class EntitySystem {
     const b = e.body;
     const p = this.host.player;
     const ox = b.x - Math.sin(b.yaw) * 0.4;
-    const oy = b.y + 1.7;
+    const oy = b.y + (e.genome ? e.genome.shoulderY : 1.7);
     const oz = b.z - Math.cos(b.yaw) * 0.4;
     // Lead the target a little and miss by a bit, so moving keeps you safe.
     const T = Math.max(0.8, Math.min(1.6, dist / 13));
@@ -935,7 +956,7 @@ export class EntitySystem {
     const vy = (p.y + 0.15 - oy + 0.5 * BOMB_GRAVITY * T * T) / T;
     const mesh = buildBombMesh();
     this.host.fx.add(mesh);
-    this.bombs.push({ x: ox, y: oy, z: oz, vx, vy, vz, landed: false, fuse: BOMBER.fuse, life: 6, mesh });
+    this.bombs.push({ x: ox, y: oy, z: oz, vx, vy, vz, landed: false, fuse: BOMBER.fuse, life: 6, mesh, damage: e.genome?.damage ?? ENTITIES.bomber.damage });
     this.host.audio.throwWhoosh();
     void dist;
   }
@@ -976,7 +997,7 @@ export class EntitySystem {
         bm.mesh.traverse((o) => ((o as THREE.Mesh).isMesh ? ((o as THREE.Mesh).material as THREE.Material).dispose() : undefined));
         bm.mesh.removeFromParent();
         this.bombs.splice(i, 1);
-        this.explode(bm.x, bm.y - 0.14, bm.z, BOMBER.radius, ENTITIES.bomber.damage, BOMBER.knock, 'bomber', null);
+        this.explode(bm.x, bm.y - 0.14, bm.z, BOMBER.radius, bm.damage, BOMBER.knock, 'bomber', null);
         continue;
       }
       const [rx, rz] = this.host.toRender(bm.x, bm.z);
@@ -997,9 +1018,10 @@ export class EntitySystem {
     const rz = -Math.sin(b.yaw);
     const fx = -Math.sin(b.yaw);
     const fz = -Math.cos(b.yaw);
-    const ox = b.x + fx * 0.45 + rx * 0.25;
-    const oy = b.y + 1.35;
-    const oz = b.z + fz * 0.45 + rz * 0.25;
+    const sc = e.genome?.scale ?? 1;
+    const ox = b.x + fx * 0.45 * sc + rx * 0.25 * sc;
+    const oy = b.y + (e.genome ? e.genome.shoulderY * 0.95 : 1.35);
+    const oz = b.z + fz * 0.45 * sc + rz * 0.25 * sc;
     let dx = p.x - ox;
     let dy = p.y + 1.15 - oy;
     let dz = p.z - oz;
@@ -1011,7 +1033,7 @@ export class EntitySystem {
     const n = Math.hypot(dx, dy, dz);
     const mesh = new THREE.Mesh(this.shotGeo, new THREE.MeshBasicMaterial({ color: 0xffd080, transparent: true, opacity: 0.95 }));
     this.host.fx.add(mesh);
-    this.shots.push({ x: ox, y: oy, z: oz, vx: (dx / n) * ENEMY_SHOT_SPEED, vy: (dy / n) * ENEMY_SHOT_SPEED, vz: (dz / n) * ENEMY_SHOT_SPEED, life: 1.5, mesh });
+    this.shots.push({ x: ox, y: oy, z: oz, vx: (dx / n) * ENEMY_SHOT_SPEED, vy: (dy / n) * ENEMY_SHOT_SPEED, vz: (dz / n) * ENEMY_SHOT_SPEED, life: 1.5, mesh, damage: e.genome?.damage ?? ENTITIES.gunman.damage, kind: e.kind });
     this.spark(ox, oy, oz, 0xffc060, 3, 0.08);
     this.host.audio.entityVoice('shot', this.panTo(b.x, b.z), dist);
   }
@@ -1036,7 +1058,7 @@ export class EntitySystem {
       const wall = this.host.rayWorld(s.x, s.y, s.z, dx, dy, dz, len);
       let done = s.life <= 0;
       if (hitPlayer && (wall === null || wall > tc)) {
-        this.host.onRangedHit('gunman', ENTITIES.gunman.damage);
+        this.host.onRangedHit(s.kind, s.damage);
         done = true;
       } else if (wall !== null) {
         this.spark(s.x + dx * wall, s.y + dy * wall, s.z + dz * wall, 0xffe0a0);
@@ -1063,26 +1085,50 @@ export class EntitySystem {
     const p = this.host.player;
     const yaw = e.slashYaw ?? Math.atan2(-(p.x - b.x), -(p.z - b.z));
     e.slashYaw = undefined;
-    this.slashEffect(b.x, b.y, b.z, yaw);
+    const k = e.genome ? chimeraReach(e.genome) / NAMAHAGE.reach : 1;
+    const dmg = e.genome?.damage ?? ENTITIES.namahage.damage;
+    this.slashEffect(b.x, b.y, b.z, yaw, k);
     this.host.audio.entityVoice('swish', this.panTo(b.x, b.z), dist);
     // Everything in the box in front of it is cut (the player, and other entities too).
-    if (inSlash(b.x, b.y, b.z, yaw, p.x, p.y, p.z)) {
-      this.host.onRangedHit('namahage', ENTITIES.namahage.damage);
+    if (inSlash(b.x, b.y, b.z, yaw, p.x, p.y, p.z, 0.3, k)) {
+      this.host.onRangedHit(e.kind, dmg);
       p.knock(p.x - b.x || 0.01, p.z - b.z, 6, 2.5);
     }
     for (const o of this.entities) {
-      if (o === e || o.brain.hp <= 0 || !inSlash(b.x, b.y, b.z, yaw, o.body.x, o.body.y, o.body.z, 0.4)) continue;
+      if (o === e || o.brain.hp <= 0 || !inSlash(b.x, b.y, b.z, yaw, o.body.x, o.body.y, o.body.z, 0.4, k)) continue;
       o.flash = 1;
-      if (hurt(o.brain, ENTITIES.namahage.damage)) this.host.onKilled(o.kind, { x: o.body.x, y: o.body.y, z: o.body.z });
+      if (hurt(o.brain, dmg)) this.host.onKilled(o.kind, { x: o.body.x, y: o.body.y, z: o.body.z }, o.name);
     }
   }
 
+  /** Random entities: their moving parts and effects (wheels, tails, floating, orbiting lights, trails, flicker, pulse). */
+  private chimeraEffects(e: Entity, dt: number, speed: number): void {
+    const g = e.genome!;
+    const m = e.mesh;
+    const t = performance.now() * 0.001 + (g.seed % 100);
+    const wheel = m.getObjectByName('wheel');
+    if (wheel) wheel.rotation.x -= (speed * dt) / (0.3 * g.scale);
+    const floater = m.getObjectByName('body');
+    if (floater && g.lower === 'float') floater.position.y = Math.sin(t * 2) * 0.12;
+    m.traverse((o) => {
+      if (o.name === 'tail') o.rotation.y = Math.sin(t * 6 + o.position.z * 3) * 0.35 * Math.min(1, speed / 2 + 0.3);
+    });
+    const orbit = m.getObjectByName('orbit');
+    if (orbit) orbit.rotation.y += dt * 2.4;
+    const aura = m.getObjectByName('aura');
+    if (aura) aura.scale.setScalar(1 + Math.sin(t * 3) * 0.08);
+    if (g.effect === 'pulse' && e.brain.mode !== 'fuse') m.scale.setScalar(g.scale * (1 + Math.sin(t * 4) * 0.06));
+    if (g.effect === 'flicker') m.visible = Math.sin(t * 23) + Math.sin(t * 7.3) > -1.4;
+    if (g.effect === 'trail' && speed > 0.5 && Math.random() < dt * 25) this.spark(e.body.x, e.body.y + g.hipY * 0.6, e.body.z, g.glow, 2, 0.5);
+  }
+
   /** Short-lived effect meshes (slash arcs, warnings) that fade out. */
-  private flashes: Array<{ obj: THREE.Object3D; t: number; max: number; grow: number; follow?: Entity }> = [];
+  private flashes: Array<{ obj: THREE.Object3D; t: number; max: number; grow: number; follow?: Entity; base?: number }> = [];
 
   /** While the blade is raised: a faint red strip on the ground shows where it will land. */
   private slashWarning(e: Entity): void {
     const g = new THREE.Group();
+    if (e.genome) g.scale.setScalar(chimeraReach(e.genome) / NAMAHAGE.reach);
     const mat = new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide });
     const strip = new THREE.Mesh(new THREE.PlaneGeometry(NAMAHAGE.halfW * 2, NAMAHAGE.len + 0.4), mat);
     strip.rotation.x = -Math.PI / 2;
@@ -1090,15 +1136,16 @@ export class EntitySystem {
     strip.renderOrder = 5; // drawn after transparent water sheets
     g.add(strip);
     this.host.fx.add(g);
-    this.flashes.push({ obj: g, t: NAMAHAGE.windup, max: NAMAHAGE.windup, grow: 0, follow: e });
+    this.flashes.push({ obj: g, t: e.genome ? 0.6 : NAMAHAGE.windup, max: e.genome ? 0.6 : NAMAHAGE.windup, grow: 0, follow: e });
   }
 
   /** The cut: a bright crescent sweeping from overhead down to the floor, plus a streak along the ground. */
-  private slashEffect(x: number, y: number, z: number, yaw: number): void {
+  private slashEffect(x: number, y: number, z: number, yaw: number, kk = 1): void {
     const g = new THREE.Group();
     const [rx, rz] = this.host.toRender(x, z);
     g.position.set(rx, y, rz);
     g.rotation.y = yaw;
+    g.scale.setScalar(kk);
     const mk = (inner: number, outer: number, color: number, opacity: number) =>
       new THREE.Mesh(new THREE.RingGeometry(inner, outer, 28, 1, -0.75, 2.4), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide }));
     // Ring lies in the XY plane; turn it so +x points forward (-z): a vertical arc ahead.
@@ -1120,7 +1167,7 @@ export class EntitySystem {
     g.add(streak);
     g.traverse((o) => (o.renderOrder = 5));
     this.host.fx.add(g);
-    this.flashes.push({ obj: g, t: 0.28, max: 0.28, grow: 0.25 });
+    this.flashes.push({ obj: g, t: 0.28, max: 0.28, grow: 0.25, base: kk });
     const fx = -Math.sin(yaw);
     const fz = -Math.cos(yaw);
     this.spark(x + fx * NAMAHAGE.len * 0.75, y + 0.2, z + fz * NAMAHAGE.len * 0.75, 0xe8e8f0, 22, 0.25);
@@ -1146,7 +1193,7 @@ export class EntitySystem {
         // Warnings brighten as the blade goes up; cuts fade out.
         m.opacity = (m.userData.base as number) * (f.follow ? 1 + 1.6 * (1 - k) : k);
       });
-      if (f.grow) f.obj.scale.setScalar(1 + f.grow * (1 - k));
+      if (f.grow) f.obj.scale.setScalar((f.base ?? 1) * (1 + f.grow * (1 - k)));
       if (f.t <= 0) {
         disposeEntityMesh(f.obj as THREE.Group);
         this.flashes.splice(i, 1);
@@ -1162,13 +1209,13 @@ export class EntitySystem {
     const fz = -Math.cos(b.yaw);
     const x = b.x + fx * 0.6;
     const z = b.z + fz * 0.6;
-    const y = b.y + 1.5;
+    const y = b.y + (e.genome ? e.genome.shoulderY : 1.5);
     const dx = p.x - x;
     const dz = p.z - z;
     const l = Math.hypot(dx, dz) || 1;
     const mesh = buildWindMesh();
     this.host.fx.add(mesh);
-    this.winds.push({ x, y, z, vx: (dx / l) * FANMAN.speed, vz: (dz / l) * FANMAN.speed, life: FANMAN.maxRange / FANMAN.speed + 1, mesh, kind: 'fanman' });
+    this.winds.push({ x, y, z, vx: (dx / l) * FANMAN.speed, vz: (dz / l) * FANMAN.speed, life: FANMAN.maxRange / FANMAN.speed + 1, mesh, kind: 'fanman', damage: e.genome?.damage });
     this.host.audio.entityVoice('whoosh', this.panTo(b.x, b.z), dist);
   }
 
@@ -1185,7 +1232,7 @@ export class EntitySystem {
       const wall = this.host.rayWorld(w.x, w.y, w.z, w.vx / sp, 0, w.vz / sp, step + 0.4);
       const hitPlayer = Math.hypot(p.x - w.x, p.z - w.z) < 0.85 && w.y > p.y - 0.3 && w.y < p.y + 2.1;
       if (hitPlayer) {
-        this.host.onRangedHit(w.kind, w.kind === 'witch' ? GUST.damage : ENTITIES.fanman.damage);
+        this.host.onRangedHit(w.kind, w.damage ?? (w.kind === 'witch' ? GUST.damage : ENTITIES.fanman.damage));
         // Thrown far aside, along the way the wind was going.
         p.knock(w.vx, w.vz, w.kind === 'witch' ? GUST.knock : FANMAN.knock, w.kind === 'witch' ? GUST.lift : FANMAN.lift);
         this.spark(w.x, w.y, w.z, 0xd8f4ff, 22, 0.35);
@@ -1288,7 +1335,7 @@ export class EntitySystem {
       const de = Math.hypot(e.body.x - x, e.body.z - z);
       if (de >= BOULDER.radius || Math.abs(e.body.y - y) > 2.5) continue;
       e.flash = 1;
-      if (hurt(e.brain, BOULDER.damage)) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z });
+      if (hurt(e.brain, BOULDER.damage)) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z }, e.name);
       e.body.knock(e.body.x - x || 0.01, e.body.z - z, BOULDER.knock, 3);
     }
   }
@@ -1328,9 +1375,10 @@ export class EntitySystem {
     }
     const fx = -Math.sin(b.yaw);
     const fz = -Math.cos(b.yaw);
-    const ox = b.x + fx * 1.15; // the muzzle
-    const oy = b.y + 1.62;
-    const oz = b.z + fz * 1.15;
+    const sc = e.genome?.scale ?? 1;
+    const ox = b.x + fx * 1.15 * sc; // the muzzle
+    const oy = b.y + (e.genome ? e.genome.shoulderY + 0.15 * sc : 1.62);
+    const oz = b.z + fz * 1.15 * sc;
     let dir = this.aimDirs.get(e);
     if (!dir || aim < PEEKER.lock) {
       const dx = p.x - ox;
@@ -1350,7 +1398,7 @@ export class EntitySystem {
       const cx = ox + dir[0] * tc - p.x;
       const cz = oz + dir[2] * tc - p.z;
       const cy = oy + dir[1] * tc;
-      if (Math.hypot(cx, cz) < 0.4 && cy > p.y - 0.1 && cy < p.y + 1.9 && tc < len) this.host.onRangedHit('peeker', ENTITIES.peeker.damage);
+      if (Math.hypot(cx, cz) < 0.4 && cy > p.y - 0.1 && cy < p.y + 1.9 && tc < len) this.host.onRangedHit(e.kind, e.genome?.damage ?? ENTITIES.peeker.damage);
       const [rx, rz] = this.host.toRender(ox, oz);
       this.beam(new THREE.Vector3(rx, oy, rz), [ox + dir[0] * len, oy + dir[1] * len, oz + dir[2] * len], 0xfff0c0);
       this.spark(ox, oy, oz, 0xffe0a0, 6, 0.12);
@@ -1382,7 +1430,7 @@ export class EntitySystem {
     const ring = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: 0x9ad8ff, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2;
     this.host.fx.add(ring);
-    this.strikes.push({ x: p.x, y: p.y, z: p.z, t: WITCH.warn, warn: WITCH.warn, radius: WITCH.radius, damage: ENTITIES.witch.damage, stun: 0, owner: 'witch', def: null, ring, bolt: null });
+    this.strikes.push({ x: p.x, y: p.y, z: p.z, t: WITCH.warn, warn: WITCH.warn, radius: WITCH.radius, damage: e.genome?.damage ?? ENTITIES.witch.damage, stun: 0, owner: 'witch', def: null, ring, bolt: null });
     e.flash = 0.6;
     this.host.audio.entityVoice('zap', this.panTo(p.x, p.z), 0);
     void dist;
@@ -1513,7 +1561,8 @@ export class EntitySystem {
     this.spark(b.x + fx * 1.2, b.y + 0.2, b.z + fz * 1.2, 0x9a9080, 40, 0.4);
     this.host.audio.entityVoice('stomp', this.panTo(b.x, b.z), Math.max(0, dist - 10));
     const p = this.host.player;
-    if (dist < GIANT.reach + 1.2 && Math.abs(p.y - b.y) < 3) this.host.onPlayerHit('giant', ENTITIES.giant.damage);
+    const reach = e.genome ? chimeraReach(e.genome) : GIANT.reach;
+    if (dist < reach + 1.2 && Math.abs(p.y - b.y) < 3) this.host.onPlayerHit(e.kind, e.genome?.damage ?? ENTITIES.giant.damage, e.name);
   }
 
   private updateFx(dt: number): void {

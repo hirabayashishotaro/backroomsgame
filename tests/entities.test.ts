@@ -294,10 +294,14 @@ describe('director', () => {
     for (let n = 3; n < 60; n++) {
       const a = entityTableFor(String(n), { dark: true, safe: false });
       expect(a).toEqual(entityTableFor(String(n), { dark: true, safe: false }));
-      expect(a.length).toBeGreaterThanOrEqual(1);
-      expect(a.length).toBeLessThanOrEqual(3);
+      const fixedKinds = a.filter((k) => k !== 'chimera');
+      expect(fixedKinds.length).toBeGreaterThanOrEqual(1);
+      expect(fixedKinds.length).toBeLessThanOrEqual(3);
       expect(a).not.toContain('giant');
     }
+    // Random entities turn up in most random levels.
+    const withChimera = Array.from({ length: 100 }, (_, n) => entityTableFor(String(n + 3), { dark: false, safe: false })).filter((t) => t.includes('chimera')).length;
+    expect(withChimera).toBeGreaterThan(50);
     const open = Array.from({ length: 200 }, (_, n) => entityTableFor(String(n + 3), { dark: false, safe: false, open: true }));
     expect(open.some((t) => t.includes('giant'))).toBe(true);
   });

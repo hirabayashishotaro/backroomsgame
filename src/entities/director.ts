@@ -105,5 +105,7 @@ export function entityTableFor(levelId: string, opts: { dark: boolean; safe: boo
   const n = rng.int(1, 3);
   const out: EntityKind[] = [];
   while (out.length < n && pool.length) out.push(pool.splice(rng.int(0, pool.length - 1), 1)[0]);
+  // Random entities (not part of any condition) live in most random levels too.
+  if (rng.chance(0.7)) out.push('chimera');
   return out;
 }

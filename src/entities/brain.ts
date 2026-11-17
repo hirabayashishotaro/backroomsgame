@@ -3,6 +3,7 @@
  * decide its mode and how fast to move toward (or away from) the player.
  */
 import { ENTITIES, type EntityKind } from './entityDefs';
+import type { ChimeraGenome } from './chimera';
 
 export type Mode = 'idle' | 'stalk' | 'chase' | 'frozen' | 'fade' | 'flee' | 'stagger' | 'fuse' | 'attack';
 
@@ -39,10 +40,12 @@ export interface BrainState {
   stunT: number;
   /** A second cooldown (giant: rock throw, witch: wind burst). */
   cd2: number;
+  /** Random entities: the genome that decides its body and behaviour. */
+  g?: ChimeraGenome;
 }
 
-export function newBrain(kind: EntityKind): BrainState {
-  return { kind, mode: 'idle', t: 0, watch: 0, heard: 99, hp: ENTITIES[kind].hp, alpha: 0, cd: 1.5, n: GUNMAN.mag, side: 1, sideT: 0, stunT: 0, cd2: 2.5 };
+export function newBrain(kind: EntityKind, g?: ChimeraGenome): BrainState {
+  return { kind, mode: 'idle', t: 0, watch: 0, heard: 99, hp: g ? g.hp : ENTITIES[kind].hp, alpha: 0, cd: 1.5, n: g ? g.burst : GUNMAN.mag, side: 1, sideT: 0, stunT: 0, cd2: 2.5, g };
 }
 
 export interface Decision {
@@ -89,14 +92,14 @@ export const NAMAHAGE = { reach: 3.6, windup: 0.55, recover: 1.1, len: 4.4, half
  * `halfW` to either side (plus the target's body radius `r`), `height` tall?
  * `yaw` uses the entities' convention (forward = (-sin yaw, -cos yaw)).
  */
-export function inSlash(ex: number, ey: number, ez: number, yaw: number, px: number, py: number, pz: number, r = 0.3): boolean {
+export function inSlash(ex: number, ey: number, ez: number, yaw: number, px: number, py: number, pz: number, r = 0.3, k = 1): boolean {
   const fx = -Math.sin(yaw);
   const fz = -Math.cos(yaw);
   const dx = px - ex;
   const dz = pz - ez;
   const ahead = dx * fx + dz * fz;
   const side = dx * -fz + dz * fx;
-  return ahead > -0.4 - r && ahead < NAMAHAGE.len + r && Math.abs(side) < NAMAHAGE.halfW + r && py > ey - 1.2 && py < ey + NAMAHAGE.height;
+  return ahead > -0.4 - r && ahead < NAMAHAGE.len * k + r && Math.abs(side) < NAMAHAGE.halfW * k + r && py > ey - 1.2 && py < ey + NAMAHAGE.height * k;
 }
 /** Fanman: shot cooldown, ball speed (slow), knockback (m/s sideways + up), preferred range. */
 export const FANMAN = { cooldown: 2.6, speed: 7, knock: 17, lift: 4.5, near: 8, far: 20, maxRange: 32 };
@@ -162,7 +165,10 @@ export function think(b: BrainState, p: Perception, dt: number): Decision {
     return { speed: 0, gone: false };
   }
 
+  if (b.kind === 'chimera' && b.g) return thinkChimera(b, b.g, p, dt);
   switch (b.kind) {
+    case 'chimera':
+      return { speed: def.walk, gone: false };
     case 'smiler': {
       // Hold its gaze and back away: it fades. Turn and run: it gives chase.
       if (b.mode !== 'chase') {
@@ -378,6 +384,12 @@ export function hurt(b: BrainState, dmg: number): boolean {
   if ((b.kind === 'hound' || b.kind === 'skinstealer') && dmg >= 50) {
     b.mode = 'stagger';
     b.t = 0;
+  } else if (b.kind === 'chimera') {
+    // Random entities: shooting it wakes it up, unless it is mid-technique or keeps its distance.
+    if (b.g?.move !== 'range' && b.mode !== 'attack' && b.mode !== 'fuse' && b.mode !== 'chase') {
+      b.mode = 'chase';
+      b.t = 0;
+    }
   } else if (b.kind !== 'bloater' && b.kind !== 'giant' && b.kind !== 'gunman' && b.kind !== 'witch' && b.kind !== 'bomber' && b.kind !== 'peeker' && b.kind !== 'fanman' && b.kind !== 'namahage' && b.kind !== 'bug' && b.mode !== 'stagger') {
     // Shooting it wakes it up.
     if (b.mode !== 'chase') {
@@ -386,4 +398,135 @@ export function hurt(b: BrainState, dmg: number): boolean {
     }
   }
   return false;
+}
+
+/** Reach of a random entity's melee techniques (m), from its size. */
+export function chimeraReach(g: ChimeraGenome): number {
+  return g.attack === 'slash' ? 2.2 + g.scale * 1.2 : g.attack === 'stomp' ? 1.6 + g.scale * 1.4 : g.attack === 'burst' ? 1.8 + g.scale : 1.15 * Math.max(1, g.scale * 0.8);
+}
+
+/** Random entities: movement from the genome's move, then its technique. */
+function thinkChimera(b: BrainState, g: ChimeraGenome, p: Perception, dt: number): Decision {
+  // A close-range wind burst (cd2), for ranged ones that hate being crowded.
+  b.cd2 -= dt;
+  if (g.close === 'gust' && p.dist < GUST.trigger && b.cd2 <= 0 && b.alpha > 0.6 && b.mode !== 'attack') {
+    b.cd2 = GUST.cooldown;
+    return { speed: 0, gone: false, gust: true };
+  }
+  const reach = chimeraReach(g);
+  // Techniques with a wind-up hold the entity in 'attack' / 'fuse'.
+  if (g.attack === 'slash' || g.attack === 'stomp') {
+    if (b.mode === 'attack') {
+      if (b.t >= (g.attack === 'slash' ? 0.6 : 0.8)) {
+        set(b, 'chase');
+        b.watch = g.cooldown;
+        return g.attack === 'slash' ? { speed: 0, gone: false, slash: true } : { speed: 0, gone: false, stomp: true };
+      }
+      return { speed: 0, gone: false };
+    }
+    b.watch = Math.max(0, b.watch - dt);
+    if (b.watch <= 0 && p.dist < reach) {
+      set(b, 'attack');
+      return { speed: 0, gone: false };
+    }
+  }
+  if (g.attack === 'burst') {
+    if (b.mode === 'fuse') {
+      if (p.dist > reach + 3.5) {
+        set(b, 'stalk');
+        return { speed: g.walk, gone: false };
+      }
+      if (b.t >= BLOATER.fuse) return { speed: 0, gone: true, explode: true };
+      return { speed: 0, gone: false };
+    }
+    if (p.dist < reach) {
+      set(b, 'fuse');
+      return { speed: 0, gone: false };
+    }
+  }
+  if (g.attack === 'snipe' && b.watch > 0) {
+    if (!p.los || p.dist > PEEKER.maxRange) {
+      b.watch = 0;
+      b.cd = 1.2;
+    } else {
+      b.watch += dt;
+      if (b.watch >= PEEKER.aim) {
+        b.watch = 0;
+        b.cd = g.cooldown;
+        return { speed: 0, gone: false, snipe: true, aim: 1 };
+      }
+      return { speed: 0, gone: false, aim: b.watch / PEEKER.aim };
+    }
+  }
+  // Movement
+  let d: Decision;
+  switch (g.move) {
+    case 'range':
+      d = keepRange(b, p, dt, g.near, g.far, g.walk, g.run);
+      break;
+    case 'creep':
+      if (p.watched) {
+        b.mode = 'frozen';
+        return { speed: 0, gone: false };
+      }
+      if (b.mode !== 'chase') set(b, 'chase');
+      d = { speed: p.dist < 12 ? g.run : g.walk, gone: false };
+      break;
+    case 'drift':
+      if (b.mode !== 'stalk') set(b, 'stalk');
+      // Ranged drifters hover in their band; melee drifters float slowly toward you.
+      d = { speed: g.far > 0 ? (p.dist < g.near ? -g.walk : p.dist > g.far ? g.walk : 0) : g.walk, gone: false };
+      break;
+    default:
+      // rush / hopper (the hop itself is done by the entity system)
+      if (b.mode !== 'chase') set(b, 'chase');
+      d = { speed: p.dist < 25 ? g.run : g.walk, gone: false };
+  }
+  // Ranged techniques on their cooldown, only with a line of sight.
+  b.cd -= dt;
+  const ready = p.los && b.cd <= 0 && b.alpha > 0.6;
+  switch (g.attack) {
+    case 'shoot':
+      if (ready && p.dist < Math.max(30, g.far + 10)) {
+        b.n--;
+        b.cd = 0.3;
+        if (b.n <= 0) {
+          b.n = g.burst;
+          b.cd = g.cooldown;
+        }
+        d.fire = true;
+      }
+      break;
+    case 'snipe':
+      if (ready && p.dist < PEEKER.maxRange) {
+        b.watch = 0.0001;
+        return { speed: 0, gone: false, aim: 0 };
+      }
+      break;
+    case 'lob':
+      if (ready && p.dist < BOMBER.maxRange) {
+        b.cd = g.cooldown;
+        d.toss = true;
+      }
+      break;
+    case 'lightning':
+      if (ready && p.dist < WITCH.maxRange) {
+        b.cd = g.cooldown;
+        d.cast = true;
+      }
+      break;
+    case 'wind':
+      if (ready && p.dist < FANMAN.maxRange) {
+        b.cd = g.cooldown;
+        d.blow = true;
+      }
+      break;
+    case 'boulder':
+      if (ready && p.dist > BOULDER.min && p.dist < BOULDER.max) {
+        b.cd = g.cooldown;
+        d.hurl = true;
+      }
+      break;
+  }
+  return d;
 }

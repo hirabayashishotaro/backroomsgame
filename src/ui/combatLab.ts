@@ -30,6 +30,8 @@ export interface LabCallbacks {
 
 export interface LabEntityInfo {
   kind: EntityKind;
+  /** A random entity's own name. */
+  name?: string;
   mode: string;
   hp: number;
   maxHp: number;
@@ -152,7 +154,7 @@ export class CombatLab {
       this.options.endlessKind = null;
       this.changed();
     }, this.options.endlessKind === null);
-    for (const kind of ALL_ENTITIES)
+    for (const kind of [...ALL_ENTITIES, 'chimera'] as EntityKind[])
       this.btn(krow, ENTITIES[kind].name, '', () => {
         this.options.endlessKind = kind;
         this.changed();
@@ -162,7 +164,7 @@ export class CombatLab {
     this.heading(t('lab.spawn'));
     const grid = document.createElement('div');
     grid.className = 'lab-grid';
-    for (const kind of ALL_ENTITIES) {
+    for (const kind of [...ALL_ENTITIES, 'chimera'] as EntityKind[]) {
       this.btn(grid, ENTITIES[kind].name, ENTITIES[kind].hint, () => {
         this.hide();
         if (!this.cb.inArena()) this.cb.enterArena();
@@ -242,7 +244,7 @@ export class CombatLab {
     const lines = [t('lab.infoHead')];
     if (!list.length) lines.push(t('lab.none'));
     for (const e of list) {
-      const name = ENTITIES[e.kind].name.padEnd(9, '　').slice(0, 9);
+      const name = (e.name ?? ENTITIES[e.kind].name).padEnd(9, '　').slice(0, e.name && e.name.length > 9 ? 16 : 9);
       lines.push(`${name} ${(MODE_LABEL[e.mode] ?? e.mode).padEnd(5, '　')} HP ${String(Math.max(0, Math.round(e.hp))).padStart(3)}/${e.maxHp}  ${e.dist.toFixed(1).padStart(5)}m  ${Math.round(e.alpha * 100)}%`);
     }
     const opts = [

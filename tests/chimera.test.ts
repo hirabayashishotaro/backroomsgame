@@ -99,6 +99,18 @@ describe('random entities', () => {
     }
   });
 
+  it('their attacks look their own: colours, shapes and patterns vary', () => {
+    const looks = new Set<string>();
+    const shapes = new Set<string>();
+    for (let s = 0; s < 300; s++) {
+      const f = chimeraGenome(s * 61 + 7).fx;
+      looks.add([f.main, f.second, f.warn].join(','));
+      shapes.add(f.shape);
+    }
+    expect(looks.size).toBeGreaterThan(290);
+    expect(shapes.size).toBe(6);
+  });
+
   it('count toward the kills of the escape condition, but are not one of the kinds to defeat', () => {
     expect(ALL_ENTITIES).not.toContain('chimera');
     const e = new EscapeProgress();

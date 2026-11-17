@@ -23,6 +23,19 @@ export type Effect = 'none' | 'aura' | 'orbit' | 'trail' | 'flicker' | 'pulse';
 export type Pattern = 'flat' | 'stripes' | 'spots' | 'checker' | 'noise' | 'gradient' | 'scales';
 export type Voice = 'growl' | 'giggle' | 'hum' | 'step' | 'groan' | 'skitter' | 'whirr';
 
+/** How its attacks look: colours, the shape and pattern of what it throws or shoots. */
+export interface ChimeraFx {
+  /** Main and second colour (projectiles, lasers, arcs, bolts, sparks). */
+  main: number;
+  second: number;
+  /** Colour of warnings on the ground (rings, strips, landing discs): always bright. */
+  warn: number;
+  shape: 'orb' | 'shard' | 'needle' | 'cube' | 'ring' | 'star';
+  pattern: Pattern;
+  /** Opacity of its projectiles (0.5 ghostly .. 1 solid). */
+  opacity: number;
+}
+
 export interface ChimeraHitBox {
   f: number;
   y0: number;
@@ -71,6 +84,8 @@ export interface ChimeraGenome {
   near: number;
   far: number;
   voice: Voice;
+  /** The look of its attacks (so no technique looks like the entity it was borrowed from). */
+  fx: ChimeraFx;
   hitboxes: ChimeraHitBox[];
   chest: number;
 }
@@ -183,7 +198,8 @@ export function chimeraGenome(seed: number, opts: ChimeraOptions = {}): ChimeraG
   const rangedOk = RANGED.filter((a) => free(ATTACK_FROM[a]));
   const meleeOk = MELEE.filter((a) => free(ATTACK_FROM[a]));
   let attack = (ranged && rangedOk.length) || !meleeOk.length ? rng.pick(rangedOk.length ? rangedOk : RANGED) : rng.pick(meleeOk);
-  const head: Head = attack === 'snipe' && rng.chance(0.6) ? 'rifle' : attack === 'wind' && rng.chance(0.5) ? 'fan' : rng.pick<Head>(['sphere', 'eye', 'tv', 'skull', 'mask', 'fan', 'none', 'lantern', 'cone']);
+  // The head says nothing about the technique (a rifle head need not snipe, a fan head need not blow).
+  const head: Head = rng.pick<Head>(['sphere', 'eye', 'tv', 'skull', 'mask', 'fan', 'none', 'lantern', 'cone', 'rifle']);
   const arms: 0 | 2 | 4 = upper === 'orb' || upper === 'blob' ? rng.pick([0, 2]) : rng.pick([2, 2, 2, 4, 0]);
   // Throwing and slashing need hands.
   if (arms === 0 && (attack === 'slash' || attack === 'lob' || attack === 'boulder')) {
@@ -237,7 +253,17 @@ export function chimeraGenome(seed: number, opts: ChimeraOptions = {}): ChimeraG
   const hitboxes: ChimeraHitBox[] = [{ f: 0, y0: 0, y1: shoulderY, r: width, d: lower === 'quad' || lower === 'spider' || lower === 'serpent' ? width * 1.4 : width * 0.8, head: false }];
   if (head !== 'none') hitboxes.push({ f: head === 'rifle' ? -0.2 * scale : 0, y0: shoulderY, y1: height, r: 0.2 * scale, d: head === 'rifle' ? 0.45 * scale : undefined, head: true });
   const chest = Math.max(0.5, shoulderY * 0.8);
-  return { seed, name, hint, lower, upper, head, arms, attack, close, move, effect, pattern, color, accent, glow, scale, hipY, shoulderY, height, width, walk, run, hp, damage, cooldown, burst, near: st.near, far: st.far, voice, hitboxes, chest };
+  // Attack look: its own colours and shapes (bright enough to read, never the original entity's).
+  const fh = rng.float();
+  const fx: ChimeraFx = {
+    main: hsl(fh, 0.65 + rng.float() * 0.35, 0.5 + rng.float() * 0.25),
+    second: hsl((fh + 0.15 + rng.float() * 0.7) % 1, 0.5 + rng.float() * 0.5, 0.55 + rng.float() * 0.3),
+    warn: hsl(rng.float(), 0.9, 0.55),
+    shape: rng.pick(['orb', 'shard', 'needle', 'cube', 'ring', 'star'] as const),
+    pattern: rng.pick<Pattern>(['flat', 'stripes', 'spots', 'checker', 'noise', 'gradient', 'scales']),
+    opacity: rng.chance(0.3) ? 0.55 + rng.float() * 0.3 : 1,
+  };
+  return { seed, name, hint, lower, upper, head, arms, attack, close, move, effect, pattern, color, accent, glow, scale, hipY, shoulderY, height, width, walk, run, hp, damage, cooldown, burst, near: st.near, far: st.far, voice, fx, hitboxes, chest };
 }
 
 function chimeraHint(attack: Attack, move: Move, close: 'gust' | 'none'): string {

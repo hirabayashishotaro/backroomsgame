@@ -9,7 +9,7 @@ import { groundHeight, rayBox, type WBox } from '../world/collision';
 import { ENTITIES, type EntityKind } from './entityDefs';
 import type { ChimeraGenome } from './chimera';
 import { BLAST_KNOCK, BLOATER, BOMBER, BOULDER, FANMAN, GIANT, GUST, NAMAHAGE, PEEKER, WITCH, inSlash, chimeraReach, hurt, newBrain, think, type BrainState } from './brain';
-import { animateEntity, buildBombMesh, buildBoulderMesh, buildChimeraMesh, buildEntityMesh, buildWindMesh, buildRocketMesh, disposeEntityMesh, setEntityAlpha } from './models';
+import { animateEntity, buildBombMesh, buildBoulderMesh, buildChimeraMesh, buildEntityMesh, buildFxProjectile, buildWindMesh, buildRocketMesh, disposeEntityMesh, setEntityAlpha } from './models';
 import { stepProjectile } from '../weapons/weaponLogic';
 import { falloffFactor, type WeaponDef } from '../weapons/weaponDefs';
 import { buildWeaponModel } from '../weapons/weaponModels';
@@ -80,13 +80,15 @@ interface EnemyShot {
   vy: number;
   vz: number;
   life: number;
-  mesh: THREE.Mesh;
+  mesh: THREE.Object3D;
   damage: number;
   kind: EntityKind;
 }
 
 /** A lightning strike: a glowing ring on the ground, then the bolt. */
 interface Strike {
+  /** Colours of the ring and the bolt (a random entity's own; default: the witch's pale blue). */
+  colors?: [number, number];
   x: number;
   y: number;
   z: number;
@@ -114,6 +116,8 @@ interface Wind {
   /** Who blew it (damage, knockback); a witch's gust does not chase chest height. */
   kind: 'fanman' | 'witch';
   damage?: number;
+  /** Spark colour when it bursts (a random entity's own). */
+  color?: number;
 }
 
 /** The giant's boulder: flies in an arc to a marked spot and crushes what is there. */
@@ -131,6 +135,7 @@ interface Boulder {
   flight: number;
   mesh: THREE.Group;
   ring: THREE.Group;
+  colors?: [number, number];
 }
 
 /** A thrown bomb: flies in an arc, lands, blinks, then explodes. */
@@ -146,6 +151,8 @@ interface Bomb {
   life: number;
   mesh: THREE.Group;
   damage: number;
+  /** Blink colours and explosion colours (a random entity's own). */
+  colors?: [number, number];
 }
 
 const BOMB_GRAVITY = 14;
@@ -841,13 +848,14 @@ export class EntitySystem {
    * Explosion (bloater burst, bomber's bomb): damage falls off with distance,
    * and everything inside the radius - player and entities - is blown away.
    */
-  private explode(x: number, y: number, z: number, radius: number, damage: number, knock: number, kind: EntityKind, source: Entity | null): void {
+  private explode(x: number, y: number, z: number, radius: number, damage: number, knock: number, kind: EntityKind, source: Entity | null, colors?: [number, number]): void {
     const p = this.host.player;
     const dist = Math.hypot(p.x - x, p.z - z);
     const s = radius / 5.5;
-    this.spark(x, y + 1, z, 0xffb050, 55 * s, 0.45);
-    this.spark(x, y + 1, z, 0xfff0c0, 25 * s, 0.25);
-    for (let k = 0; k < 14; k++) this.spark(x + (Math.random() - 0.5) * 3 * s, y + 0.3 + Math.random() * 2.2, z + (Math.random() - 0.5) * 3 * s, 0x6a5a40, 4, 0.7);
+    const c = colors ?? (source?.genome ? [source.genome.fx.main, source.genome.fx.second] : null);
+    this.spark(x, y + 1, z, c ? c[0] : 0xffb050, 55 * s, 0.45);
+    this.spark(x, y + 1, z, c ? c[1] : 0xfff0c0, 25 * s, 0.25);
+    for (let k = 0; k < 14; k++) this.spark(x + (Math.random() - 0.5) * 3 * s, y + 0.3 + Math.random() * 2.2, z + (Math.random() - 0.5) * 3 * s, c ? c[1] : 0x6a5a40, 4, 0.7);
     this.host.audio.entityVoice('boom', this.panTo(x, z), dist);
     if (dist < radius && Math.abs(p.y - y) < 3) {
       const k = 1 - dist / radius;
@@ -955,8 +963,14 @@ export class EntitySystem {
     const vz = (tz - oz) / T;
     const vy = (p.y + 0.15 - oy + 0.5 * BOMB_GRAVITY * T * T) / T;
     const mesh = buildBombMesh();
+    if (e.genome) {
+      // Its own bomb: a different shape and colours around the blinking light.
+      const body = mesh.children[0];
+      body.visible = false;
+      mesh.add(buildFxProjectile(e.genome.fx, e.genome.seed, 0.15));
+    }
     this.host.fx.add(mesh);
-    this.bombs.push({ x: ox, y: oy, z: oz, vx, vy, vz, landed: false, fuse: BOMBER.fuse, life: 6, mesh, damage: e.genome?.damage ?? ENTITIES.bomber.damage });
+    this.bombs.push({ x: ox, y: oy, z: oz, vx, vy, vz, landed: false, fuse: BOMBER.fuse, life: 6, mesh, damage: e.genome?.damage ?? ENTITIES.bomber.damage, colors: e.genome ? [e.genome.fx.warn, e.genome.fx.main] : undefined });
     this.host.audio.throwWhoosh();
     void dist;
   }
@@ -997,7 +1011,7 @@ export class EntitySystem {
         bm.mesh.traverse((o) => ((o as THREE.Mesh).isMesh ? ((o as THREE.Mesh).material as THREE.Material).dispose() : undefined));
         bm.mesh.removeFromParent();
         this.bombs.splice(i, 1);
-        this.explode(bm.x, bm.y - 0.14, bm.z, BOMBER.radius, bm.damage, BOMBER.knock, 'bomber', null);
+        this.explode(bm.x, bm.y - 0.14, bm.z, BOMBER.radius, bm.damage, BOMBER.knock, 'bomber', null, bm.colors);
         continue;
       }
       const [rx, rz] = this.host.toRender(bm.x, bm.z);
@@ -1006,7 +1020,7 @@ export class EntitySystem {
       // Red light blinks faster as the fuse runs down.
       const light = bm.mesh.getObjectByName('light') as THREE.Mesh;
       const rate = bm.landed ? 4 + (1 - bm.fuse / BOMBER.fuse) * 20 : 3;
-      (light.material as THREE.MeshBasicMaterial).color.setHex(Math.sin(performance.now() * 0.001 * rate * Math.PI * 2) > 0 ? 0xff2a1a : 0x401010);
+      (light.material as THREE.MeshBasicMaterial).color.setHex(Math.sin(performance.now() * 0.001 * rate * Math.PI * 2) > 0 ? (bm.colors?.[0] ?? 0xff2a1a) : 0x401010);
     }
   }
 
@@ -1031,10 +1045,10 @@ export class EntitySystem {
     dy = dy / l + (Math.random() - 0.5) * sp;
     dz = dz / l + (Math.random() - 0.5) * sp * 2;
     const n = Math.hypot(dx, dy, dz);
-    const mesh = new THREE.Mesh(this.shotGeo, new THREE.MeshBasicMaterial({ color: 0xffd080, transparent: true, opacity: 0.95 }));
+    const mesh: THREE.Object3D = e.genome ? buildFxProjectile(e.genome.fx, e.genome.seed, 0.09) : new THREE.Mesh(this.shotGeo, new THREE.MeshBasicMaterial({ color: 0xffd080, transparent: true, opacity: 0.95 }));
     this.host.fx.add(mesh);
     this.shots.push({ x: ox, y: oy, z: oz, vx: (dx / n) * ENEMY_SHOT_SPEED, vy: (dy / n) * ENEMY_SHOT_SPEED, vz: (dz / n) * ENEMY_SHOT_SPEED, life: 1.5, mesh, damage: e.genome?.damage ?? ENTITIES.gunman.damage, kind: e.kind });
-    this.spark(ox, oy, oz, 0xffc060, 3, 0.08);
+    this.spark(ox, oy, oz, e.genome?.fx.second ?? 0xffc060, 3, 0.08);
     this.host.audio.entityVoice('shot', this.panTo(b.x, b.z), dist);
   }
 
@@ -1065,8 +1079,7 @@ export class EntitySystem {
         done = true;
       }
       if (done) {
-        (s.mesh.material as THREE.Material).dispose();
-        s.mesh.removeFromParent();
+        disposeEntityMesh(s.mesh as THREE.Group);
         this.shots.splice(i, 1);
         continue;
       }
@@ -1087,7 +1100,7 @@ export class EntitySystem {
     e.slashYaw = undefined;
     const k = e.genome ? chimeraReach(e.genome) / NAMAHAGE.reach : 1;
     const dmg = e.genome?.damage ?? ENTITIES.namahage.damage;
-    this.slashEffect(b.x, b.y, b.z, yaw, k);
+    this.slashEffect(b.x, b.y, b.z, yaw, k, e.genome ? [e.genome.fx.main, e.genome.fx.second] : undefined);
     this.host.audio.entityVoice('swish', this.panTo(b.x, b.z), dist);
     // Everything in the box in front of it is cut (the player, and other entities too).
     if (inSlash(b.x, b.y, b.z, yaw, p.x, p.y, p.z, 0.3, k)) {
@@ -1129,7 +1142,7 @@ export class EntitySystem {
   private slashWarning(e: Entity): void {
     const g = new THREE.Group();
     if (e.genome) g.scale.setScalar(chimeraReach(e.genome) / NAMAHAGE.reach);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide });
+    const mat = new THREE.MeshBasicMaterial({ color: e.genome?.fx.warn ?? 0xff3020, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide });
     const strip = new THREE.Mesh(new THREE.PlaneGeometry(NAMAHAGE.halfW * 2, NAMAHAGE.len + 0.4), mat);
     strip.rotation.x = -Math.PI / 2;
     strip.position.set(0, 0.22, -(NAMAHAGE.len - 0.4) / 2); // above shallow water sheets
@@ -1140,7 +1153,7 @@ export class EntitySystem {
   }
 
   /** The cut: a bright crescent sweeping from overhead down to the floor, plus a streak along the ground. */
-  private slashEffect(x: number, y: number, z: number, yaw: number, kk = 1): void {
+  private slashEffect(x: number, y: number, z: number, yaw: number, kk = 1, colors?: [number, number]): void {
     const g = new THREE.Group();
     const [rx, rz] = this.host.toRender(x, z);
     g.position.set(rx, y, rz);
@@ -1150,9 +1163,9 @@ export class EntitySystem {
       new THREE.Mesh(new THREE.RingGeometry(inner, outer, 28, 1, -0.75, 2.4), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide }));
     // Ring lies in the XY plane; turn it so +x points forward (-z): a vertical arc ahead.
     for (const [dx, inner, outer, color, op] of [
-      [0, 2.6, 4.3, 0xffffff, 0.85],
-      [-0.9, 2.2, 3.6, 0xc8e0ff, 0.55],
-      [0.9, 2.2, 3.6, 0xc8e0ff, 0.55],
+      [0, 2.6, 4.3, colors?.[0] ?? 0xffffff, 0.85],
+      [-0.9, 2.2, 3.6, colors?.[1] ?? 0xc8e0ff, 0.55],
+      [0.9, 2.2, 3.6, colors?.[1] ?? 0xc8e0ff, 0.55],
     ] as Array<[number, number, number, number, number]>) {
       const arc = mk(inner, outer, color, op);
       arc.rotation.y = Math.PI / 2;
@@ -1161,7 +1174,7 @@ export class EntitySystem {
       g.add(arc);
     }
     // Where it struck the floor
-    const streak = new THREE.Mesh(new THREE.PlaneGeometry(NAMAHAGE.halfW * 2, 0.5), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }));
+    const streak = new THREE.Mesh(new THREE.PlaneGeometry(NAMAHAGE.halfW * 2, 0.5), new THREE.MeshBasicMaterial({ color: colors?.[0] ?? 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }));
     streak.rotation.x = -Math.PI / 2;
     streak.position.set(0, 0.23, -NAMAHAGE.len * 0.75);
     g.add(streak);
@@ -1213,9 +1226,10 @@ export class EntitySystem {
     const dx = p.x - x;
     const dz = p.z - z;
     const l = Math.hypot(dx, dz) || 1;
-    const mesh = buildWindMesh();
+    const mesh = e.genome ? buildWindMesh(e.genome.fx.main, e.genome.fx.second) : buildWindMesh();
+    if (e.genome && e.genome.fx.shape !== 'ring') mesh.add(buildFxProjectile(e.genome.fx, e.genome.seed, 0.12));
     this.host.fx.add(mesh);
-    this.winds.push({ x, y, z, vx: (dx / l) * FANMAN.speed, vz: (dz / l) * FANMAN.speed, life: FANMAN.maxRange / FANMAN.speed + 1, mesh, kind: 'fanman', damage: e.genome?.damage });
+    this.winds.push({ x, y, z, vx: (dx / l) * FANMAN.speed, vz: (dz / l) * FANMAN.speed, life: FANMAN.maxRange / FANMAN.speed + 1, mesh, kind: 'fanman', damage: e.genome?.damage, color: e.genome?.fx.second });
     this.host.audio.entityVoice('whoosh', this.panTo(b.x, b.z), dist);
   }
 
@@ -1235,9 +1249,9 @@ export class EntitySystem {
         this.host.onRangedHit(w.kind, w.damage ?? (w.kind === 'witch' ? GUST.damage : ENTITIES.fanman.damage));
         // Thrown far aside, along the way the wind was going.
         p.knock(w.vx, w.vz, w.kind === 'witch' ? GUST.knock : FANMAN.knock, w.kind === 'witch' ? GUST.lift : FANMAN.lift);
-        this.spark(w.x, w.y, w.z, 0xd8f4ff, 22, 0.35);
+        this.spark(w.x, w.y, w.z, w.color ?? 0xd8f4ff, 22, 0.35);
         this.host.audio.entityVoice('whoosh', this.panTo(w.x, w.z), 0);
-      } else if (wall !== null) this.spark(w.x, w.y, w.z, 0xd8f4ff, 10, 0.3);
+      } else if (wall !== null) this.spark(w.x, w.y, w.z, w.color ?? 0xd8f4ff, 10, 0.3);
       if (hitPlayer || wall !== null || w.life <= 0) {
         disposeEntityMesh(w.mesh);
         this.winds.splice(i, 1);
@@ -1266,13 +1280,13 @@ export class EntitySystem {
     const ty = this.groundAt(tx, tz, p.y + 1.5);
     const flight = Math.max(1.3, Math.min(3, Math.hypot(tx - x, tz - z) / BOULDER.speed));
     const g = 18;
-    const mesh = buildBoulderMesh();
+    const mesh = e.genome ? buildFxProjectile(e.genome.fx, e.genome.seed, 0.7) : buildBoulderMesh();
     this.host.fx.add(mesh);
     const ring = new THREE.Group();
-    const mat = new THREE.MeshBasicMaterial({ color: 0xff2a10, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false });
+    const mat = new THREE.MeshBasicMaterial({ color: e.genome?.fx.warn ?? 0xff2a10, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false });
     const disc = new THREE.Mesh(new THREE.CircleGeometry(BOULDER.radius, 40), mat);
     disc.rotation.x = -Math.PI / 2;
-    const edge = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: 0xff4020, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
+    const edge = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: e.genome?.fx.warn ?? 0xff4020, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
     edge.rotation.x = -Math.PI / 2;
     edge.scale.setScalar(BOULDER.radius);
     ring.add(disc, edge);
@@ -1282,7 +1296,7 @@ export class EntitySystem {
     const [rx, rz] = this.host.toRender(tx, tz);
     ring.position.set(rx, ty + 0.24, rz);
     this.host.fx.add(ring);
-    this.boulders.push({ x, y, z, vx: (tx - x) / flight, vy: (ty + 0.6 - y + 0.5 * g * flight * flight) / flight, vz: (tz - z) / flight, tx, ty, tz, t: 0, flight, mesh, ring });
+    this.boulders.push({ x, y, z, vx: (tx - x) / flight, vy: (ty + 0.6 - y + 0.5 * g * flight * flight) / flight, vz: (tz - z) / flight, tx, ty, tz, t: 0, flight, mesh, ring, colors: e.genome ? [e.genome.fx.main, e.genome.fx.second] : undefined });
     e.actT = 0.9;
     this.host.audio.entityVoice('groan', this.panTo(b.x, b.z), dist);
   }
@@ -1305,7 +1319,7 @@ export class EntitySystem {
       (disc.material as THREE.MeshBasicMaterial).opacity = 0.18 + 0.4 * k;
       (edge.material as THREE.MeshBasicMaterial).opacity = Math.sin(r.t * (8 + 20 * k)) > -0.3 ? 0.95 : 0.4;
       if (landed || (wall !== null && r.t > 0.3)) {
-        this.crush(r.x, Math.min(r.y, r.ty + 0.6) - 0.6, r.z);
+        this.crush(r.x, Math.min(r.y, r.ty + 0.6) - 0.6, r.z, r.colors);
         disposeEntityMesh(r.mesh);
         disposeEntityMesh(r.ring);
         this.boulders.splice(i, 1);
@@ -1319,10 +1333,10 @@ export class EntitySystem {
   }
 
   /** The boulder lands: damage and knockback around it (the player and entities, giants excepted). */
-  private crush(x: number, y: number, z: number): void {
+  private crush(x: number, y: number, z: number, colors?: [number, number]): void {
     const p = this.host.player;
-    this.spark(x, y + 0.5, z, 0x8a8070, 50, 0.6);
-    this.spark(x, y + 0.3, z, 0xc8b898, 20, 0.35);
+    this.spark(x, y + 0.5, z, colors?.[0] ?? 0x8a8070, 50, 0.6);
+    this.spark(x, y + 0.3, z, colors?.[1] ?? 0xc8b898, 20, 0.35);
     const d = Math.hypot(p.x - x, p.z - z);
     this.host.audio.entityVoice('stomp', this.panTo(x, z), d);
     if (d < BOULDER.radius && Math.abs(p.y - y) < 2.5) {
@@ -1347,11 +1361,11 @@ export class EntitySystem {
       const a = (k / 8) * Math.PI * 2 + b.yaw;
       const vx = Math.sin(a) * GUST.speed;
       const vz = Math.cos(a) * GUST.speed;
-      const mesh = buildWindMesh();
+      const mesh = e.genome ? buildWindMesh(e.genome.fx.second, e.genome.fx.main) : buildWindMesh();
       this.host.fx.add(mesh);
-      this.winds.push({ x: b.x + Math.sin(a) * 0.6, y: b.y + 1.1, z: b.z + Math.cos(a) * 0.6, vx, vz, life: GUST.range / GUST.speed, mesh, kind: 'witch' });
+      this.winds.push({ x: b.x + Math.sin(a) * 0.6, y: b.y + 1.1, z: b.z + Math.cos(a) * 0.6, vx, vz, life: GUST.range / GUST.speed, mesh, kind: 'witch', color: e.genome?.fx.main });
     }
-    this.spark(b.x, b.y + 1.2, b.z, 0xd8f4ff, 30, 0.4);
+    this.spark(b.x, b.y + 1.2, b.z, e.genome?.fx.second ?? 0xd8f4ff, 30, 0.4);
     e.actT = 0.6;
     e.flash = 0.4;
     this.host.audio.entityVoice('whoosh', this.panTo(b.x, b.z), dist);
@@ -1400,7 +1414,7 @@ export class EntitySystem {
       const cy = oy + dir[1] * tc;
       if (Math.hypot(cx, cz) < 0.4 && cy > p.y - 0.1 && cy < p.y + 1.9 && tc < len) this.host.onRangedHit(e.kind, e.genome?.damage ?? ENTITIES.peeker.damage);
       const [rx, rz] = this.host.toRender(ox, oz);
-      this.beam(new THREE.Vector3(rx, oy, rz), [ox + dir[0] * len, oy + dir[1] * len, oz + dir[2] * len], 0xfff0c0);
+      this.beam(new THREE.Vector3(rx, oy, rz), [ox + dir[0] * len, oy + dir[1] * len, oz + dir[2] * len], e.genome?.fx.main ?? 0xfff0c0);
       this.spark(ox, oy, oz, 0xffe0a0, 6, 0.12);
       this.host.audio.entityVoice('snipe', this.panTo(b.x, b.z), dist);
       this.aimDirs.delete(e);
@@ -1409,7 +1423,7 @@ export class EntitySystem {
       return;
     }
     if (!laser) {
-      laser = new THREE.Mesh(this.beamGeo, new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.4, depthWrite: false }));
+      laser = new THREE.Mesh(this.beamGeo, new THREE.MeshBasicMaterial({ color: e.genome?.fx.warn ?? 0xff2020, transparent: true, opacity: 0.4, depthWrite: false }));
       this.host.fx.add(laser);
       this.lasers.set(e, laser);
     }
@@ -1427,10 +1441,10 @@ export class EntitySystem {
   /** Witch: mark the ground under the player; lightning falls there shortly after. */
   private cast(e: Entity, dist: number): void {
     const p = this.host.player;
-    const ring = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: 0x9ad8ff, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false }));
+    const ring = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: e.genome?.fx.warn ?? 0x9ad8ff, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2;
     this.host.fx.add(ring);
-    this.strikes.push({ x: p.x, y: p.y, z: p.z, t: WITCH.warn, warn: WITCH.warn, radius: WITCH.radius, damage: e.genome?.damage ?? ENTITIES.witch.damage, stun: 0, owner: 'witch', def: null, ring, bolt: null });
+    this.strikes.push({ x: p.x, y: p.y, z: p.z, t: WITCH.warn, warn: WITCH.warn, radius: WITCH.radius, damage: e.genome?.damage ?? ENTITIES.witch.damage, stun: 0, owner: 'witch', def: null, ring, bolt: null, colors: e.genome ? [e.genome.fx.warn, e.genome.fx.main] : undefined });
     e.flash = 0.6;
     this.host.audio.entityVoice('zap', this.panTo(p.x, p.z), 0);
     void dist;
@@ -1452,11 +1466,11 @@ export class EntitySystem {
         s.ring.scale.setScalar(s.radius);
       } else if (before > 0) {
         // Strike.
-        const bolt = new THREE.Mesh(this.boltGeo, new THREE.MeshBasicMaterial({ color: 0xeaf6ff, transparent: true, opacity: 1, depthWrite: false }));
+        const bolt = new THREE.Mesh(this.boltGeo, new THREE.MeshBasicMaterial({ color: s.colors?.[1] ?? 0xeaf6ff, transparent: true, opacity: 1, depthWrite: false }));
         bolt.position.set(rx, s.y + 15, rz);
         this.host.fx.add(bolt);
         s.bolt = bolt;
-        this.spark(s.x, s.y + 0.5, s.z, 0xbfe6ff, 60, 0.35);
+        this.spark(s.x, s.y + 0.5, s.z, s.colors?.[1] ?? 0xbfe6ff, 60, 0.35);
         const d = Math.hypot(p.x - s.x, p.z - s.z);
         this.host.audio.entityVoice('thunder', this.panTo(s.x, s.z), d);
         if (s.owner === 'witch' && d < s.radius && Math.abs(p.y - s.y) < 3) this.host.onRangedHit('witch', s.damage);
@@ -1558,7 +1572,7 @@ export class EntitySystem {
     const b = e.body;
     const fx = -Math.sin(b.yaw);
     const fz = -Math.cos(b.yaw);
-    this.spark(b.x + fx * 1.2, b.y + 0.2, b.z + fz * 1.2, 0x9a9080, 40, 0.4);
+    this.spark(b.x + fx * 1.2, b.y + 0.2, b.z + fz * 1.2, e.genome?.fx.main ?? 0x9a9080, 40, 0.4);
     this.host.audio.entityVoice('stomp', this.panTo(b.x, b.z), Math.max(0, dist - 10));
     const p = this.host.player;
     const reach = e.genome ? chimeraReach(e.genome) : GIANT.reach;

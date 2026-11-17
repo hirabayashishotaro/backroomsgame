@@ -1,7 +1,7 @@
 /** Procedural stand-in models for entities (replaceable by models/<kind>.glb). */
 import * as THREE from 'three';
 import type { EntityKind } from './entityDefs';
-import type { ChimeraGenome, Pattern } from './chimera';
+import type { ChimeraFx, ChimeraGenome, Pattern } from './chimera';
 import { Rng } from '../core/rng';
 import { swapInGLB } from '../world/glbModels';
 
@@ -353,15 +353,15 @@ export function buildBoulderMesh(): THREE.Group {
   return g;
 }
 
-/** Fanman's ball of wind: pale swirling rings. */
-export function buildWindMesh(): THREE.Group {
+/** Fanman's ball of wind: pale swirling rings (a random entity's own colours if given). */
+export function buildWindMesh(ring = 0xe0f4ff, coreColor = 0xffffff): THREE.Group {
   const g = new THREE.Group();
   for (let k = 0; k < 3; k++) {
-    const r = new THREE.Mesh(new THREE.TorusGeometry(0.32 - k * 0.07, 0.035, 6, 18), new THREE.MeshBasicMaterial({ color: 0xe0f4ff, transparent: true, opacity: 0.6 - k * 0.12, depthWrite: false }));
+    const r = new THREE.Mesh(new THREE.TorusGeometry(0.32 - k * 0.07, 0.035, 6, 18), new THREE.MeshBasicMaterial({ color: ring, transparent: true, opacity: 0.6 - k * 0.12, depthWrite: false }));
     r.rotation.set(k * 1.1, k * 0.7, 0);
     g.add(r);
   }
-  const core = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false }));
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), new THREE.MeshBasicMaterial({ color: coreColor, transparent: true, opacity: 0.35, depthWrite: false }));
   g.add(core);
   return g;
 }
@@ -628,13 +628,13 @@ export function buildChimeraMesh(gn: ChimeraGenome): THREE.Group {
       }
       case 'slash': {
         hand.userData.aim = true;
-        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.8, 0.16), m(0xc8ccd4));
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.8, 0.16), m(gn.fx.second));
         blade.position.set(0, at - 0.45, -0.04);
         hand.add(blade);
         break;
       }
       case 'lob': {
-        const bomb = buildBombMesh();
+        const bomb = buildFxProjectile(gn.fx, gn.seed, 0.13);
         bomb.position.set(0, at, 0);
         hand.add(bomb);
         break;
@@ -744,6 +744,59 @@ export function buildChimeraMesh(gn: ChimeraGenome): THREE.Group {
   }
   g.scale.setScalar(sc);
   g.traverse((o) => ((o as THREE.Mesh).isMesh ? (o.userData.keep = false) : undefined));
+  return g;
+}
+
+/**
+ * A random entity's projectile (bullet, bomb, boulder, ...) in its own shape,
+ * colours and pattern. `size` is its radius (m); the long axis is +Z.
+ */
+export function buildFxProjectile(fx: ChimeraFx, seed: number, size: number): THREE.Group {
+  const g = new THREE.Group();
+  const mat = size > 0.12 ? patternMat(fx.pattern, fx.main, fx.second, seed) : new THREE.MeshBasicMaterial({ color: fx.main, transparent: true });
+  mat.opacity = fx.opacity;
+  const sec = new THREE.MeshBasicMaterial({ color: fx.second, transparent: true, opacity: fx.opacity });
+  switch (fx.shape) {
+    case 'orb':
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(size, 12, 9), mat));
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(size * 1.35, 10, 8), new THREE.MeshBasicMaterial({ color: fx.second, transparent: true, opacity: 0.25, depthWrite: false })));
+      break;
+    case 'shard': {
+      const m1 = new THREE.Mesh(new THREE.OctahedronGeometry(size * 1.2, 0), mat);
+      m1.scale.set(0.7, 0.7, 1.6);
+      g.add(m1);
+      break;
+    }
+    case 'needle': {
+      const n = new THREE.Mesh(new THREE.ConeGeometry(size * 0.6, size * 5, 8), mat);
+      n.rotation.x = Math.PI / 2;
+      g.add(n);
+      const tail = new THREE.Mesh(new THREE.SphereGeometry(size * 0.7, 8, 6), sec);
+      tail.position.z = -size * 2.2;
+      g.add(tail);
+      break;
+    }
+    case 'cube': {
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(size * 1.5, size * 1.5, size * 1.5), mat));
+      const c = new THREE.Mesh(new THREE.BoxGeometry(size * 0.8, size * 0.8, size * 0.8), sec);
+      c.rotation.set(0.6, 0.6, 0);
+      g.add(c);
+      break;
+    }
+    case 'ring': {
+      g.add(new THREE.Mesh(new THREE.TorusGeometry(size, size * 0.3, 8, 16), mat));
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(size * 0.4, 8, 6), sec));
+      break;
+    }
+    case 'star':
+    default:
+      for (let k = 0; k < 3; k++) {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(size * 0.45, size * 0.45, size * 2.4), k ? sec : mat);
+        b.rotation.set(k === 1 ? Math.PI / 2 : 0, k === 2 ? Math.PI / 2 : 0, 0);
+        g.add(b);
+      }
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(size * 0.6, 8, 6), mat));
+  }
   return g;
 }
 

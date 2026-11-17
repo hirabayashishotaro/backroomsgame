@@ -1,3 +1,4 @@
+import { SKINS, type Skin } from '../player/skins';
 /**
  * Settings (SPEC §10). A single schema drives validation and the settings
  * screen, so every option is clamped/sanitised the same way and shows up in
@@ -31,6 +32,7 @@ export type Action =
   | 'prevSlot'
   | 'nextSlot'
   | 'drop'
+  | 'view'
   | 'journal';
 
 export const ACTIONS: Action[] = [
@@ -47,6 +49,7 @@ export const ACTIONS: Action[] = [
   'interact',
   'use',
   'drop',
+  'view',
   'slot1',
   'slot2',
   'slot3',
@@ -72,6 +75,7 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   interact: ['KeyE'],
   use: ['KeyQ'],
   drop: ['KeyG'],
+  view: ['KeyV'],
   attack: ['Mouse0'],
   aim: ['Mouse2'],
   reload: ['KeyR'],
@@ -100,6 +104,7 @@ export const DEFAULT_PAD_BINDINGS: Partial<Record<Action, number[]>> = {
   interact: [2],
   use: [3],
   drop: [13],
+  view: [14],
   aim: [6],
   attack: [7],
   sprint: [10],
@@ -159,6 +164,8 @@ export interface Settings {
   nonEuclidean: boolean;
   worldSeed: string;
   autosaveMinutes: number; // 0 = off
+  /** The player's outfit (seen in third person). */
+  skin: Skin;
 }
 
 type Field =
@@ -207,6 +214,7 @@ export const SETTINGS_SCHEMA: Field[] = [
   { key: 'entityVolume', type: 'range', min: 0, max: 1, step: 0.05, def: 0.8, tab: 'audio', label: 'エンティティの音', fmt: pct },
   { key: 'humStrength', type: 'range', min: 0, max: 1, step: 0.05, def: 0.6, tab: 'audio', label: 'ハム音の強さ', fmt: pct },
 
+  { key: 'skin', type: 'select', options: SKINS, def: 'suit', tab: 'game', label: 'プレイヤーの見た目', note: 'V キーで三人称視点にすると確認できる' },
   { key: 'difficulty', type: 'select', options: [['easy', 'やさしい'], ['normal', 'ふつう'], ['hard', 'むずかしい']], def: 'normal', tab: 'game', label: '難易度' },
   { key: 'jumpscare', type: 'select', options: [['off', 'なし'], ['mild', '控えめ'], ['full', '強い']], def: 'mild', tab: 'game', label: 'ジャンプスケア', note: '捕まったときの驚かせ演出の強さ' },
   { key: 'subtitles', type: 'bool', def: false, tab: 'game', label: '字幕(環境音・声の文字化)' },

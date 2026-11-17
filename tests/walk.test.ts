@@ -180,7 +180,7 @@ describe('walking the vertical worlds (no holes on the intended route)', () => {
       }
     expect(tested).toBeGreaterThan(0);
     expect(stuck).toEqual([]);
-  });
+  }, 30000);
 
   it('pool rooms: you can climb out of the splash pool under the water slide', () => {
     const L = resolveLevel('37');

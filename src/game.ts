@@ -842,7 +842,8 @@ export class Game {
       this.scene.add(this.crowd.root);
     }
     // The ending is a quiet walk: no weapon in hand, no gauges.
-    this.viewmodel.root.visible = id !== ENDING_LEVEL && !this.thirdPerson;
+    this.thirdPerson = false; // a new level starts in first person
+    this.viewmodel.root.visible = id !== ENDING_LEVEL;
     this.hud.setVisible(id !== ENDING_LEVEL && this.settings.showHud);
     this.audio.setSoundscape(this.level.soundscape ?? null);
     this.mats = new LevelMaterials(this.ctx);
@@ -1293,9 +1294,24 @@ export class Game {
 
   /** Third-person view (V): the camera behind the shoulder, the player's body visible. */
   private thirdPerson = false;
-  /** 0 = first person, 1 = behind the shoulder, 2 = in front, looking back at you. */
-  private viewMode = 0;
-  private camWorld: [number, number, number] | null = null;
+  /** Orbit of the camera around the body while looking at yourself (radians). */
+  private orbitYaw = 0;
+  private orbitPitch = 0.15;
+
+  /**
+   * V: stand still and look at yourself - the mouse turns the camera around
+   * your body. No fighting; moving (or V again) returns to first person.
+   */
+  private setInspect(on: boolean): void {
+    this.thirdPerson = on;
+    if (on) {
+      this.orbitYaw = this.player.yaw + Math.PI; // start in front of you
+      this.orbitPitch = 0.15;
+      this.arsenal.cancelReload();
+      this.adsT = 0;
+    }
+    this.viewmodel.root.visible = !on && this.level.id !== ENDING_LEVEL;
+  }
   private avatar: THREE.Group | null = null;
   private avatarSkin: Skin | null = null;
 
@@ -1303,10 +1319,7 @@ export class Game {
     const p = this.player;
     const show = this.thirdPerson && this.started && this.level.id !== ENDING_LEVEL;
     if (this.avatar && (!show || this.avatarSkin !== this.settings.skin)) this.avatar.visible = false;
-    if (!show) {
-      this.camWorld = null;
-      return;
-    }
+    if (!show) return;
     if (!this.avatar || this.avatarSkin !== this.settings.skin) {
       if (this.avatar) {
         this.avatar.traverse((o) => {
@@ -1328,33 +1341,20 @@ export class Game {
     a.position.set(this.origin.toRenderX(p.x), this.camY - sink, this.origin.toRenderZ(p.z));
     a.rotation.y = p.yaw;
     const crouch = Math.max(0, Math.min(1, (EYE_HEIGHT - p.eye) / (EYE_HEIGHT - CROUCH_EYE)));
-    poseAvatar(a, p.bobPhase, p.speed, crouch, this.inventory.held !== null && this.inventory.held !== 'almond_water', !p.grounded);
-    // Camera: behind and a little to the right of the head, pulled in front of walls.
-    const cp = Math.cos(p.pitch);
-    const dx = -Math.sin(p.yaw) * cp;
-    const dy = Math.sin(p.pitch);
-    const dz = -Math.cos(p.yaw) * cp;
-    const rx = Math.cos(p.yaw);
-    const rz = -Math.sin(p.yaw);
-    const ex = p.x;
-    const ey = this.camera.position.y;
-    const ez = p.z;
-    // Desired offset: 3 m back, 0.45 m to the right, 0.25 m up (or 2.6 m in front, facing you).
-    const front = this.viewMode === 2;
-    let ox = front ? dx * 2.6 : -dx * 3 + rx * 0.45;
-    let oy = front ? dy * 2.6 + 0.1 : -dy * 3 + 0.25;
-    let oz = front ? dz * 2.6 : -dz * 3 + rz * 0.45;
-    const ol = Math.hypot(ox, oy, oz);
-    const hit = this.rayWorld(ex, ey, ez, ox / ol, oy / ol, oz / ol, ol);
-    if (hit !== null) {
-      const k = Math.max(0.15, hit - 0.25) / ol;
-      ox *= k;
-      oy *= k;
-      oz *= k;
-    }
-    this.camWorld = front ? null : [ex + ox, ey + oy, ez + oz];
-    this.camera.position.set(this.origin.toRenderX(ex + ox), ey + oy, this.origin.toRenderZ(ez + oz));
-    if (front) this.camera.rotation.set(-p.pitch, p.yaw + Math.PI, 0);
+    poseAvatar(a, p.bobPhase, p.speed, crouch, false, !p.grounded); // standing at ease
+    // Camera: orbiting the body at about 2.8 m, pulled in front of walls, looking at its middle.
+    const cx = p.x;
+    const cy = this.camY - sink + 1.05 * (1 - 0.3 * crouch);
+    const cz = p.z;
+    const cop = Math.cos(this.orbitPitch);
+    const ux = Math.sin(this.orbitYaw) * cop;
+    const uy = Math.sin(this.orbitPitch);
+    const uz = Math.cos(this.orbitYaw) * cop;
+    let d = 2.8;
+    const hit = this.rayWorld(cx, cy, cz, ux, uy, uz, d);
+    if (hit !== null) d = Math.max(0.6, hit - 0.25);
+    this.camera.position.set(this.origin.toRenderX(cx + ux * d), cy + uy * d, this.origin.toRenderZ(cz + uz * d));
+    this.camera.lookAt(this.origin.toRenderX(cx), cy, this.origin.toRenderZ(cz));
   }
 
   private heldWeapon(): WeaponId | null {
@@ -1367,28 +1367,6 @@ export class Game {
   private aimDir(spread: number): [number, number, number] {
     let yaw = this.player.yaw;
     let pitch = this.player.pitch;
-    if (this.thirdPerson && this.camWorld) {
-      // Third person: aim from the eye at whatever is under the crosshair (the camera's centre ray).
-      const cp0 = Math.cos(pitch);
-      const dx = -Math.sin(yaw) * cp0;
-      const dy = Math.sin(pitch);
-      const dz = -Math.cos(yaw) * cp0;
-      const [cx, cy, cz] = this.camWorld;
-      const hit = this.ents.castRay(cx, cy, cz, dx, dy, dz, 120);
-      const T = hit ? hit.t : 120;
-      const ex = this.player.x;
-      const ey = this.player.y + this.player.eye;
-      const ez = this.player.z;
-      const tx = cx + dx * T - ex;
-      const ty = cy + dy * T - ey;
-      const tz = cz + dz * T - ez;
-      const tl = Math.hypot(tx, ty, tz);
-      // Only when the target is in front of the eye (not between the camera and the body).
-      if (tl > 0.5 && tx * dx + ty * dy + tz * dz > 0) {
-        yaw = Math.atan2(-tx, -tz);
-        pitch = Math.asin(Math.max(-1, Math.min(1, ty / tl)));
-      }
-    }
     if (spread > 0) {
       const a = Math.random() * Math.PI * 2;
       const r = Math.sqrt(Math.random()) * spread;
@@ -1559,6 +1537,8 @@ export class Game {
       this.hud.setCrosshair(0, true, s.crosshairSize * 0.6, s.crosshairColor, s.crosshairDot, 0);
       this.hud.setAmmo(null, '', '', false);
     }
+    // Looking at yourself: no reticle.
+    if (this.thirdPerson) this.hud.setCrosshair(0, false, 1, s.crosshairColor, false, 0);
   }
 
   // ---------------------------------------------------------------------------
@@ -1845,6 +1825,7 @@ export class Game {
   private die(cause: DeathCause): void {
     if (this.deadTimer > 0) return;
     this.deadTimer = 3.5;
+    if (this.thirdPerson) this.setInspect(false);
     this.inventory.loseHalf((n) => this.rng.int(0, n - 1));
     this.hud.showDeath(t('death.title'), t('death.' + cause));
     this.audio.humDip(3);
@@ -1908,12 +1889,7 @@ export class Game {
     }
     if (inp.wasPressed('use')) this.useHeld();
     if (inp.wasPressed('drop')) this.dropHeld();
-    if (inp.wasPressed('view')) {
-      // First person -> behind the shoulder -> facing you (to see your outfit) -> first person.
-      this.viewMode = (this.viewMode + 1) % 3;
-      this.thirdPerson = this.viewMode > 0;
-      this.viewmodel.root.visible = !this.thirdPerson && this.level.id !== ENDING_LEVEL;
-    }
+    if (inp.wasPressed('view')) this.setInspect(!this.thirdPerson);
   }
 
   private frame(): void {
@@ -1972,8 +1948,14 @@ export class Game {
       const adsK = 1 + (s.adsSensitivity * zoom - 1) * this.adsT;
       const lookDX = (this.input.mouseDX * k * s.sensitivityX + this.input.padLook.x * pk) * adsK;
       const lookDY = (this.input.mouseDY * k * s.sensitivityY * inv + this.input.padLook.y * pk * pinv) * adsK;
-      this.player.look(lookDX, lookDY);
-      this.arsenal.aimedDown(lookDY); // pulling down pays off magnum kick
+      if (this.thirdPerson) {
+        // Looking at yourself: the mouse turns the camera around your body.
+        this.orbitYaw -= lookDX;
+        this.orbitPitch = Math.max(-0.5, Math.min(1.2, this.orbitPitch + lookDY));
+      } else {
+        this.player.look(lookDX, lookDY);
+        this.arsenal.aimedDown(lookDY); // pulling down pays off magnum kick
+      }
       this.lastLookDX = this.input.mouseDX;
       this.lastLookDY = this.input.mouseDY;
       forward = (this.input.isDown('forward') ? 1 : 0) - (this.input.isDown('back') ? 1 : 0) - this.input.padMove.y;
@@ -1981,6 +1963,8 @@ export class Game {
       forward = Math.max(-1, Math.min(1, forward));
       r = Math.max(-1, Math.min(1, r));
       moving = Math.abs(forward) > 0.05 || Math.abs(r) > 0.05;
+      // Moving (or jumping, crouching) while looking at yourself: back to first person.
+      if (this.thirdPerson && (moving || this.input.isDown('jump') || this.input.isDown('crouch'))) this.setInspect(false);
       // Hold or toggle (SPEC §10.1)
       if (s.sprintToggle) {
         if (this.input.wasPressed('sprint')) this.sprintLatched = !this.sprintLatched;
@@ -2037,7 +2021,8 @@ export class Game {
       (glow.material as THREE.MeshBasicMaterial).opacity = 0.45 + Math.sin(this.time * 2) * 0.12;
     }
 
-    this.updateWeapons(dt, active && this.level.id !== ENDING_LEVEL);
+    // No fighting while looking at yourself.
+    this.updateWeapons(dt, active && this.level.id !== ENDING_LEVEL && !this.thirdPerson);
 
     // Interaction prompt
     this.target = active ? this.findTarget() : null;

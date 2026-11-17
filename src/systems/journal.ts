@@ -25,11 +25,26 @@ export interface JournalEdge {
   count: number;
 }
 
+/** An entity met (the bestiary): where it was met and how many were defeated. */
+export interface JournalCreature {
+  /** The kind, or 'chimera:<seed>' for a random entity. */
+  key: string;
+  kind: string;
+  name: string;
+  /** Random entities: their whole genome, so the model can be rebuilt. */
+  genome?: unknown;
+  levels: string[];
+  firstMet: number;
+  defeated: number;
+}
+
 export interface JournalData {
   levels: Record<string, JournalLevel>;
   edges: JournalEdge[];
   /** Order of discovery. */
   order: string[];
+  /** Entities met, in the order they were first met. */
+  creatures?: JournalCreature[];
 }
 
 export const MILESTONES = [10, 50, 100];
@@ -70,6 +85,35 @@ export class Journal {
     else this.data.edges.push({ from, to, kind, count: 1 });
   }
 
+  /**
+   * Record meeting an entity in a level. Returns true if it is new to this
+   * level (the journal and the bestiary both remember it).
+   */
+  meet(levelId: string, c: { key: string; kind: string; name: string; genome?: unknown }, now = Date.now()): boolean {
+    const list = (this.data.creatures ??= []);
+    let e = list.find((x) => x.key === c.key);
+    if (!e) {
+      e = { key: c.key, kind: c.kind, name: c.name, genome: c.genome, levels: [], firstMet: now, defeated: 0 };
+      list.push(e);
+    }
+    if (!e.levels.includes(levelId)) e.levels.push(levelId);
+    const l = this.data.levels[levelId];
+    if (!l || l.entities.includes(c.key)) return false;
+    l.entities.push(c.key);
+    return true;
+  }
+
+  /** Record defeating an entity (by its key). */
+  defeat(key: string): void {
+    const e = this.data.creatures?.find((x) => x.key === key);
+    if (e) e.defeated++;
+  }
+
+  /** Name of an entity met, by its key. */
+  creatureName(key: string): string | null {
+    return this.data.creatures?.find((x) => x.key === key)?.name ?? null;
+  }
+
   /** A milestone reached by the latest discovery, if any. */
   milestone(): number | null {
     return MILESTONES.includes(this.count) ? this.count : null;
@@ -79,8 +123,21 @@ export class Journal {
     return this.data;
   }
 
-  load(d: JournalData | undefined | null): void {
+  load(d: JournalData | undefined | null, nameOf: (kind: string) => string = (k) => k): void {
     this.data = d && typeof d === 'object' && d.levels && Array.isArray(d.edges) && Array.isArray(d.order) ? d : { levels: {}, edges: [], order: [] };
+    // Older saves: rebuild the bestiary from the entities each level remembers.
+    if (!this.data.creatures) {
+      const list: JournalCreature[] = [];
+      for (const id of this.data.order) {
+        for (const k of this.data.levels[id]?.entities ?? []) {
+          if (k.startsWith('chimera:')) continue;
+          let e = list.find((x) => x.key === k);
+          if (!e) list.push((e = { key: k, kind: k, name: nameOf(k), levels: [], firstMet: this.data.levels[id].firstVisit, defeated: 0 }));
+          if (!e.levels.includes(id)) e.levels.push(id);
+        }
+      }
+      this.data.creatures = list;
+    }
   }
 }
 

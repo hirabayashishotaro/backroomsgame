@@ -2,6 +2,10 @@
 import { formatPlayTime, latestSlot, listSlots } from '../core/save';
 import { getNative } from '../core/storage';
 import { feedDevKey, isDevUnlocked } from '../core/devUnlock';
+import { SKINS, type Skin } from '../player/skins';
+import { buildAvatar } from '../player/avatar';
+import { ModelViewer } from './modelViewer';
+import type * as THREE from 'three';
 import { t } from './i18n';
 
 export interface ScreenCallbacks {
@@ -14,6 +18,9 @@ export interface ScreenCallbacks {
   onCombatLab: () => void;
   onEndingTest: () => void;
   onJournal: () => void;
+  /** The player's outfit: read and change it (saved with the settings). */
+  getSkin: () => Skin;
+  setSkin: (s: Skin) => void;
   onQuit: () => void;
 }
 
@@ -34,7 +41,7 @@ const CSS = `
 .sc-credit { font-size: 13px; line-height: 2; white-space: pre-line; }
 `;
 
-type View = 'title' | 'pause' | 'new' | 'load' | 'credits' | 'confirm' | 'mode';
+type View = 'title' | 'pause' | 'new' | 'load' | 'credits' | 'confirm' | 'mode' | 'skin';
 
 export class Screens {
   private root: HTMLDivElement;
@@ -71,6 +78,57 @@ export class Screens {
 
   hide(): void {
     this.root.style.display = 'none';
+    this.viewer?.stop();
+  }
+
+  private viewer: ModelViewer | null = null;
+
+  /** Free a preview model's geometries, materials and textures. */
+  private static disposeModel(o: THREE.Object3D): void {
+    o.removeFromParent();
+    o.traverse((x) => {
+      const m = x as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.geometry.dispose();
+      const mt = m.material as THREE.MeshBasicMaterial;
+      mt.map?.dispose();
+      mt.dispose();
+    });
+  }
+
+  /** Skin selection: the outfit turning in 3D, a button per outfit. */
+  private renderSkins(): void {
+    this.heading(t('menu.skin'), t('menu.skinSub'));
+    if (!this.viewer) this.viewer = new ModelViewer(300, 300);
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;justify-content:center;margin-bottom:10px;';
+    wrap.appendChild(this.viewer.canvas);
+    this.panel.appendChild(wrap);
+    const current = this.cb.getSkin();
+    this.viewer.show(buildAvatar(current), Screens.disposeModel);
+    this.viewer.start();
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;';
+    for (const [id, label] of SKINS) {
+      const b = document.createElement('button');
+      b.className = 'sc-btn' + (id === current ? ' primary' : '');
+      b.style.margin = '0';
+      b.style.textAlign = 'center';
+      b.textContent = label;
+      b.onclick = () => {
+        this.cb.setSkin(id);
+        this.render('skin');
+      };
+      grid.appendChild(b);
+    }
+    this.panel.appendChild(grid);
+    this.note(t('menu.skinNote'));
+    this.btn(t('menu.back'), () => this.render(this.back));
+  }
+
+  private skinLabel(): string {
+    const cur = this.cb.getSkin();
+    return SKINS.find(([id]) => id === cur)?.[1] ?? '';
   }
 
   private btn(label: string, onClick: () => void, opts: { sub?: string; disabled?: boolean; primary?: boolean } = {}): HTMLButtonElement {
@@ -109,6 +167,8 @@ export class Screens {
   private render(view: View, arg?: number): void {
     this.view = view;
     this.panel.innerHTML = '';
+    if (view !== 'skin') this.viewer?.stop();
+    if (view === 'skin') return this.renderSkins();
     const isElectron = !!getNative()?.isElectron;
     switch (view) {
       case 'title': {
@@ -122,6 +182,7 @@ export class Screens {
         this.btn(t('menu.newGame'), () => this.render('new'), { primary: !latest });
         this.btn(t('menu.load'), () => this.render('load'), { disabled: !latest });
         this.btn(t('menu.settings'), () => this.cb.onSettings());
+        this.btn(t('menu.skin'), () => this.render('skin'), { sub: this.skinLabel() });
         if (isDevUnlocked()) {
           this.btn(t('dev.open'), () => this.cb.onLevelSelect());
           this.btn(t('lab.open'), () => this.cb.onCombatLab());
@@ -137,6 +198,7 @@ export class Screens {
         this.btn(t('menu.resume'), () => this.cb.onResume(), { primary: true });
         this.btn(t('menu.journal'), () => this.cb.onJournal());
         this.btn(t('menu.settings'), () => this.cb.onSettings());
+        this.btn(t('menu.skin'), () => this.render('skin'), { sub: this.skinLabel() });
         if (isDevUnlocked()) {
           this.btn(t('dev.open'), () => this.cb.onLevelSelect());
           this.btn(t('lab.open'), () => this.cb.onCombatLab());

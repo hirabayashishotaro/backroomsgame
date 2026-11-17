@@ -303,15 +303,19 @@ export class Game {
         this.audio.hurt();
         this.hud.hurtFlash();
       },
-      onSeen: (kind, name) => {
-        const lv = this.journal.data.levels[this.level.id];
-        if (lv && !lv.entities.includes(kind)) {
-          lv.entities.push(kind);
-          this.hud.message(t('entity.seen', { name: name ?? ENTITIES[kind].name }), 2.5);
-        }
+      onSeen: (kind, name, genome) => {
+        // The journal remembers it for this level, and the bestiary keeps its model.
+        const key = genome ? 'chimera:' + genome.seed : kind;
+        if (this.journal.meet(this.level.id, { key, kind, name: name ?? ENTITIES[kind].name, genome })) this.hud.message(t('entity.seen', { name: name ?? ENTITIES[kind].name }), 2.5);
       },
-      onKilled: (kind, at, name) => {
+      onKilled: (kind, at, name, genome) => {
         this.hud.message(t('entity.killed', { name: name ?? ENTITIES[kind].name }), 2);
+        {
+          // Defeated without having been looked at: it still goes into the bestiary.
+          const key = genome ? 'chimera:' + genome.seed : kind;
+          this.journal.meet(this.level.id, { key, kind, name: name ?? ENTITIES[kind].name, genome });
+          this.journal.defeat(key);
+        }
         // Often a witch leaves its staff behind (30%).
         if (kind === 'witch' && this.rng.float() < STAFF_DROP_P) this.spawnItemAt('staff', at.x, at.y, at.z);
         if (this.mode === 'escape') {
@@ -372,6 +376,11 @@ export class Game {
       onCombatLab: () => this.lab.show(),
       onEndingTest: () => this.startEndingTest(),
       onJournal: () => this.journalScreen.show(() => {}),
+      getSkin: () => this.settings.skin,
+      setSkin: (skin) => {
+        this.settings.skin = skin;
+        this.applySettings(this.settings);
+      },
       onQuit: () => {
         this.saveNow();
         getNative()?.quit?.();
@@ -446,7 +455,7 @@ export class Game {
     this.deltas.load(d.deltas);
     this.playTime = d.playTime;
     this.history.push(...d.history);
-    this.journal.load(d.journal);
+    this.journal.load(d.journal, (k) => ENTITIES[k as EntityKind]?.name ?? k);
     for (const [lid, list] of Object.entries(d.anchors)) this.anchors[lid] = list.map((a) => ({ ...a, back: { ...a.back } }));
     this.enterLevel(d.levelId, d.player);
     this.player.pitch = d.player.pitch;

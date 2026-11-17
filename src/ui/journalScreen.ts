@@ -2,6 +2,11 @@
 import { layoutGraph, type Journal } from '../systems/journal';
 import { resolveLevel } from '../levels/registry';
 import { t } from './i18n';
+import { ModelViewer } from './modelViewer';
+import { buildChimeraMesh, buildEntityMesh, disposeEntityMesh } from '../entities/models';
+import { ENTITIES, type EntityKind } from '../entities/entityDefs';
+import type { ChimeraGenome } from '../entities/chimera';
+import type * as THREE from 'three';
 
 const CSS = `
 .jr { position: fixed; inset: 0; z-index: 44; display: none; align-items: center; justify-content: center;
@@ -22,6 +27,15 @@ const CSS = `
 .jr-card .hidden { opacity: 0.35; }
 .jr-empty { opacity: 0.6; padding: 30px; text-align: center; }
 .jr svg text { fill: #e9dfae; font-size: 11px; font-family: inherit; }
+.jr-bestiary { display: flex; gap: 14px; height: 100%; }
+.jr-blist { width: 230px; flex: none; overflow: auto; }
+.jr-bitem { display: block; width: 100%; text-align: left; padding: 7px 10px; margin-bottom: 4px; background: #1d1a0c; color: #e9dfae; border: 1px solid #4d4420; cursor: pointer; font-size: 13px; }
+.jr-bitem.on { background: #c8b35c; color: #1a1606; }
+.jr-bitem small { display: block; opacity: 0.6; font-size: 11px; }
+.jr-bview { flex: 1; min-width: 0; overflow: auto; }
+.jr-bview h3 { margin: 10px 0 4px; font-weight: 400; }
+.jr-bview .line { font-size: 13px; line-height: 1.7; opacity: 0.9; }
+@media (max-width: 640px) { .jr-bestiary { flex-direction: column; } .jr-blist { width: auto; max-height: 160px; } }
 .jr-close { margin-top: 12px; align-self: flex-start; padding: 9px 18px; background: #c8b35c; color: #1a1606; border: none; cursor: pointer; }
 `;
 
@@ -39,7 +53,9 @@ export class JournalScreen {
   private body: HTMLDivElement;
   private countEl: HTMLDivElement;
   private tabs: HTMLDivElement;
-  private tab: 'list' | 'map' = 'list';
+  private tab: 'list' | 'map' | 'creatures' = 'list';
+  private viewer: ModelViewer | null = null;
+  private picked: string | null = null;
   private onClose: () => void = () => {};
 
   constructor(parent: HTMLElement, private journal: Journal) {
@@ -86,13 +102,14 @@ export class JournalScreen {
   hide(): void {
     if (!this.visible) return;
     this.root.style.display = 'none';
+    this.viewer?.stop();
     this.onClose();
   }
 
   private render(): void {
     this.countEl.textContent = t('journal.count', { n: this.journal.count });
     this.tabs.innerHTML = '';
-    for (const id of ['list', 'map'] as const) {
+    for (const id of ['list', 'map', 'creatures'] as const) {
       const b = document.createElement('button');
       b.className = 'jr-tab' + (this.tab === id ? ' on' : '');
       b.textContent = t('journal.tab.' + id);
@@ -103,7 +120,8 @@ export class JournalScreen {
       this.tabs.appendChild(b);
     }
     this.body.innerHTML = '';
-    if (!this.journal.count) {
+    if (this.tab !== 'creatures') this.viewer?.stop();
+    if (!this.journal.count && this.tab !== 'creatures') {
       const e = document.createElement('div');
       e.className = 'jr-empty';
       e.textContent = t('journal.empty');
@@ -111,7 +129,8 @@ export class JournalScreen {
       return;
     }
     if (this.tab === 'list') this.renderList();
-    else this.renderMap();
+    else if (this.tab === 'map') this.renderMap();
+    else this.renderCreatures();
   }
 
   private renderList(): void {
@@ -146,6 +165,12 @@ export class JournalScreen {
         });
         card.appendChild(line);
       }
+      if (l.entities.length) {
+        const line = document.createElement('div');
+        line.className = 'line';
+        line.textContent = t('journal.met') + ' ' + l.entities.map((k) => this.journal.creatureName(k) ?? ENTITIES[k as EntityKind]?.name ?? k).join('、');
+        card.appendChild(line);
+      }
       for (const e of l.exits) {
         const line = document.createElement('div');
         line.className = 'line';
@@ -155,6 +180,65 @@ export class JournalScreen {
       }
       this.body.appendChild(card);
     }
+  }
+
+  /** The bestiary: every entity met, its model turning in 3D, where it was met. */
+  private renderCreatures(): void {
+    const list = this.journal.data.creatures ?? [];
+    if (!list.length) {
+      const e = document.createElement('div');
+      e.className = 'jr-empty';
+      e.textContent = t('journal.noCreatures');
+      this.body.appendChild(e);
+      return;
+    }
+    if (!this.picked || !list.some((c) => c.key === this.picked)) this.picked = list[list.length - 1].key;
+    const wrap = document.createElement('div');
+    wrap.className = 'jr-bestiary';
+    const side = document.createElement('div');
+    side.className = 'jr-blist';
+    for (const c of list) {
+      const b = document.createElement('button');
+      b.className = 'jr-bitem' + (c.key === this.picked ? ' on' : '');
+      b.textContent = c.name;
+      const sm = document.createElement('small');
+      sm.textContent = c.kind === 'chimera' ? t('journal.randomEntity') : t('journal.defeated', { n: c.defeated });
+      b.appendChild(sm);
+      b.onclick = () => {
+        this.picked = c.key;
+        this.render();
+      };
+      side.appendChild(b);
+    }
+    const view = document.createElement('div');
+    view.className = 'jr-bview';
+    const c = list.find((x) => x.key === this.picked)!;
+    if (!this.viewer) this.viewer = new ModelViewer(340, 300);
+    view.appendChild(this.viewer.canvas);
+    let model: THREE.Group;
+    try {
+      model = c.genome ? buildChimeraMesh(c.genome as ChimeraGenome) : buildEntityMesh(c.kind as EntityKind);
+    } catch {
+      model = buildEntityMesh('bug');
+    }
+    this.viewer.show(model, (o) => disposeEntityMesh(o as THREE.Group));
+    this.viewer.start();
+    const h = document.createElement('h3');
+    h.textContent = c.name;
+    const hint = document.createElement('div');
+    hint.className = 'line';
+    // (The Bug's description would hint at the way out: kept a mystery.)
+    hint.textContent = c.genome ? (c.genome as ChimeraGenome).hint : c.kind === 'bug' ? '？？？' : (ENTITIES[c.kind as EntityKind]?.hint ?? '');
+    const where = document.createElement('div');
+    where.className = 'line';
+    const names = c.levels.map((id) => this.journal.data.levels[id]?.title ?? 'Level ' + id);
+    where.textContent = t('journal.metIn') + ' ' + names.join('、');
+    const def = document.createElement('div');
+    def.className = 'line';
+    def.textContent = t('journal.defeated', { n: c.defeated });
+    view.append(h, hint, where, def);
+    wrap.append(side, view);
+    this.body.appendChild(wrap);
   }
 
   private renderMap(): void {

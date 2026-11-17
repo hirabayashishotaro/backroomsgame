@@ -34,8 +34,8 @@ export interface Host {
   onSelfBlast: () => void;
   /** Hit by a ranged attack (bullet, lightning): damage without the jump scare. */
   onRangedHit: (kind: EntityKind, damage: number) => void;
-  onSeen: (kind: EntityKind, name?: string) => void;
-  onKilled: (kind: EntityKind, at: { x: number; y: number; z: number }, name?: string) => void;
+  onSeen: (kind: EntityKind, name?: string, genome?: ChimeraGenome) => void;
+  onKilled: (kind: EntityKind, at: { x: number; y: number; z: number }, name?: string, genome?: ChimeraGenome) => void;
   onHit: (head: boolean, kill: boolean) => void;
 }
 
@@ -433,7 +433,7 @@ export class EntitySystem {
       const retreat = (vx * -dx + vz * -dz) / dist; // moving away from it
       if (watched && !e.seen && e.brain.alpha > 0.5 && dist < 40) {
         e.seen = true;
-        this.host.onSeen(e.kind, e.name);
+        this.host.onSeen(e.kind, e.name, e.genome);
       }
       const stop = this.aiStopped && e.brain.hp > 0;
       const prevMode = e.brain.mode;
@@ -714,7 +714,7 @@ export class EntitySystem {
     e.flash = 1;
     this.host.audio.impact(true, this.panTo(at[0], at[2]), Math.hypot(at[0] - this.host.player.x, at[2] - this.host.player.z));
     this.host.onHit(head, dead);
-    if (dead) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z }, e.name);
+    if (dead) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z }, e.name, e.genome);
     this.spark(at[0], at[1], at[2], 0xa01010);
   }
 
@@ -881,7 +881,7 @@ export class EntitySystem {
       const k = 1 - d / radius;
       const dead = hurt(e.brain, damage * (0.25 + 0.75 * k));
       e.flash = 1;
-      if (dead) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z }, e.name);
+      if (dead) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z }, e.name, e.genome);
       if (e.kind !== 'giant') e.body.knock(e.body.x - x || 0.01, e.body.z - z, knock * (0.4 + 0.6 * k), 3 + 4 * k);
     }
   }
@@ -1120,7 +1120,7 @@ export class EntitySystem {
     for (const o of this.entities) {
       if (o === e || o.brain.hp <= 0 || !inSlash(b.x, b.y, b.z, yaw, o.body.x, o.body.y, o.body.z, 0.4, k)) continue;
       o.flash = 1;
-      if (hurt(o.brain, dmg)) this.host.onKilled(o.kind, { x: o.body.x, y: o.body.y, z: o.body.z }, o.name);
+      if (hurt(o.brain, dmg)) this.host.onKilled(o.kind, { x: o.body.x, y: o.body.y, z: o.body.z }, o.name, o.genome);
     }
   }
 
@@ -1369,7 +1369,7 @@ export class EntitySystem {
       const de = Math.hypot(e.body.x - x, e.body.z - z);
       if (de >= BOULDER.radius || Math.abs(e.body.y - y) > 2.5) continue;
       e.flash = 1;
-      if (hurt(e.brain, BOULDER.damage)) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z }, e.name);
+      if (hurt(e.brain, BOULDER.damage)) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z }, e.name, e.genome);
       e.body.knock(e.body.x - x || 0.01, e.body.z - z, BOULDER.knock, 3);
     }
   }

@@ -128,7 +128,7 @@ describe('random entities', () => {
     expect(MOD_LOWPASS).toBeLessThanOrEqual(3000);
   });
 
-  it('also live in hand-made levels with entities, picked a little less often than the level\'s own; empty levels stay empty', () => {
+  it('also live in hand-made levels with entities, picked as often as each of the level\'s own kinds; empty levels stay empty', () => {
     for (const id of ['1', '2', 'sento', 'vaporwave', '303', '666', 'chaos']) expect(entityTableFor(id, { dark: false, safe: false })).toContain('chimera');
     for (const id of ['0', 'shibuya', 'arena', 'frontrooms']) expect(entityTableFor(id, { dark: false, safe: false })).toEqual([]);
     const table = entityTableFor('2', { dark: false, safe: false });
@@ -140,7 +140,6 @@ describe('random entities', () => {
       if (k === 'chimera') chim++;
       else if (k === table[0]) other++;
     }
-    // Rarer than any one of the level's own kinds, but still there.
     expect(chim).toBeGreaterThan(0);
     expect(chim / other).toBeCloseTo(CHIMERA_HAND_WEIGHT, 1);
   });

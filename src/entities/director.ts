@@ -14,8 +14,8 @@ export interface DirectorTuning {
   chimeraWeight?: number;
 }
 
-/** Random entities in hand-made levels: a little rarer than the level's own entities. */
-export const CHIMERA_HAND_WEIGHT = 0.6;
+/** Random entities in hand-made levels: as likely as each of the level's own kinds (user request). */
+export const CHIMERA_HAND_WEIGHT = 1;
 
 /** Pick a kind from the table; random entities count `w` times as much as each other kind. */
 export function pickKind(table: EntityKind[], w: number, r: number): EntityKind {
@@ -127,7 +127,7 @@ export function giantAllowed(levelId: string, open: boolean): boolean {
 
 export function entityTableFor(levelId: string, opts: { dark: boolean; safe: boolean; open?: boolean }): EntityKind[] {
   const fixed = FIXED;
-  // Hand-made levels: their own entities, plus random entities (picked a little less often, see CHIMERA_HAND_WEIGHT).
+  // Hand-made levels: their own entities, plus random entities (picked as often as each of their own kinds, see CHIMERA_HAND_WEIGHT).
   // Levels with no entities at all (Level 0, the ending, the test hall, ...) stay empty.
   if (levelId in fixed) return fixed[levelId].length ? [...fixed[levelId], 'chimera'] : [];
   if (opts.safe) return [];

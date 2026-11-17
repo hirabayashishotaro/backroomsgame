@@ -78,7 +78,7 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
     kind: 'bloater',
     name: 'フクレ',
     hp: 40 * HP_SCALE,
-    damage: 60,
+    damage: 180, // three times the original burst (user request)
     walk: 2.4,
     run: 3.4,
     life: 90,
@@ -93,7 +93,7 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
     run: 3.2,
     life: 160,
     tall: true,
-    hint: '見上げるほど大きな人影。歩みは遅いが、足元に近づくと踏みつけてくる。地響きが聞こえたら距離を取れ。',
+    hint: '見上げるほど大きな人影。歩みは遅いが、足元に近づくと踏みつけてくる。離れていると大岩を投げてくる。地面に赤い輪が出たら、そこから出ること。',
   },
   gunman: {
     kind: 'gunman',
@@ -113,7 +113,7 @@ export const ENTITIES: Record<EntityKind, EntityDef> = {
     walk: 2.6,
     run: 3.8,
     life: 120,
-    hint: '杖を持つ黒衣の人影。遠くから、足元に光る輪を描き、そこへ雷を落とす。輪が見えたらすぐ外へ出ること。',
+    hint: '杖を持つ黒衣の人影。遠くから、足元に光る輪を描き、そこへ雷を落とす。輪が見えたらすぐ外へ出ること。近づきすぎると、杖を掲げて周りに突風を放ち、吹き飛ばしてくる。',
   },
   bomber: {
     kind: 'bomber',

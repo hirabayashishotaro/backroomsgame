@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BLOATER, BOMBER, FANMAN, GUNMAN, NAMAHAGE, PEEKER, WITCH, hurt, inSlash, newBrain, think, type Perception } from '../src/entities/brain';
+import { BLOATER, BOMBER, BOULDER, FANMAN, GUST, GUNMAN, NAMAHAGE, PEEKER, WITCH, hurt, inSlash, newBrain, think, type Perception } from '../src/entities/brain';
 import { ENTITIES } from '../src/entities/entityDefs';
 import { Director, entityTableFor } from '../src/entities/director';
 
@@ -189,6 +189,37 @@ describe('entity behaviour', () => {
     expect(blows).toBeLessThanOrEqual(Math.ceil(12 / FANMAN.cooldown) + 1);
     expect(FANMAN.speed).toBeLessThan(10); // slow enough to sidestep
     expect(think(newBrain('fanman'), P({ dist: 4 }), 0.05).speed).toBeLessThan(0);
+  });
+
+  it('giant hurls boulders from a distance on a cooldown, but still walks in to stomp', () => {
+    const g = newBrain('giant');
+    let hurls = 0;
+    let walked = false;
+    for (let t = 0; t < 14; t += 0.05) {
+      const d = think(g, P({ dist: 25 }), 0.05);
+      if (d.hurl) hurls++;
+      if (d.speed > 0) walked = true;
+    }
+    expect(hurls).toBeGreaterThanOrEqual(2);
+    expect(hurls).toBeLessThanOrEqual(Math.ceil(14 / BOULDER.cooldown) + 1);
+    expect(walked).toBe(true);
+    // Up close it stomps instead of throwing.
+    const n = newBrain('giant');
+    for (let t = 0; t < 6; t += 0.05) expect(think(n, P({ dist: 3 }), 0.05).hurl).toBeFalsy();
+  });
+
+  it('witch blows a burst of wind only when you come close, on a cooldown', () => {
+    const w = newBrain('witch');
+    let gusts = 0;
+    for (let t = 0; t < 10; t += 0.05) if (think(w, P({ dist: 4 }), 0.05).gust) gusts++;
+    expect(gusts).toBeGreaterThanOrEqual(2);
+    expect(gusts).toBeLessThanOrEqual(Math.ceil(10 / GUST.cooldown) + 1);
+    const far = newBrain('witch');
+    for (let t = 0; t < 10; t += 0.05) expect(think(far, P({ dist: 15 }), 0.05).gust).toBeFalsy();
+  });
+
+  it('the bloater bursts three times as hard as before', () => {
+    expect(ENTITIES.bloater.damage).toBe(180);
   });
 
   it('a stunned entity cannot move or act for the stun time', () => {

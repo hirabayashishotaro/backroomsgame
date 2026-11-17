@@ -37,10 +37,12 @@ export interface BrainState {
   sideT: number;
   /** Stunned (seconds left): cannot move or act. */
   stunT: number;
+  /** A second cooldown (giant: rock throw, witch: wind burst). */
+  cd2: number;
 }
 
 export function newBrain(kind: EntityKind): BrainState {
-  return { kind, mode: 'idle', t: 0, watch: 0, heard: 99, hp: ENTITIES[kind].hp, alpha: 0, cd: 1.5, n: GUNMAN.mag, side: 1, sideT: 0, stunT: 0 };
+  return { kind, mode: 'idle', t: 0, watch: 0, heard: 99, hp: ENTITIES[kind].hp, alpha: 0, cd: 1.5, n: GUNMAN.mag, side: 1, sideT: 0, stunT: 0, cd2: 2.5 };
 }
 
 export interface Decision {
@@ -68,7 +70,16 @@ export interface Decision {
   slash?: boolean;
   /** Fanman: blow a slow ball of wind at the player now. */
   blow?: boolean;
+  /** Giant: hurl a boulder at where the player stands now. */
+  hurl?: boolean;
+  /** Witch: a burst of wind in eight directions around it now. */
+  gust?: boolean;
 }
+
+/** Giant's boulder: cooldown, range, flight speed (m/s along the ground), impact radius, damage, knockback. */
+export const BOULDER = { cooldown: 5.5, min: 9, max: 45, speed: 15, radius: 3.4, damage: 35, knock: 11 };
+/** Witch's wind burst: triggers when you are this close; cooldown; the eight gusts' speed, range and knockback. */
+export const GUST = { trigger: 6, cooldown: 4.5, speed: 10, range: 11, knock: 15, lift: 4, damage: 8 };
 
 /** Namahage: reach, wind-up (blade raised), recovery after the swing, the arc it covers (rad from forward). */
 export const NAMAHAGE = { reach: 3.6, windup: 0.55, recover: 1.1, len: 4.4, halfW: 1.6, height: 2.6 };
@@ -237,6 +248,13 @@ export function think(b: BrainState, p: Perception, dt: number): Decision {
       // Hangs back and calls lightning down where you stand.
       const d = keepRange(b, p, dt, WITCH.near, WITCH.far, def.walk, def.run);
       b.cd -= dt;
+      b.cd2 -= dt;
+      // Too close: blow everything away with a burst of wind in eight directions.
+      if (p.dist < GUST.trigger && b.cd2 <= 0 && b.alpha > 0.6) {
+        b.cd2 = GUST.cooldown;
+        d.gust = true;
+        return d;
+      }
       if (p.los && p.dist < WITCH.maxRange && b.cd <= 0 && b.alpha > 0.6) {
         b.cd = WITCH.cooldown;
         d.cast = true;
@@ -327,6 +345,13 @@ export function think(b: BrainState, p: Perception, dt: number): Decision {
         return { speed: 0, gone: false };
       }
       b.watch = Math.max(0, b.watch - dt);
+      // Out of reach: now and then it tears up a boulder and hurls it (still walking in to stomp).
+      b.cd2 -= dt;
+      if (p.los && p.dist > BOULDER.min && p.dist < BOULDER.max && b.cd2 <= 0 && b.alpha > 0.6) {
+        b.cd2 = BOULDER.cooldown;
+        if (b.mode !== 'chase') set(b, 'chase');
+        return { speed: 0, gone: false, hurl: true };
+      }
       if (p.dist < GIANT.reach && b.watch <= 0) {
         set(b, 'attack');
         return { speed: 0, gone: false };

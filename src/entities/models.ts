@@ -338,6 +338,19 @@ export function buildBombMesh(): THREE.Group {
   return g;
 }
 
+/** The giant's boulder: a lumpy grey rock about 1.5 m across. */
+export function buildBoulderMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color: 0x77706a, transparent: true });
+  const a = new THREE.Mesh(new THREE.DodecahedronGeometry(0.75, 0), mat);
+  a.scale.set(1, 0.85, 1.1);
+  g.add(a);
+  const b = new THREE.Mesh(new THREE.DodecahedronGeometry(0.45, 0), new THREE.MeshBasicMaterial({ color: 0x5e5852, transparent: true }));
+  b.position.set(0.4, 0.3, -0.2);
+  g.add(b);
+  return g;
+}
+
 /** Fanman's ball of wind: pale swirling rings. */
 export function buildWindMesh(): THREE.Group {
   const g = new THREE.Group();

@@ -7,8 +7,8 @@ import * as THREE from 'three';
 import { PlayerController, type WorldQuery } from '../player/controller';
 import { groundHeight, rayBox, type WBox } from '../world/collision';
 import { ENTITIES, type EntityKind } from './entityDefs';
-import { BLAST_KNOCK, BLOATER, BOMBER, FANMAN, GIANT, NAMAHAGE, PEEKER, WITCH, inSlash, hurt, newBrain, think, type BrainState } from './brain';
-import { animateEntity, buildBombMesh, buildEntityMesh, buildWindMesh, buildRocketMesh, disposeEntityMesh, setEntityAlpha } from './models';
+import { BLAST_KNOCK, BLOATER, BOMBER, BOULDER, FANMAN, GIANT, GUST, NAMAHAGE, PEEKER, WITCH, inSlash, hurt, newBrain, think, type BrainState } from './brain';
+import { animateEntity, buildBombMesh, buildBoulderMesh, buildEntityMesh, buildWindMesh, buildRocketMesh, disposeEntityMesh, setEntityAlpha } from './models';
 import { stepProjectile } from '../weapons/weaponLogic';
 import { falloffFactor, type WeaponDef } from '../weapons/weaponDefs';
 import { buildWeaponModel } from '../weapons/weaponModels';
@@ -60,6 +60,10 @@ interface Entity {
   weaveF: number;
   /** Namahage: the direction the blade will come down (locked when it is raised). */
   slashYaw?: number;
+  /** Animation timers: giant's throw, witch's raised staff. */
+  actT?: number;
+  /** Hound: time until it may leap aside again. */
+  hopT?: number;
 }
 
 interface EnemyShot {
@@ -99,6 +103,25 @@ interface Wind {
   vz: number;
   life: number;
   mesh: THREE.Group;
+  /** Who blew it (damage, knockback); a witch's gust does not chase chest height. */
+  kind: 'fanman' | 'witch';
+}
+
+/** The giant's boulder: flies in an arc to a marked spot and crushes what is there. */
+interface Boulder {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  tx: number;
+  ty: number;
+  tz: number;
+  t: number;
+  flight: number;
+  mesh: THREE.Group;
+  ring: THREE.Group;
 }
 
 /** A thrown bomb: flies in an arc, lands, blinks, then explodes. */
@@ -240,6 +263,7 @@ export class EntitySystem {
   readonly strikes: Strike[] = [];
   readonly bombs: Bomb[] = [];
   readonly winds: Wind[] = [];
+  readonly boulders: Boulder[] = [];
   /** Developer combat lab: entities stand still and never attack. */
   aiStopped = false;
   private sparks: Spark[] = [];
@@ -276,6 +300,11 @@ export class EntitySystem {
     this.bombs.length = 0;
     for (const w of this.winds) disposeEntityMesh(w.mesh);
     this.winds.length = 0;
+    for (const r of this.boulders) {
+      disposeEntityMesh(r.mesh);
+      disposeEntityMesh(r.ring);
+    }
+    this.boulders.length = 0;
     for (const f of this.flashes) disposeEntityMesh(f.obj as THREE.Group);
     this.flashes.length = 0;
     if (this.aimRing) this.aimRing.visible = false;
@@ -398,6 +427,8 @@ export class EntitySystem {
       if (e.kind === 'peeker') this.aimLaser(e, d.aim, d.snipe === true, dist);
       if (d.slash) this.slash(e, dist);
       if (d.blow) this.blow(e, dist);
+      if (d.hurl) this.hurl(e, dist);
+      if (d.gust) this.gust(e, dist);
       if (e.kind === 'namahage' && e.brain.mode === 'attack' && prevMode !== 'attack') {
         this.host.audio.entityVoice('roar', this.panTo(b.x, b.z), dist);
         e.slashYaw = Math.atan2(-(p.x - b.x), -(p.z - b.z));
@@ -422,6 +453,27 @@ export class EntitySystem {
         // Weave from side to side while closing in, as if dodging bullets.
         e.weave += dt * e.weaveF;
         yaw += Math.sin(e.weave) * 1.0 * Math.min(1, (dist - 3) / 4);
+      }
+      // Hound: when you aim at it (or now and then while weaving in), it leaps aside.
+      let hopSide = 0;
+      if (e.kind === 'hound' && !stop && (e.brain.mode === 'chase' || e.brain.mode === 'stalk') && b.grounded && dist > 3.5) {
+        e.hopT = (e.hopT ?? 0.6) - dt;
+        if (e.hopT <= 0 && (watched || (e.brain.mode === 'chase' && Math.random() < dt * 0.6))) {
+          e.hopT = 1.1 + Math.random() * 0.8;
+          hopSide = Math.sin(e.weave) >= 0 ? -1 : 1;
+          // Only where it lands on ground at about the same height.
+          const rxs = Math.cos(b.yaw);
+          const rzs = -Math.sin(b.yaw);
+          const lx = b.x + rxs * hopSide * 3;
+          const lz = b.z + rzs * hopSide * 3;
+          const g = this.groundAt(lx, lz, b.y + 1);
+          if (Math.abs(g - b.y) < 1 && !this.host.isHazard(g)) {
+            b.vy = 6.2;
+            b.grounded = false;
+            b.knock(rxs * hopSide, rzs * hopSide, 6.5, 0);
+            e.weave += Math.PI; // swing the other way afterwards
+          } else hopSide = 0;
+        }
       }
       // Never walk through the player: hold just short of contact range.
       const fwd = d.speed > 0 && dist < (e.kind === 'giant' ? 2 : 0.85) ? 0 : d.speed;
@@ -534,6 +586,27 @@ export class EntitySystem {
       if (e.kind === 'giant') e.mesh.rotation.x = e.brain.mode === 'attack' ? -0.12 * Math.min(1, e.brain.t / GIANT.windup) : 0;
       setEntityAlpha(e.mesh, e.brain.alpha);
       animateEntity(e.mesh, e.kind, e.phase, speed, e.flash, dt);
+      if (e.actT !== undefined && e.actT > 0) {
+        e.actT -= dt;
+        const k = Math.max(0, e.actT);
+        if (e.kind === 'giant') {
+          // Right arm swings from behind the head forward as it lets go.
+          const arm = e.mesh.getObjectByName('armR');
+          if (arm) arm.rotation.x = k > 0.45 ? -2.4 * ((0.9 - k) / 0.45) : -2.4 + 3.4 * ((0.45 - k) / 0.45);
+        }
+        if (e.kind === 'witch') {
+          // Staff raised high over its head, the orb flaring.
+          const st = e.mesh.getObjectByName('staff');
+          const orb = e.mesh.getObjectByName('orb');
+          const up = Math.min(1, k / 0.3);
+          if (st) st.position.y = 0.95 + 0.55 * up;
+          if (orb) {
+            orb.position.y = 1.83 + 0.55 * up;
+            orb.scale.setScalar(1 + 2.5 * up);
+          }
+        }
+      }
+      if (e.kind === 'hound') e.mesh.rotation.z = b.grounded ? 0 : Math.sin(e.weave) >= 0 ? 0.35 : -0.35;
     }
     // Lasers of peekers that are gone
     for (const [e, mesh] of this.lasers)
@@ -547,6 +620,7 @@ export class EntitySystem {
     this.updateStrikes(dt);
     this.updateBombs(dt);
     this.updateWinds(dt);
+    this.updateBoulders(dt);
     this.updateFlashes(dt);
     this.updateBeams(dt);
     this.updateFx(dt);
@@ -1094,7 +1168,7 @@ export class EntitySystem {
     const l = Math.hypot(dx, dz) || 1;
     const mesh = buildWindMesh();
     this.host.fx.add(mesh);
-    this.winds.push({ x, y, z, vx: (dx / l) * FANMAN.speed, vz: (dz / l) * FANMAN.speed, life: FANMAN.maxRange / FANMAN.speed + 1, mesh });
+    this.winds.push({ x, y, z, vx: (dx / l) * FANMAN.speed, vz: (dz / l) * FANMAN.speed, life: FANMAN.maxRange / FANMAN.speed + 1, mesh, kind: 'fanman' });
     this.host.audio.entityVoice('whoosh', this.panTo(b.x, b.z), dist);
   }
 
@@ -1105,15 +1179,15 @@ export class EntitySystem {
       w.life -= dt;
       // The ball drifts down toward chest height so it can be jumped over only barely.
       const ty = p.y + 1.0;
-      w.y += Math.max(-1, Math.min(1, ty - w.y)) * dt * 0.8;
+      if (w.kind === 'fanman') w.y += Math.max(-1, Math.min(1, ty - w.y)) * dt * 0.8;
       const sp = Math.hypot(w.vx, w.vz);
       const step = sp * dt;
       const wall = this.host.rayWorld(w.x, w.y, w.z, w.vx / sp, 0, w.vz / sp, step + 0.4);
       const hitPlayer = Math.hypot(p.x - w.x, p.z - w.z) < 0.85 && w.y > p.y - 0.3 && w.y < p.y + 2.1;
       if (hitPlayer) {
-        this.host.onRangedHit('fanman', ENTITIES.fanman.damage);
+        this.host.onRangedHit(w.kind, w.kind === 'witch' ? GUST.damage : ENTITIES.fanman.damage);
         // Thrown far aside, along the way the wind was going.
-        p.knock(w.vx, w.vz, FANMAN.knock, FANMAN.lift);
+        p.knock(w.vx, w.vz, w.kind === 'witch' ? GUST.knock : FANMAN.knock, w.kind === 'witch' ? GUST.lift : FANMAN.lift);
         this.spark(w.x, w.y, w.z, 0xd8f4ff, 22, 0.35);
         this.host.audio.entityVoice('whoosh', this.panTo(w.x, w.z), 0);
       } else if (wall !== null) this.spark(w.x, w.y, w.z, 0xd8f4ff, 10, 0.3);
@@ -1129,6 +1203,111 @@ export class EntitySystem {
       w.mesh.rotation.y += dt * 9;
       w.mesh.rotation.x += dt * 5;
     }
+  }
+
+  /** Giant: tear up a boulder and hurl it in an arc at where the player stands; a red ring marks the spot. */
+  private hurl(e: Entity, dist: number): void {
+    const b = e.body;
+    const p = this.host.player;
+    const fx = -Math.sin(b.yaw);
+    const fz = -Math.cos(b.yaw);
+    const x = b.x + fx * 1.2;
+    const z = b.z + fz * 1.2;
+    const y = b.y + 6.2;
+    const tx = p.x;
+    const tz = p.z;
+    const ty = this.groundAt(tx, tz, p.y + 1.5);
+    const flight = Math.max(1.3, Math.min(3, Math.hypot(tx - x, tz - z) / BOULDER.speed));
+    const g = 18;
+    const mesh = buildBoulderMesh();
+    this.host.fx.add(mesh);
+    const ring = new THREE.Group();
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff2a10, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false });
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(BOULDER.radius, 40), mat);
+    disc.rotation.x = -Math.PI / 2;
+    const edge = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: 0xff4020, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
+    edge.rotation.x = -Math.PI / 2;
+    edge.scale.setScalar(BOULDER.radius);
+    ring.add(disc, edge);
+    // A warning: drawn over the ground even on slopes (a flat disc would sink into a hillside).
+    for (const m of [mat, edge.material as THREE.MeshBasicMaterial]) m.depthTest = false;
+    ring.traverse((o) => (o.renderOrder = 6));
+    const [rx, rz] = this.host.toRender(tx, tz);
+    ring.position.set(rx, ty + 0.24, rz);
+    this.host.fx.add(ring);
+    this.boulders.push({ x, y, z, vx: (tx - x) / flight, vy: (ty + 0.6 - y + 0.5 * g * flight * flight) / flight, vz: (tz - z) / flight, tx, ty, tz, t: 0, flight, mesh, ring });
+    e.actT = 0.9;
+    this.host.audio.entityVoice('groan', this.panTo(b.x, b.z), dist);
+  }
+
+  private updateBoulders(dt: number): void {
+    const g = 18;
+    for (let i = this.boulders.length - 1; i >= 0; i--) {
+      const r = this.boulders[i];
+      r.t += dt;
+      const sp = Math.hypot(r.vx, r.vy, r.vz) || 1;
+      const wall = this.host.rayWorld(r.x, r.y, r.z, r.vx / sp, r.vy / sp, r.vz / sp, sp * dt + 0.6);
+      r.x += r.vx * dt;
+      r.y += r.vy * dt;
+      r.z += r.vz * dt;
+      r.vy -= g * dt;
+      const landed = r.t >= r.flight || (r.vy < 0 && r.y <= r.ty + 0.6);
+      // The ring grows brighter as the boulder comes down.
+      const k = Math.min(1, r.t / r.flight);
+      const [disc, edge] = r.ring.children as THREE.Mesh[];
+      (disc.material as THREE.MeshBasicMaterial).opacity = 0.18 + 0.4 * k;
+      (edge.material as THREE.MeshBasicMaterial).opacity = Math.sin(r.t * (8 + 20 * k)) > -0.3 ? 0.95 : 0.4;
+      if (landed || (wall !== null && r.t > 0.3)) {
+        this.crush(r.x, Math.min(r.y, r.ty + 0.6) - 0.6, r.z);
+        disposeEntityMesh(r.mesh);
+        disposeEntityMesh(r.ring);
+        this.boulders.splice(i, 1);
+        continue;
+      }
+      const [rx, rz] = this.host.toRender(r.x, r.z);
+      r.mesh.position.set(rx, r.y, rz);
+      r.mesh.rotation.x += dt * 3;
+      r.mesh.rotation.z += dt * 2;
+    }
+  }
+
+  /** The boulder lands: damage and knockback around it (the player and entities, giants excepted). */
+  private crush(x: number, y: number, z: number): void {
+    const p = this.host.player;
+    this.spark(x, y + 0.5, z, 0x8a8070, 50, 0.6);
+    this.spark(x, y + 0.3, z, 0xc8b898, 20, 0.35);
+    const d = Math.hypot(p.x - x, p.z - z);
+    this.host.audio.entityVoice('stomp', this.panTo(x, z), d);
+    if (d < BOULDER.radius && Math.abs(p.y - y) < 2.5) {
+      const k = 1 - d / BOULDER.radius;
+      this.host.onRangedHit('giant', BOULDER.damage * (0.5 + 0.5 * k));
+      p.knock(p.x - x || 0.01, p.z - z, BOULDER.knock * (0.5 + 0.5 * k), 3 + 3 * k);
+    }
+    for (const e of this.entities) {
+      if (e.kind === 'giant' || e.brain.hp <= 0) continue;
+      const de = Math.hypot(e.body.x - x, e.body.z - z);
+      if (de >= BOULDER.radius || Math.abs(e.body.y - y) > 2.5) continue;
+      e.flash = 1;
+      if (hurt(e.brain, BOULDER.damage)) this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z });
+      e.body.knock(e.body.x - x || 0.01, e.body.z - z, BOULDER.knock, 3);
+    }
+  }
+
+  /** Witch: raise the staff and send gusts out in eight directions. */
+  private gust(e: Entity, dist: number): void {
+    const b = e.body;
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2 + b.yaw;
+      const vx = Math.sin(a) * GUST.speed;
+      const vz = Math.cos(a) * GUST.speed;
+      const mesh = buildWindMesh();
+      this.host.fx.add(mesh);
+      this.winds.push({ x: b.x + Math.sin(a) * 0.6, y: b.y + 1.1, z: b.z + Math.cos(a) * 0.6, vx, vz, life: GUST.range / GUST.speed, mesh, kind: 'witch' });
+    }
+    this.spark(b.x, b.y + 1.2, b.z, 0xd8f4ff, 30, 0.4);
+    e.actT = 0.6;
+    e.flash = 0.4;
+    this.host.audio.entityVoice('whoosh', this.panTo(b.x, b.z), dist);
   }
 
   private lasers = new Map<Entity, THREE.Mesh>();

@@ -11,7 +11,7 @@
  * - Rocket launcher (rare): slow rocket that explodes; the blast throws
  *   everything back - including you (rocket jumps), without hurting you.
  */
-export type WeaponId = 'pistol' | 'magnum' | 'kunai' | 'axe' | 'rocket' | 'shotgun' | 'staff';
+export type WeaponId = 'pistol' | 'magnum' | 'kunai' | 'axe' | 'rocket' | 'shotgun' | 'staff' | 'fist';
 export type AmmoType = 'pistol' | 'magnum' | 'kunai' | 'rocket' | 'shotgun';
 
 export interface WeaponDef {
@@ -176,6 +176,22 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     adsZoom: 1,
     headMultiplier: 1.5,
     range: 2.1,
+  },
+  /** Bare hands: used whenever the selected slot is empty (not an item). Works like the axe, weaker and quicker. */
+  fist: {
+    id: 'fist',
+    name: '素手',
+    kind: 'melee',
+    mag: 0,
+    interval: 0.45,
+    reloadTime: 0,
+    damage: 20,
+    reach: 1.7,
+    hipSpread: 0,
+    adsSpread: 0,
+    adsZoom: 1,
+    headMultiplier: 1.5,
+    range: 1.7,
   },
 };
 

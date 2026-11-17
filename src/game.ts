@@ -226,7 +226,7 @@ export class Game {
   /** 0 = hip, 1 = aimed (smoothed). */
   private adsT = 0;
   private meleePending = -1;
-  private heldPrev: string | null = null;
+  private heldPrev: string | null | undefined = undefined; // undefined: nothing shown yet (so empty hands show the fist)
   private lastLookDY = 0;
   private lastLookDX = 0;
   private flickerT = 0;
@@ -1292,6 +1292,8 @@ export class Game {
 
   private heldWeapon(): WeaponId | null {
     const h = this.inventory.held;
+    // Nothing in the selected slot: bare hands (punch).
+    if (h === null) return 'fist';
     return isWeapon(h) ? ITEMS[h].weapon! : null;
   }
 
@@ -1347,7 +1349,7 @@ export class Game {
       this.ents.launch(def, o, d, this.viewmodel.muzzleWorld);
       this.audio.throwWhoosh();
     } else {
-      this.meleePending = 0.18; // the blade lands a moment into the swing
+      this.meleePending = id === 'fist' ? 0.1 : 0.18; // the blade (or fist) lands a moment into the swing
       this.audio.swing();
     }
     this.player.pitch = Math.min(1.55, this.player.pitch + r.kick);
@@ -1442,7 +1444,7 @@ export class Game {
     }
     if (this.meleePending >= 0) {
       this.meleePending -= dt;
-      if (this.meleePending < 0 && id === 'axe') this.ents.melee(WEAPONS.axe);
+      if (this.meleePending < 0 && id && WEAPONS[id].kind === 'melee') this.ents.melee(WEAPONS[id]);
     }
     // Walk over thrown kunai to collect them.
     const got = this.ents.collectKunai();

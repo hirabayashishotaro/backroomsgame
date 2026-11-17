@@ -19,6 +19,7 @@ const POSES: Record<string, Pose> = {
   shotgun: { hip: new THREE.Vector3(0.18, -0.17, -0.34), ads: new THREE.Vector3(0, -0.12, -0.36), rot: new THREE.Euler(0, 0, 0) },
   staff: { hip: new THREE.Vector3(0.22, -0.2, -0.36), ads: new THREE.Vector3(0.16, -0.18, -0.36), rot: new THREE.Euler(0.35, 0.1, 0.15) },
   axe: { hip: new THREE.Vector3(0.24, -0.22, -0.25), ads: new THREE.Vector3(0.2, -0.2, -0.25), rot: new THREE.Euler(0.5, 0.15, 0.25) },
+  fist: { hip: new THREE.Vector3(0.2, -0.2, -0.32), ads: new THREE.Vector3(0.2, -0.2, -0.32), rot: new THREE.Euler(0.15, 0, 0) },
   almond_water: { hip: new THREE.Vector3(0.2, -0.24, -0.38), ads: new THREE.Vector3(0.2, -0.24, -0.38), rot: new THREE.Euler(0, 0, 0) },
 };
 
@@ -26,7 +27,8 @@ export class ViewModel {
   readonly root = new THREE.Group();
   private holder = new THREE.Group();
   private model: THREE.Object3D | null = null;
-  private current: ItemId | null = null;
+  /** undefined = nothing set yet; null = empty hands (the fist). */
+  private current: ItemId | null | undefined = undefined;
   private flash: THREE.Mesh;
   private flashT = 0;
   private kickT = 0;
@@ -61,7 +63,13 @@ export class ViewModel {
     }
     this.model = null;
     this.reloadT = -1;
-    if (!id) return;
+    if (!id) {
+      // Empty hands: a fist ready to punch.
+      this.model = buildFist();
+      this.holder.add(this.model);
+      this.raiseT = 0;
+      return;
+    }
     const def = ITEMS[id];
     if (def.kind === 'weapon') this.model = buildWeaponModel(def.weapon!, 0.95);
     else if (id === 'almond_water') this.model = buildItemMesh(id, 0.9);
@@ -90,7 +98,7 @@ export class ViewModel {
   }
 
   update(dt: number, opts: { aiming: boolean; bob: number; speed: number; lookDX: number; lookDY: number }): void {
-    const pose = POSES[this.current ?? 'pistol'] ?? POSES.pistol;
+    const pose = POSES[this.current === null ? 'fist' : (this.current ?? 'pistol')] ?? POSES.pistol;
     this.ads += ((opts.aiming ? 1 : 0) - this.ads) * Math.min(1, dt * 14);
     const p = pose.hip.clone().lerp(pose.ads, this.ads);
     // Sway and bob (smaller while aiming)
@@ -121,6 +129,17 @@ export class ViewModel {
       rot.z += 0.6 * d;
       rot.x += 0.3 * d;
       if (t >= 1) this.reloadT = -1;
+    }
+    // Punch: a quick jab straight ahead
+    if (this.swingT >= 0 && this.current === null) {
+      this.swingT += dt;
+      const t = this.swingT / 0.32;
+      const a = t < 0.35 ? t / 0.35 : Math.max(0, 1 - (t - 0.35) / 0.65);
+      p.z -= 0.22 * a;
+      p.x -= 0.1 * a;
+      p.y += 0.04 * a;
+      rot.x -= 0.15 * a;
+      if (t > 1) this.swingT = -1;
     }
     // Axe swing: wind up, chop down across
     if (this.swingT >= 0) {
@@ -153,4 +172,25 @@ export class ViewModel {
     const m = this.model?.getObjectByName('muzzle');
     return m ? m.getWorldPosition(new THREE.Vector3()) : this.root.getWorldPosition(new THREE.Vector3());
   }
+}
+
+/** A bare fist (and wrist), knuckles forward. */
+function buildFist(): THREE.Group {
+  const g = new THREE.Group();
+  const skin = new THREE.MeshBasicMaterial({ color: 0xd9a582 });
+  const dark = new THREE.MeshBasicMaterial({ color: 0xb98466 });
+  const hand = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.075, 0.1), skin);
+  g.add(hand);
+  for (let k = 0; k < 4; k++) {
+    const knuckle = new THREE.Mesh(new THREE.BoxGeometry(0.019, 0.022, 0.02), dark);
+    knuckle.position.set(-0.03 + k * 0.02, 0.025, -0.05);
+    g.add(knuckle);
+  }
+  const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.03, 0.06), skin);
+  thumb.position.set(-0.05, -0.015, -0.02);
+  g.add(thumb);
+  const wrist = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.065, 0.16), new THREE.MeshBasicMaterial({ color: 0x4a4a52 }));
+  wrist.position.set(0, -0.005, 0.12);
+  g.add(wrist);
+  return g;
 }

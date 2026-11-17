@@ -160,4 +160,13 @@ describe('weapons', () => {
     expect(b.loaded('pistol')).toBe(12);
     expect(b.reserve.magnum).toBe(5);
   });
+
+  it('bare hands punch like a lighter, quicker axe (20 damage)', () => {
+    const f = WEAPONS.fist;
+    expect(f.kind).toBe('melee');
+    expect(f.damage).toBe(20);
+    expect(f.interval).toBeLessThan(WEAPONS.axe.interval);
+    expect(f.reach).toBeGreaterThan(1.2);
+    expect(f.mag).toBe(0);
+  });
 });

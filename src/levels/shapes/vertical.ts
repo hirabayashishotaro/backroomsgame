@@ -327,7 +327,21 @@ function poolOut(seed: number, cx: number, cz: number, cy: number): Out {
         o.floors.push({ x0, z0, x1: x0 + T, z1: z0 + T, y: y0 - 1.2 });
         box(o.decor, x0, y0 - 0.35, z0, x0 + T, y0 - 0.33, z0 + T, 'pool-water');
         o.zones.push({ kind: 'water', x0, z0, x1: x0 + T, z1: z0 + T });
-        box(o.solids, x0, y0 - 1.2, z0, x0 + 0.8, y0 - 0.6, z0 + 0.8, 'wall'); // a step out
+        // Two steps up along every side (each lower than a footstep), so you walk out whichever way you go.
+        for (const [h, inset, w] of [
+          [0.4, 0, 0.5],
+          [0.8, 0.5, 0.5],
+        ] as Array<[number, number, number]>) {
+          const yt = y0 - h;
+          const a0 = x0 + inset;
+          const a1 = x0 + T - inset;
+          const b0 = z0 + inset;
+          const b1 = z0 + T - inset;
+          box(o.solids, a0, y0 - 1.2, b0, a1, yt, b0 + w, 'wall');
+          box(o.solids, a0, y0 - 1.2, b1 - w, a1, yt, b1, 'wall');
+          box(o.solids, a0, y0 - 1.2, b0 + w, a0 + w, yt, b1 - w, 'wall');
+          box(o.solids, a1 - w, y0 - 1.2, b0 + w, a1, yt, b1 - w, 'wall');
+        }
       } else if (!isHole) o.floors.push({ x0, z0, x1: x0 + T, z1: z0 + T, y: y0 });
     }
   // Pillars on the tile grid corners (arches feel)

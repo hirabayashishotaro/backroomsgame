@@ -97,7 +97,7 @@ describe('walking the vertical worlds (no holes on the intended route)', () => {
     const ctx = makeGenContext(31, L);
     for (let cy = 0; cy < 4; cy++) {
       const d = L.generator(ctx, 0, 0, cy);
-      const steps = d.solids.filter((b) => Math.abs(b.maxZ - b.minZ - 0.5) < 1e-9 && b.maxX - b.minX > 3);
+      const steps = d.solids.filter((b) => Math.abs(b.maxZ - b.minZ - 0.5) < 1e-9 && Math.abs(b.maxX - b.minX - 3.2) < 1e-6);
       steps.sort((a, b) => a.maxY - b.maxY);
       const first = steps[0];
       const p = new PlayerController();
@@ -130,6 +130,56 @@ describe('walking the vertical worlds (no holes on the intended route)', () => {
       }
     }
     expect(tested).toBeGreaterThan(0);
+  });
+
+  it('stacked poolrooms: you can always get out of a sunken pool tile (walk + jump toward any side)', () => {
+    const w = worldFor('37.2') as WorldQuery & { setY: (y: number) => void };
+    const L = resolveLevel('37.2');
+    const ctx = makeGenContext(31, L);
+    let tested = 0;
+    const stuck: string[] = [];
+    for (let cx = 0; cx < 4; cx++)
+      for (let cy = 0; cy < 2; cy++) {
+        const d = L.generator(ctx, cx, 0, cy);
+        const y0 = cy * POOL_SLAB;
+        for (const f of d.floors.filter((q) => q.y < y0 - 1)) {
+          tested++;
+          // Some direction must lead out; try each, walking and jumping.
+          let out = false;
+          for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2, Math.PI / 4, -Math.PI / 4, (3 * Math.PI) / 4, (-3 * Math.PI) / 4]) {
+            const p = new PlayerController();
+            p.x = cx * 32 + (f.x0 + f.x1) / 2;
+            p.z = (f.z0 + f.z1) / 2;
+            p.y = f.y;
+            p.yaw = yaw;
+            for (let i = 0; i < 200; i++) {
+              w.setY(p.y);
+              p.step(0.02, go({ jump: i % 20 === 0 }), w);
+            }
+            if (p.y > y0 - 0.05) out = true;
+          }
+          if (!out) stuck.push(`${cx},${cy} ${f.x0},${f.z0}`);
+          // From the middle toward every side it should be possible too (no single hidden corner).
+          let sides = 0;
+          for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+            const p = new PlayerController();
+            p.x = cx * 32 + (f.x0 + f.x1) / 2;
+            p.z = (f.z0 + f.z1) / 2;
+            p.y = f.y;
+            p.yaw = yaw;
+            for (let i = 0; i < 200; i++) {
+              w.setY(p.y);
+              p.step(0.02, go({ jump: i % 20 === 0 }), w);
+            }
+            const lx = p.x - cx * 32;
+            const left = lx < f.x0 - 0.3 || lx > f.x1 + 0.3 || p.z < f.z0 - 0.3 || p.z > f.z1 + 0.3;
+            if (p.y > y0 - 0.05 || p.y < y0 - 2 || left) sides++; // out onto the floor, on into the next tile, or down a hole beyond
+          }
+          if (sides < 4) stuck.push(`side ${cx},${cy} ${f.x0},${f.z0}: ${sides}/4`);
+        }
+      }
+    expect(tested).toBeGreaterThan(0);
+    expect(stuck).toEqual([]);
   });
 
   it('pool rooms: you can climb out of the splash pool under the water slide', () => {

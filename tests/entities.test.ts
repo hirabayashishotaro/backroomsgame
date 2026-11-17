@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BLOATER, BOMBER, FANMAN, GUNMAN, NAMAHAGE, PEEKER, WITCH, hurt, newBrain, think, type Perception } from '../src/entities/brain';
+import { BLOATER, BOMBER, FANMAN, GUNMAN, NAMAHAGE, PEEKER, WITCH, hurt, inSlash, newBrain, think, type Perception } from '../src/entities/brain';
 import { ENTITIES } from '../src/entities/entityDefs';
 import { Director, entityTableFor } from '../src/entities/director';
 
@@ -166,6 +166,19 @@ describe('entity behaviour', () => {
     expect(c.mode).toBe('attack');
     hurt(c, 10);
     expect(c.mode).toBe('attack');
+  });
+
+  it("namahage's cut is a big box in front: hits a few metres ahead and to the side, not behind", () => {
+    // Facing -z (yaw 0).
+    expect(inSlash(0, 0, 0, 0, 0, 0, -4)).toBe(true); // 4 m ahead
+    expect(inSlash(0, 0, 0, 0, 1.6, 0, -2)).toBe(true); // ahead and to the side
+    expect(inSlash(0, 0, 0, 0, 0, 0, -5.2)).toBe(false); // out of reach
+    expect(inSlash(0, 0, 0, 0, 0, 0, 2)).toBe(false); // behind
+    expect(inSlash(0, 0, 0, 0, 2.4, 0, -2)).toBe(false); // too far aside
+    expect(inSlash(0, 0, 0, 0, 0, 3, -2)).toBe(false); // high above
+    // Turned to face +x.
+    expect(inSlash(0, 0, 0, -Math.PI / 2, 3.5, 0, 0)).toBe(true);
+    expect(NAMAHAGE.reach).toBeLessThan(NAMAHAGE.len); // it starts swinging from inside its reach
   });
 
   it('fanman keeps its distance and blows slow wind on a cooldown', () => {

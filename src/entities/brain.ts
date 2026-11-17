@@ -71,7 +71,22 @@ export interface Decision {
 }
 
 /** Namahage: reach, wind-up (blade raised), recovery after the swing, the arc it covers (rad from forward). */
-export const NAMAHAGE = { reach: 2.6, windup: 0.55, recover: 1.1, arc: 1.2 };
+export const NAMAHAGE = { reach: 3.6, windup: 0.55, recover: 1.1, len: 4.4, halfW: 1.6, height: 2.6 };
+
+/**
+ * Is a point inside the namahage's cut: a box reaching `len` ahead of it,
+ * `halfW` to either side (plus the target's body radius `r`), `height` tall?
+ * `yaw` uses the entities' convention (forward = (-sin yaw, -cos yaw)).
+ */
+export function inSlash(ex: number, ey: number, ez: number, yaw: number, px: number, py: number, pz: number, r = 0.3): boolean {
+  const fx = -Math.sin(yaw);
+  const fz = -Math.cos(yaw);
+  const dx = px - ex;
+  const dz = pz - ez;
+  const ahead = dx * fx + dz * fz;
+  const side = dx * -fz + dz * fx;
+  return ahead > -0.4 - r && ahead < NAMAHAGE.len + r && Math.abs(side) < NAMAHAGE.halfW + r && py > ey - 1.2 && py < ey + NAMAHAGE.height;
+}
 /** Fanman: shot cooldown, ball speed (slow), knockback (m/s sideways + up), preferred range. */
 export const FANMAN = { cooldown: 2.6, speed: 7, knock: 17, lift: 4.5, near: 8, far: 20, maxRange: 32 };
 

@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { PlayerController, type WorldQuery } from '../player/controller';
 import { groundHeight, rayBox, type WBox } from '../world/collision';
 import { ENTITIES, type EntityKind } from './entityDefs';
-import { BLAST_KNOCK, BLOATER, BOMBER, FANMAN, GIANT, NAMAHAGE, PEEKER, WITCH, hurt, newBrain, think, type BrainState } from './brain';
+import { BLAST_KNOCK, BLOATER, BOMBER, FANMAN, GIANT, NAMAHAGE, PEEKER, WITCH, inSlash, hurt, newBrain, think, type BrainState } from './brain';
 import { animateEntity, buildBombMesh, buildEntityMesh, buildWindMesh, buildRocketMesh, disposeEntityMesh, setEntityAlpha } from './models';
 import { stepProjectile } from '../weapons/weaponLogic';
 import { falloffFactor, type WeaponDef } from '../weapons/weaponDefs';
@@ -58,6 +58,8 @@ interface Entity {
   /** Side-to-side weave while approaching (phase and rate). */
   weave: number;
   weaveF: number;
+  /** Namahage: the direction the blade will come down (locked when it is raised). */
+  slashYaw?: number;
 }
 
 interface EnemyShot {
@@ -274,6 +276,8 @@ export class EntitySystem {
     this.bombs.length = 0;
     for (const w of this.winds) disposeEntityMesh(w.mesh);
     this.winds.length = 0;
+    for (const f of this.flashes) disposeEntityMesh(f.obj as THREE.Group);
+    this.flashes.length = 0;
     if (this.aimRing) this.aimRing.visible = false;
     for (const mesh of this.lasers.values()) {
       (mesh.material as THREE.Material).dispose();
@@ -394,7 +398,11 @@ export class EntitySystem {
       if (e.kind === 'peeker') this.aimLaser(e, d.aim, d.snipe === true, dist);
       if (d.slash) this.slash(e, dist);
       if (d.blow) this.blow(e, dist);
-      if (e.kind === 'namahage' && e.brain.mode === 'attack' && prevMode !== 'attack') this.host.audio.entityVoice('roar', this.panTo(b.x, b.z), dist);
+      if (e.kind === 'namahage' && e.brain.mode === 'attack' && prevMode !== 'attack') {
+        this.host.audio.entityVoice('roar', this.panTo(b.x, b.z), dist);
+        e.slashYaw = Math.atan2(-(p.x - b.x), -(p.z - b.z));
+        this.slashWarning(e);
+      }
       if (e.brain.mode !== prevMode) {
         if (e.kind === 'bloater' && e.brain.mode === 'fuse') this.host.audio.entityVoice('hiss', this.panTo(b.x, b.z), dist);
         if (e.kind === 'giant' && e.brain.mode === 'attack') this.host.audio.entityVoice('groan', this.panTo(b.x, b.z), dist);
@@ -495,7 +503,7 @@ export class EntitySystem {
       // Render
       const [rx, rz] = this.host.toRender(b.x, b.z);
       e.mesh.position.set(rx, b.y, rz);
-      e.mesh.rotation.y = e.kind === 'gunman' || e.kind === 'witch' || e.kind === 'bomber' || e.kind === 'peeker' || e.kind === 'fanman' || e.kind === 'namahage' ? face : yaw;
+      e.mesh.rotation.y = e.kind === 'gunman' || e.kind === 'witch' || e.kind === 'bomber' || e.kind === 'peeker' || e.kind === 'fanman' || e.kind === 'namahage' ? (e.kind === 'namahage' && e.brain.mode === 'attack' && e.slashYaw !== undefined ? e.slashYaw : face) : yaw;
       e.flash = Math.max(0, e.flash - dt * 5);
       if (e.kind === 'bloater') {
         // Swells and flickers while the fuse burns.
@@ -539,6 +547,7 @@ export class EntitySystem {
     this.updateStrikes(dt);
     this.updateBombs(dt);
     this.updateWinds(dt);
+    this.updateFlashes(dt);
     this.updateBeams(dt);
     this.updateFx(dt);
   }
@@ -978,16 +987,96 @@ export class EntitySystem {
   private slash(e: Entity, dist: number): void {
     const b = e.body;
     const p = this.host.player;
-    const fx = -Math.sin(b.yaw);
-    const fz = -Math.cos(b.yaw);
-    this.spark(b.x + fx * 1.4, b.y + 0.9, b.z + fz * 1.4, 0xe8e8f0, 14, 0.18);
+    const yaw = e.slashYaw ?? Math.atan2(-(p.x - b.x), -(p.z - b.z));
+    e.slashYaw = undefined;
+    this.slashEffect(b.x, b.y, b.z, yaw);
     this.host.audio.entityVoice('swish', this.panTo(b.x, b.z), dist);
-    const dx = p.x - b.x;
-    const dz = p.z - b.z;
-    const ang = Math.acos(Math.max(-1, Math.min(1, (dx * fx + dz * fz) / (Math.hypot(dx, dz) || 1))));
-    if (dist < NAMAHAGE.reach + 0.5 && ang < NAMAHAGE.arc && Math.abs(p.y - b.y) < 1.8) {
+    // Everything in the box in front of it is cut (the player, and other entities too).
+    if (inSlash(b.x, b.y, b.z, yaw, p.x, p.y, p.z)) {
       this.host.onRangedHit('namahage', ENTITIES.namahage.damage);
-      p.knock(dx || 0.01, dz, 5, 2);
+      p.knock(p.x - b.x || 0.01, p.z - b.z, 6, 2.5);
+    }
+    for (const o of this.entities) {
+      if (o === e || o.brain.hp <= 0 || !inSlash(b.x, b.y, b.z, yaw, o.body.x, o.body.y, o.body.z, 0.4)) continue;
+      o.flash = 1;
+      if (hurt(o.brain, ENTITIES.namahage.damage)) this.host.onKilled(o.kind, { x: o.body.x, y: o.body.y, z: o.body.z });
+    }
+  }
+
+  /** Short-lived effect meshes (slash arcs, warnings) that fade out. */
+  private flashes: Array<{ obj: THREE.Object3D; t: number; max: number; grow: number; follow?: Entity }> = [];
+
+  /** While the blade is raised: a faint red strip on the ground shows where it will land. */
+  private slashWarning(e: Entity): void {
+    const g = new THREE.Group();
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide });
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(NAMAHAGE.halfW * 2, NAMAHAGE.len + 0.4), mat);
+    strip.rotation.x = -Math.PI / 2;
+    strip.position.set(0, 0.22, -(NAMAHAGE.len - 0.4) / 2); // above shallow water sheets
+    strip.renderOrder = 5; // drawn after transparent water sheets
+    g.add(strip);
+    this.host.fx.add(g);
+    this.flashes.push({ obj: g, t: NAMAHAGE.windup, max: NAMAHAGE.windup, grow: 0, follow: e });
+  }
+
+  /** The cut: a bright crescent sweeping from overhead down to the floor, plus a streak along the ground. */
+  private slashEffect(x: number, y: number, z: number, yaw: number): void {
+    const g = new THREE.Group();
+    const [rx, rz] = this.host.toRender(x, z);
+    g.position.set(rx, y, rz);
+    g.rotation.y = yaw;
+    const mk = (inner: number, outer: number, color: number, opacity: number) =>
+      new THREE.Mesh(new THREE.RingGeometry(inner, outer, 28, 1, -0.75, 2.4), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide }));
+    // Ring lies in the XY plane; turn it so +x points forward (-z): a vertical arc ahead.
+    for (const [dx, inner, outer, color, op] of [
+      [0, 2.6, 4.3, 0xffffff, 0.85],
+      [-0.9, 2.2, 3.6, 0xc8e0ff, 0.55],
+      [0.9, 2.2, 3.6, 0xc8e0ff, 0.55],
+    ] as Array<[number, number, number, number, number]>) {
+      const arc = mk(inner, outer, color, op);
+      arc.rotation.y = Math.PI / 2;
+      arc.scale.y = 0.5; // a flattened arc, so it fits under low ceilings
+      arc.position.set(dx, 0.9, 0);
+      g.add(arc);
+    }
+    // Where it struck the floor
+    const streak = new THREE.Mesh(new THREE.PlaneGeometry(NAMAHAGE.halfW * 2, 0.5), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }));
+    streak.rotation.x = -Math.PI / 2;
+    streak.position.set(0, 0.23, -NAMAHAGE.len * 0.75);
+    g.add(streak);
+    g.traverse((o) => (o.renderOrder = 5));
+    this.host.fx.add(g);
+    this.flashes.push({ obj: g, t: 0.28, max: 0.28, grow: 0.25 });
+    const fx = -Math.sin(yaw);
+    const fz = -Math.cos(yaw);
+    this.spark(x + fx * NAMAHAGE.len * 0.75, y + 0.2, z + fz * NAMAHAGE.len * 0.75, 0xe8e8f0, 22, 0.25);
+  }
+
+  private updateFlashes(dt: number): void {
+    for (let i = this.flashes.length - 1; i >= 0; i--) {
+      const f = this.flashes[i];
+      f.t -= dt;
+      const k = Math.max(0, f.t / f.max);
+      if (f.follow) {
+        // The warning stays under the namahage, along its locked direction.
+        const e = f.follow;
+        const [rx, rz] = this.host.toRender(e.body.x, e.body.z);
+        f.obj.position.set(rx, e.body.y, rz);
+        f.obj.rotation.y = e.slashYaw ?? f.obj.rotation.y;
+        if (!this.entities.includes(e) || e.brain.mode !== 'attack') f.t = 0;
+      }
+      f.obj.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+        if (!m) return;
+        if (m.userData.base === undefined) m.userData.base = m.opacity;
+        // Warnings brighten as the blade goes up; cuts fade out.
+        m.opacity = (m.userData.base as number) * (f.follow ? 1 + 1.6 * (1 - k) : k);
+      });
+      if (f.grow) f.obj.scale.setScalar(1 + f.grow * (1 - k));
+      if (f.t <= 0) {
+        disposeEntityMesh(f.obj as THREE.Group);
+        this.flashes.splice(i, 1);
+      }
     }
   }
 

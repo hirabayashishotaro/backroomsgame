@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHIMERA_MAX_H_NARROW, chimeraGenome, chimeraSpecies } from '../src/entities/chimera';
-import { giantAllowed } from '../src/entities/director';
+import { CHIMERA_HAND_WEIGHT, entityTableFor, giantAllowed, pickKind } from '../src/entities/director';
 import { MOD_LOWPASS, MOD_TONE_MAX } from '../src/systems/audio';
 import { chimeraReach, newBrain, think, type Perception } from '../src/entities/brain';
 import { ALL_ENTITIES } from '../src/entities/entityDefs';
@@ -126,6 +126,23 @@ describe('random entities', () => {
     expect(combos.size).toBeGreaterThan(300);
     expect(MOD_TONE_MAX).toBeLessThanOrEqual(1500);
     expect(MOD_LOWPASS).toBeLessThanOrEqual(3000);
+  });
+
+  it('also live in hand-made levels with entities, picked a little less often than the level\'s own; empty levels stay empty', () => {
+    for (const id of ['1', '2', 'sento', 'vaporwave', '303', '666', 'chaos']) expect(entityTableFor(id, { dark: false, safe: false })).toContain('chimera');
+    for (const id of ['0', 'shibuya', 'arena', 'frontrooms']) expect(entityTableFor(id, { dark: false, safe: false })).toEqual([]);
+    const table = entityTableFor('2', { dark: false, safe: false });
+    const n = 20000;
+    let chim = 0;
+    let other = 0;
+    for (let i = 0; i < n; i++) {
+      const k = pickKind(table, CHIMERA_HAND_WEIGHT, (i + 0.5) / n);
+      if (k === 'chimera') chim++;
+      else if (k === table[0]) other++;
+    }
+    // Rarer than any one of the level's own kinds, but still there.
+    expect(chim).toBeGreaterThan(0);
+    expect(chim / other).toBeCloseTo(CHIMERA_HAND_WEIGHT, 1);
   });
 
   it('count toward the kills of the escape condition, but are not one of the kinds to defeat', () => {

@@ -10,6 +10,22 @@ export interface DirectorTuning {
   rate: number;
   /** Max simultaneous entities. */
   maxActive: number;
+  /** How likely a random entity is picked compared with each other kind (1 = the same). */
+  chimeraWeight?: number;
+}
+
+/** Random entities in hand-made levels: a little rarer than the level's own entities. */
+export const CHIMERA_HAND_WEIGHT = 0.6;
+
+/** Pick a kind from the table; random entities count `w` times as much as each other kind. */
+export function pickKind(table: EntityKind[], w: number, r: number): EntityKind {
+  const total = table.reduce((s, k) => s + (k === 'chimera' ? w : 1), 0);
+  let x = r * total;
+  for (const k of table) {
+    x -= k === 'chimera' ? w : 1;
+    if (x < 0) return k;
+  }
+  return table[table.length - 1];
 }
 
 export type DirectorEvent = { type: 'omen'; kind: EntityKind } | { type: 'spawn'; kind: EntityKind } | null;
@@ -53,7 +69,7 @@ export class Director {
     if (active >= tuning.maxActive || safe) return null;
     this.cooldown -= dt;
     if (this.cooldown > 0) return null;
-    const kind = table[this.rng.int(0, table.length - 1)];
+    const kind = pickKind(table, tuning.chimeraWeight ?? 1, this.rng.float());
     this.omen = { left: 2.5 + this.rng.float() * 2, kind };
     return { type: 'omen', kind };
   }
@@ -101,13 +117,19 @@ const FIXED: Record<string, EntityKind[]> = {
  * their table; elsewhere it needs open sky or a very high ceiling. Random
  * entities use the same rule for their size.
  */
+export function isHandTable(levelId: string): boolean {
+  return levelId in FIXED;
+}
+
 export function giantAllowed(levelId: string, open: boolean): boolean {
   return levelId in FIXED ? FIXED[levelId].includes('giant') : open;
 }
 
 export function entityTableFor(levelId: string, opts: { dark: boolean; safe: boolean; open?: boolean }): EntityKind[] {
   const fixed = FIXED;
-  if (levelId in fixed) return fixed[levelId];
+  // Hand-made levels: their own entities, plus random entities (picked a little less often, see CHIMERA_HAND_WEIGHT).
+  // Levels with no entities at all (Level 0, the ending, the test hall, ...) stay empty.
+  if (levelId in fixed) return fixed[levelId].length ? [...fixed[levelId], 'chimera'] : [];
   if (opts.safe) return [];
   // Generated and other levels: 1-3 kinds from the id; smilers only where it is dark,
   // giants only under open sky or very high ceilings.

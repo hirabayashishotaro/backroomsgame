@@ -34,7 +34,7 @@ import { Arsenal } from './weapons/weaponLogic';
 import { AMMO_MAX, AMMO_PICKUP, WEAPONS, type WeaponId } from './weapons/weaponDefs';
 import { ViewModel } from './weapons/viewmodel';
 import { EntitySystem } from './entities/entitySystem';
-import { Director, entityTableFor, giantAllowed } from './entities/director';
+import { CHIMERA_HAND_WEIGHT, Director, entityTableFor, giantAllowed, isHandTable } from './entities/director';
 import { chimeraGenome, chimeraSpecies, type ChimeraGenome } from './entities/chimera';
 import { ALL_ENTITIES, ENTITIES, type EntityKind } from './entities/entityDefs';
 import { augmentLoot } from './items/weaponLoot';
@@ -1494,7 +1494,7 @@ export class Game {
   private updateEntities(dt: number): void {
     const tune = { rate: DIFFICULTY[this.settings.difficulty].entity, maxActive: this.settings.difficulty === 'hard' ? 4 : this.settings.difficulty === 'easy' ? 2 : 3 };
     const safe = this.isSafeSpot(this.player.x, this.player.z) || !!this.transition;
-    const ev = this.director.update(dt, this.entityTable, this.ents.active, tune, safe);
+    const ev = this.director.update(dt, this.entityTable, this.ents.active, { ...tune, chimeraWeight: isHandTable(this.level.id) ? CHIMERA_HAND_WEIGHT : 1 }, safe);
     if (ev?.type === 'omen') {
       // Always a warning first (SPEC §7.1): a sound, flickering lights, the hum faltering.
       this.flickerT = 3;

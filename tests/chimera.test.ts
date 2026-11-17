@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { chimeraGenome, chimeraSpecies } from '../src/entities/chimera';
+import { CHIMERA_MAX_H_NARROW, chimeraGenome, chimeraSpecies } from '../src/entities/chimera';
+import { giantAllowed } from '../src/entities/director';
 import { chimeraReach, newBrain, think, type Perception } from '../src/entities/brain';
 import { ALL_ENTITIES } from '../src/entities/entityDefs';
 import { EscapeProgress } from '../src/systems/escape';
@@ -46,7 +47,7 @@ describe('random entities', () => {
       expect(g.hp).toBeGreaterThan(0);
       expect(g.height).toBeGreaterThan(0.4);
       if (g.scale < 0.8) small++;
-      const o = chimeraGenome(s * 31 + 5, { open: true });
+      const o = chimeraGenome(s * 31 + 5, { giant: true });
       if (o.scale > 1.8) big++;
     }
     expect(small).toBeGreaterThan(100);
@@ -61,11 +62,11 @@ describe('random entities', () => {
   });
 
   it('each level has 1-3 species of its own, the same every visit', () => {
-    const a = chimeraSpecies('482', false);
+    const a = chimeraSpecies('482', {});
     expect(a.length).toBeGreaterThanOrEqual(1);
     expect(a.length).toBeLessThanOrEqual(3);
-    expect(chimeraSpecies('482', false)).toEqual(a);
-    expect(chimeraSpecies('483', false).map((g) => g.name)).not.toEqual(a.map((g) => g.name));
+    expect(chimeraSpecies('482', {})).toEqual(a);
+    expect(chimeraSpecies('483', {}).map((g) => g.name)).not.toEqual(a.map((g) => g.name));
   });
 
   it('their brains use their technique: ranged ones fire on a cooldown, melee ones close in', () => {
@@ -89,10 +90,34 @@ describe('random entities', () => {
     }
   });
 
-  it('are not part of the escape condition', () => {
+  it('count toward the kills of the escape condition, but are not one of the kinds to defeat', () => {
     expect(ALL_ENTITIES).not.toContain('chimera');
     const e = new EscapeProgress();
     for (let i = 0; i < 40; i++) e.recordKill('chimera');
-    expect(e.status([]).kills).toBe(0);
+    expect(e.status([]).kills).toBe(40);
+    expect(e.status([]).kinds).toBe(0);
+  });
+
+  it('where the giant cannot go they stay corridor-sized; where it can, some are huge', () => {
+    let huge = 0;
+    for (let s = 0; s < 1000; s++) {
+      expect(chimeraGenome(s * 7 + 2).height).toBeLessThanOrEqual(CHIMERA_MAX_H_NARROW + 1e-9);
+      if (chimeraGenome(s * 7 + 2, { giant: true }).height > 4) huge++;
+    }
+    expect(huge).toBeGreaterThan(40);
+    expect(giantAllowed('900', false)).toBe(true); // hand-made table with the giant
+    expect(giantAllowed('37', true)).toBe(false); // hand-made table without it
+    expect(giantAllowed('482', true)).toBe(true);
+    expect(giantAllowed('482', false)).toBe(false);
+  });
+
+  it("borrow only the traits of entities that do not live in the level", () => {
+    const here = ['gunman', 'witch', 'giant', 'namahage', 'hound'] as const;
+    for (let s = 0; s < 500; s++) {
+      const g = chimeraGenome(s * 11 + 4, { exclude: here });
+      expect(['shoot', 'lightning', 'stomp', 'boulder', 'slash']).not.toContain(g.attack);
+      expect(g.close).toBe('none'); // the witch's wind burst
+      expect(g.move).not.toBe('hopper'); // the hound's leap
+    }
   });
 });

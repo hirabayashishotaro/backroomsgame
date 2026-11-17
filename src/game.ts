@@ -34,7 +34,7 @@ import { Arsenal } from './weapons/weaponLogic';
 import { AMMO_MAX, AMMO_PICKUP, WEAPONS, type WeaponId } from './weapons/weaponDefs';
 import { ViewModel } from './weapons/viewmodel';
 import { EntitySystem } from './entities/entitySystem';
-import { Director, entityTableFor } from './entities/director';
+import { Director, entityTableFor, giantAllowed } from './entities/director';
 import { chimeraGenome, chimeraSpecies, type ChimeraGenome } from './entities/chimera';
 import { ALL_ENTITIES, ENTITIES, type EntityKind } from './entities/entityDefs';
 import { augmentLoot } from './items/weaponLoot';
@@ -726,7 +726,7 @@ export class Game {
 
   /** Developer combat lab: a brand-new random entity each time. */
   private labChimera(): ChimeraGenome {
-    return chimeraGenome(Math.floor(this.rng.float() * 0x7fffffff), { open: true });
+    return chimeraGenome(Math.floor(this.rng.float() * 0x7fffffff), { giant: true });
   }
 
   /** Thrown by your own rocket: no fall damage until you land. */
@@ -897,7 +897,8 @@ export class Game {
     for (const a of this.anchors[this.level.id] ?? []) this.showAnchor(a);
     const open = this.level.environment === 'open-sky' || this.level.ceilingHeight >= 9;
     this.entityTable = entityTableFor(this.level.id, { dark: this.level.palette.ambient < 0.12, safe: this.level.id === 'frontrooms', open });
-    this.chimeras = chimeraSpecies(this.level.id, open);
+    // Big random entities only where the giant can go; they borrow the traits of entities that do not live here.
+    this.chimeras = chimeraSpecies(this.level.id, { giant: giantAllowed(this.level.id, open), exclude: this.entityTable.filter((k) => k !== 'chimera') });
     this.director?.reset(this.entityTable.length > 0);
     if (this.history[this.history.length - 1] !== this.level.id) this.history.push(this.level.id);
     if (this.started) this.audio.setAmbience(this.level.ambience);

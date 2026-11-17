@@ -61,7 +61,8 @@ export class EscapeProgress {
       levels++;
       if (id === ESCAPE_GOALS.voidId) voidSeen = true;
     }
-    const kills = ALL_ENTITIES.reduce((s, k) => s + (this.data.kills[k] ?? 0), 0);
+    // Random entities count toward the number of kills (not toward the kinds).
+    const kills = ALL_ENTITIES.reduce((s, k) => s + (this.data.kills[k] ?? 0), 0) + (this.data.kills.chimera ?? 0);
     const kinds = ALL_ENTITIES.filter((k) => (this.data.kills[k] ?? 0) > 0).length;
     const done = levels >= ESCAPE_GOALS.levels && voidSeen && kills >= ESCAPE_GOALS.kills && kinds === ALL_ENTITIES.length;
     return { levels, voidSeen, kills, kinds, kindsTotal: ALL_ENTITIES.length, done };

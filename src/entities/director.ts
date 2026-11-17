@@ -65,37 +65,48 @@ export class Director {
 }
 
 /** Which entities appear in a level (SPEC §7.1: Level 0 has none, per the Wiki). */
+const FIXED: Record<string, EntityKind[]> = {
+  '0': [],
+  frontrooms: [],
+  arena: [],
+  shibuya: [],
+  vaporwave: ['faceling', 'witch', 'bloater'],
+  memphis: ['skinstealer', 'duller', 'bomber'],
+  sento: ['faceling', 'skinstealer', 'smiler'],
+  '1000': [],
+  '1': ['hound', 'skinstealer', 'duller', 'bloater', 'gunman'],
+  '2': ['hound', 'smiler', 'skinstealer', 'bloater', 'witch'],
+  '27': ['smiler', 'hound'],
+  '139': ['faceling', 'smiler'],
+  '14': ['smiler', 'faceling'],
+  '186': ['skinstealer', 'faceling', 'smiler'],
+  '37': ['duller'],
+  '37.2': ['duller'],
+  u3: ['duller'],
+  '808': [],
+  '313': ['smiler'],
+  '512': ['skinstealer', 'faceling', 'duller', 'bloater', 'witch'],
+  '900': ['giant', 'bloater'],
+  '303': ['giant', 'hound', 'witch'],
+  '666': ['giant', 'bloater', 'gunman', 'bomber'],
+  '77': ['hound', 'smiler', 'bomber'],
+  '120': ['smiler', 'hound', 'bomber'],
+  void: ['smiler'],
+  null: ['faceling'],
+  chaos: ALL_ENTITIES,
+};
+
+/**
+ * Can Daidara (the giant) appear in this level? Hand-made levels say so in
+ * their table; elsewhere it needs open sky or a very high ceiling. Random
+ * entities use the same rule for their size.
+ */
+export function giantAllowed(levelId: string, open: boolean): boolean {
+  return levelId in FIXED ? FIXED[levelId].includes('giant') : open;
+}
+
 export function entityTableFor(levelId: string, opts: { dark: boolean; safe: boolean; open?: boolean }): EntityKind[] {
-  const fixed: Record<string, EntityKind[]> = {
-    '0': [],
-    frontrooms: [],
-    arena: [],
-    shibuya: [],
-    vaporwave: ['faceling', 'witch', 'bloater'],
-    memphis: ['skinstealer', 'duller', 'bomber'],
-    sento: ['faceling', 'skinstealer', 'smiler'],
-    '1000': [],
-    '1': ['hound', 'skinstealer', 'duller', 'bloater', 'gunman'],
-    '2': ['hound', 'smiler', 'skinstealer', 'bloater', 'witch'],
-    '27': ['smiler', 'hound'],
-    '139': ['faceling', 'smiler'],
-    '14': ['smiler', 'faceling'],
-    '186': ['skinstealer', 'faceling', 'smiler'],
-    '37': ['duller'],
-    '37.2': ['duller'],
-    u3: ['duller'],
-    '808': [],
-    '313': ['smiler'],
-    '512': ['skinstealer', 'faceling', 'duller', 'bloater', 'witch'],
-    '900': ['giant', 'bloater'],
-    '303': ['giant', 'hound', 'witch'],
-    '666': ['giant', 'bloater', 'gunman', 'bomber'],
-    '77': ['hound', 'smiler', 'bomber'],
-    '120': ['smiler', 'hound', 'bomber'],
-    void: ['smiler'],
-    null: ['faceling'],
-    chaos: ALL_ENTITIES,
-  };
+  const fixed = FIXED;
   if (levelId in fixed) return fixed[levelId];
   if (opts.safe) return [];
   // Generated and other levels: 1-3 kinds from the id; smilers only where it is dark,

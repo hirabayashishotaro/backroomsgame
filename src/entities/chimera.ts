@@ -9,7 +9,7 @@
  * built from the genome in models.ts and the behaviour lives in brain.ts.
  */
 import { hashString, Rng } from '../core/rng';
-import { HP_SCALE } from './entityDefs';
+import { HP_SCALE, type EntityKind } from './entityDefs';
 
 export type Lower = 'biped' | 'quad' | 'spider' | 'float' | 'serpent' | 'wheel' | 'tripod';
 export type Upper = 'humanoid' | 'blob' | 'box' | 'tower' | 'orb' | 'ribs';
@@ -145,24 +145,63 @@ function hsl(h: number, s: number, l: number): number {
 
 // --- The genome --------------------------------------------------------------
 
-/** A random entity, deterministic from its seed. `open` allows big ones (open sky / very high ceilings). */
-export function chimeraGenome(seed: number, opts: { open?: boolean } = {}): ChimeraGenome {
+/** Which hand-made entities each technique / movement is borrowed from. */
+const ATTACK_FROM: Record<Attack, EntityKind[]> = {
+  contact: ['smiler', 'hound', 'duller', 'faceling', 'skinstealer', 'spider'],
+  slash: ['namahage'],
+  shoot: ['gunman'],
+  snipe: ['peeker'],
+  lob: ['bomber'],
+  lightning: ['witch'],
+  wind: ['fanman'],
+  burst: ['bloater'],
+  stomp: ['giant'],
+  boulder: ['giant'],
+};
+const MOVE_FROM: Partial<Record<Move, EntityKind[]>> = { creep: ['faceling', 'duller'], hopper: ['hound'] };
+
+export interface ChimeraOptions {
+  /** Daidara (the giant) can appear in this level: there is room for big ones. Elsewhere they stay small enough for corridors. */
+  giant?: boolean;
+  /** Entities already living in this level: their traits are left to them (the random ones borrow from the others). */
+  exclude?: readonly EntityKind[];
+}
+
+/** Tallest a random entity may be where the giant cannot go (m). */
+export const CHIMERA_MAX_H_NARROW = 2.4;
+
+/** A random entity, deterministic from its seed (and the level it lives in). */
+export function chimeraGenome(seed: number, opts: ChimeraOptions = {}): ChimeraGenome {
   const rng = new Rng(seed ^ 0x6c1e7a);
+  const ex = new Set(opts.exclude ?? []);
+  // A trait is free to borrow when at least one of its owners does not live here.
+  const free = (from: EntityKind[] | undefined) => !from || from.some((k) => !ex.has(k));
   const lower = rng.pick<Lower>(['biped', 'biped', 'quad', 'spider', 'float', 'serpent', 'wheel', 'tripod']);
   const upper = rng.pick<Upper>(['humanoid', 'humanoid', 'blob', 'box', 'tower', 'orb', 'ribs']);
   const ranged = rng.chance(0.45);
-  let attack = ranged ? rng.pick(RANGED) : rng.pick(MELEE);
+  const rangedOk = RANGED.filter((a) => free(ATTACK_FROM[a]));
+  const meleeOk = MELEE.filter((a) => free(ATTACK_FROM[a]));
+  let attack = (ranged && rangedOk.length) || !meleeOk.length ? rng.pick(rangedOk.length ? rangedOk : RANGED) : rng.pick(meleeOk);
   const head: Head = attack === 'snipe' && rng.chance(0.6) ? 'rifle' : attack === 'wind' && rng.chance(0.5) ? 'fan' : rng.pick<Head>(['sphere', 'eye', 'tv', 'skull', 'mask', 'fan', 'none', 'lantern', 'cone']);
   const arms: 0 | 2 | 4 = upper === 'orb' || upper === 'blob' ? rng.pick([0, 2]) : rng.pick([2, 2, 2, 4, 0]);
   // Throwing and slashing need hands.
-  if (arms === 0 && (attack === 'slash' || attack === 'lob' || attack === 'boulder')) attack = rng.pick(['contact', 'wind', 'lightning', 'stomp'] as Attack[]);
-  const move: Move = RANGED.includes(attack) ? (rng.chance(0.85) ? 'range' : 'drift') : attack === 'burst' ? rng.pick<Move>(['rush', 'creep']) : rng.pick<Move>(['rush', 'rush', 'creep', 'hopper', 'drift']);
-  const close = RANGED.includes(attack) && rng.chance(0.35) ? 'gust' : 'none';
+  if (arms === 0 && (attack === 'slash' || attack === 'lob' || attack === 'boulder')) {
+    const handless = (['contact', 'wind', 'lightning', 'stomp'] as Attack[]).filter((a) => free(ATTACK_FROM[a]));
+    attack = rng.pick(handless.length ? handless : (['contact'] as Attack[]));
+  }
+  const moveOk = (m: Move[]) => {
+    const ok = m.filter((x) => free(MOVE_FROM[x]));
+    return ok.length ? ok : (['rush'] as Move[]);
+  };
+  const move: Move = RANGED.includes(attack) ? (rng.chance(0.85) ? 'range' : 'drift') : attack === 'burst' ? rng.pick(moveOk(['rush', 'creep'])) : rng.pick(moveOk(['rush', 'rush', 'creep', 'hopper', 'drift']));
+  const close = RANGED.includes(attack) && free(['witch']) && rng.chance(0.35) ? 'gust' : 'none';
   const effect = rng.pick<Effect>(['none', 'none', 'aura', 'orbit', 'trail', 'flicker', 'glitch', 'pulse']);
   const pattern = rng.chance(0.06) ? 'missing' : rng.pick<Pattern>(['flat', 'flat', 'stripes', 'spots', 'checker', 'noise', 'gradient', 'scales']);
   // Size: mostly human-sized; big ones only where there is room.
+  // Where the giant can go, some are huge; where it cannot, nothing grows taller than a corridor allows.
   const r = rng.float();
-  const scale = opts.open && r < 0.18 ? 1.8 + rng.float() * 1.6 : r < 0.25 ? 0.55 + rng.float() * 0.25 : 0.85 + rng.float() * (opts.open ? 0.75 : 0.45);
+  let scale = opts.giant && r < 0.18 ? 1.8 + rng.float() * 1.6 : r < 0.25 ? 0.55 + rng.float() * 0.25 : 0.85 + rng.float() * (opts.giant ? 0.75 : 0.45);
+  if (!opts.giant) scale = Math.min(scale, CHIMERA_MAX_H_NARROW / (LOWER_H[lower] + UPPER_H[upper] + HEAD_H[head]));
   // Colours
   const hue = rng.float();
   const sat = rng.chance(0.2) ? rng.float() * 0.15 : 0.35 + rng.float() * 0.55;
@@ -227,10 +266,10 @@ function chimeraHint(attack: Attack, move: Move, close: 'gust' | 'none'): string
  * The random entities that live in a level: 1-3 species, the same each time
  * you visit (deterministic from the level id).
  */
-export function chimeraSpecies(levelId: string, open: boolean): ChimeraGenome[] {
+export function chimeraSpecies(levelId: string, opts: ChimeraOptions): ChimeraGenome[] {
   const rng = new Rng(hashString('chimera:' + levelId));
   const n = rng.int(1, 3);
   const out: ChimeraGenome[] = [];
-  for (let i = 0; i < n; i++) out.push(chimeraGenome(hashString(`chimera:${levelId}:${i}`), { open }));
+  for (let i = 0; i < n; i++) out.push(chimeraGenome(hashString(`chimera:${levelId}:${i}`), opts));
   return out;
 }

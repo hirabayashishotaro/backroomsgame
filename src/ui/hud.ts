@@ -278,37 +278,13 @@ export class Hud {
     this.scare.innerHTML = '';
   }
 
-  jumpscare(strength: 'off' | 'mild' | 'full', color: string): void {
-    if (strength === 'off') {
-      this.scareT = 0.35;
-      this.scare.style.background = 'rgba(120,0,0,0.5)';
-      this.scare.innerHTML = '';
-      return;
-    }
-    this.scareT = strength === 'full' ? 1.1 : 0.6;
-    this.scare.style.background = strength === 'full' ? '#000' : 'rgba(40,0,0,0.75)';
+  /** Caught by an entity: a red flash (no face - user request), stronger with the setting. */
+  jumpscare(strength: 'off' | 'mild' | 'full', _color: string): void {
     this.scare.innerHTML = '';
-    const c = document.createElement('canvas');
-    c.width = c.height = 256;
-    const g = c.getContext('2d')!;
-    // An abstract face: pale oval, two black eyes, an over-wide mouth.
-    g.fillStyle = color;
-    g.beginPath();
-    g.ellipse(128, 128, 80, 104, 0, 0, Math.PI * 2);
-    g.fill();
-    g.fillStyle = '#000';
-    for (const x of [96, 160]) {
-      g.beginPath();
-      g.ellipse(x, 104, 16, 24, 0, 0, Math.PI * 2);
-      g.fill();
-    }
-    g.beginPath();
-    g.ellipse(128, 178, 50, 14, 0, 0, Math.PI * 2);
-    g.fill();
-    c.style.width = strength === 'full' ? '90vmin' : '55vmin';
-    c.style.filter = 'blur(1px) contrast(1.4)';
-    this.scare.appendChild(c);
+    this.scareT = strength === 'full' ? 0.7 : strength === 'mild' ? 0.5 : 0.35;
+    this.scare.style.background = strength === 'full' ? 'rgba(90,0,0,0.85)' : strength === 'mild' ? 'rgba(120,0,0,0.6)' : 'rgba(120,0,0,0.5)';
   }
+
 
   /** Escape-mode objective line (empty string hides it). */
   setObjective(text: string): void {

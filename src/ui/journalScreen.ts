@@ -7,6 +7,7 @@ import { buildChimeraMesh, buildEntityMesh, disposeEntityMesh } from '../entitie
 import { ENTITIES, type EntityKind } from '../entities/entityDefs';
 import type { ChimeraGenome } from '../entities/chimera';
 import type * as THREE from 'three';
+import type { Bestiary, BestiaryEntry } from '../systems/bestiary';
 
 const CSS = `
 .jr { position: fixed; inset: 0; z-index: 44; display: none; align-items: center; justify-content: center;
@@ -27,6 +28,13 @@ const CSS = `
 .jr-card .hidden { opacity: 0.35; }
 .jr-empty { opacity: 0.6; padding: 30px; text-align: center; }
 .jr svg text { fill: #e9dfae; font-size: 11px; font-family: inherit; }
+.jr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.jr-cardb { background: rgba(30,27,12,0.6); border: 1px solid #4d4420; cursor: pointer; padding: 6px; text-align: center; color: #e9dfae; font: inherit; }
+.jr-cardb:hover { border-color: #c8b35c; background: #3a3416; }
+.jr-cardb img, .jr-cardb .ph { width: 100%; aspect-ratio: 1; display: block; background: radial-gradient(circle at 50% 40%, #3a3418, #0d0c06); object-fit: contain; }
+.jr-cardb .nm { font-size: 13px; margin-top: 5px; line-height: 1.35; }
+.jr-cardb .sub { font-size: 11px; opacity: 0.6; }
+.jr-back { padding: 7px 14px; background: #1d1a0c; color: #e9dfae; border: 1px solid #4d4420; cursor: pointer; margin-bottom: 10px; }
 .jr-bestiary { display: flex; gap: 14px; height: 100%; }
 .jr-blist { width: 230px; flex: none; overflow: auto; }
 .jr-bitem { display: block; width: 100%; text-align: left; padding: 7px 10px; margin-bottom: 4px; background: #1d1a0c; color: #e9dfae; border: 1px solid #4d4420; cursor: pointer; font-size: 13px; }
@@ -58,7 +66,13 @@ export class JournalScreen {
   private picked: string | null = null;
   private onClose: () => void = () => {};
 
-  constructor(parent: HTMLElement, private journal: Journal) {
+  /** Cached list thumbnails (one image per entity key). */
+  private thumbs = new Map<string, string | null>();
+  private thumbViewer: ModelViewer | null = null;
+  /** Opened from the title screen: only the bestiary. */
+  private only = false;
+
+  constructor(parent: HTMLElement, private journal: Journal, private bestiary: Bestiary) {
     const style = document.createElement('style');
     style.textContent = CSS;
     document.head.appendChild(style);
@@ -93,8 +107,11 @@ export class JournalScreen {
     return this.root.style.display === 'flex';
   }
 
-  show(onClose: () => void): void {
+  show(onClose: () => void, opts: { bestiaryOnly?: boolean } = {}): void {
     this.onClose = onClose;
+    this.only = !!opts.bestiaryOnly;
+    if (this.only) this.tab = 'creatures';
+    this.picked = null;
     this.root.style.display = 'flex';
     this.render();
   }
@@ -107,9 +124,9 @@ export class JournalScreen {
   }
 
   private render(): void {
-    this.countEl.textContent = t('journal.count', { n: this.journal.count });
+    this.countEl.textContent = this.only ? t('journal.creatureCount', { n: this.bestiary.entries.length }) : t('journal.count', { n: this.journal.count });
     this.tabs.innerHTML = '';
-    for (const id of ['list', 'map', 'creatures'] as const) {
+    for (const id of this.only ? (['creatures'] as const) : (['list', 'map', 'creatures'] as const)) {
       const b = document.createElement('button');
       b.className = 'jr-tab' + (this.tab === id ? ' on' : '');
       b.textContent = t('journal.tab.' + id);
@@ -182,9 +199,28 @@ export class JournalScreen {
     }
   }
 
-  /** The bestiary: every entity met, its model turning in 3D, where it was met. */
+  private modelOf(c: BestiaryEntry): THREE.Group {
+    try {
+      return c.genome ? buildChimeraMesh(c.genome as ChimeraGenome) : buildEntityMesh(c.kind as EntityKind);
+    } catch {
+      return buildEntityMesh('bug');
+    }
+  }
+
+  private thumb(c: BestiaryEntry): string | null {
+    if (!this.thumbs.has(c.key)) {
+      if (!this.thumbViewer) this.thumbViewer = new ModelViewer(180, 180);
+      this.thumbs.set(c.key, this.thumbViewer.snapshot(this.modelOf(c), (o) => disposeEntityMesh(o as THREE.Group)));
+    }
+    return this.thumbs.get(c.key) ?? null;
+  }
+
+  /**
+   * The bestiary (shared by all runs): a grid of every entity met, each with
+   * its picture; pick one to turn it around in 3D and read about it.
+   */
   private renderCreatures(): void {
-    const list = this.journal.data.creatures ?? [];
+    const list = this.bestiary.entries;
     if (!list.length) {
       const e = document.createElement('div');
       e.className = 'jr-empty';
@@ -192,37 +228,58 @@ export class JournalScreen {
       this.body.appendChild(e);
       return;
     }
-    if (!this.picked || !list.some((c) => c.key === this.picked)) this.picked = list[list.length - 1].key;
+    const c = this.picked ? list.find((x) => x.key === this.picked) : undefined;
+    if (!c) {
+      this.viewer?.stop();
+      const grid = document.createElement('div');
+      grid.className = 'jr-grid';
+      for (const e of list) {
+        const b = document.createElement('button');
+        b.className = 'jr-cardb';
+        const url = this.thumb(e);
+        if (url) {
+          const img = document.createElement('img');
+          img.src = url;
+          img.alt = e.name;
+          b.appendChild(img);
+        } else {
+          const ph = document.createElement('div');
+          ph.className = 'ph';
+          b.appendChild(ph);
+        }
+        const nm = document.createElement('div');
+        nm.className = 'nm';
+        nm.textContent = e.name;
+        const sub = document.createElement('div');
+        sub.className = 'sub';
+        sub.textContent = (e.kind === 'chimera' ? t('journal.randomEntity') + ' / ' : '') + t('journal.defeated', { n: e.defeated });
+        b.append(nm, sub);
+        b.onclick = () => {
+          this.picked = e.key;
+          this.render();
+        };
+        grid.appendChild(b);
+      }
+      this.body.appendChild(grid);
+      return;
+    }
+    // One entity: big, turning, with its description.
+    const back = document.createElement('button');
+    back.className = 'jr-back';
+    back.textContent = t('journal.backToList');
+    back.onclick = () => {
+      this.picked = null;
+      this.render();
+    };
     const wrap = document.createElement('div');
     wrap.className = 'jr-bestiary';
-    const side = document.createElement('div');
-    side.className = 'jr-blist';
-    for (const c of list) {
-      const b = document.createElement('button');
-      b.className = 'jr-bitem' + (c.key === this.picked ? ' on' : '');
-      b.textContent = c.name;
-      const sm = document.createElement('small');
-      sm.textContent = c.kind === 'chimera' ? t('journal.randomEntity') : t('journal.defeated', { n: c.defeated });
-      b.appendChild(sm);
-      b.onclick = () => {
-        this.picked = c.key;
-        this.render();
-      };
-      side.appendChild(b);
-    }
     const view = document.createElement('div');
-    view.className = 'jr-bview';
-    const c = list.find((x) => x.key === this.picked)!;
-    if (!this.viewer) this.viewer = new ModelViewer(340, 300);
+    if (!this.viewer) this.viewer = new ModelViewer(380, 340);
     view.appendChild(this.viewer.canvas);
-    let model: THREE.Group;
-    try {
-      model = c.genome ? buildChimeraMesh(c.genome as ChimeraGenome) : buildEntityMesh(c.kind as EntityKind);
-    } catch {
-      model = buildEntityMesh('bug');
-    }
-    this.viewer.show(model, (o) => disposeEntityMesh(o as THREE.Group));
+    this.viewer.show(this.modelOf(c), (o) => disposeEntityMesh(o as THREE.Group));
     this.viewer.start();
+    const info = document.createElement('div');
+    info.className = 'jr-bview';
     const h = document.createElement('h3');
     h.textContent = c.name;
     const hint = document.createElement('div');
@@ -231,14 +288,17 @@ export class JournalScreen {
     hint.textContent = c.genome ? (c.genome as ChimeraGenome).hint : c.kind === 'bug' ? '？？？' : (ENTITIES[c.kind as EntityKind]?.hint ?? '');
     const where = document.createElement('div');
     where.className = 'line';
-    const names = c.levels.map((id) => this.journal.data.levels[id]?.title ?? 'Level ' + id);
-    where.textContent = t('journal.metIn') + ' ' + names.join('、');
+    where.textContent = t('journal.metIn') + ' ' + c.levels.map((l) => l.title).join('、');
     const def = document.createElement('div');
     def.className = 'line';
-    def.textContent = t('journal.defeated', { n: c.defeated });
-    view.append(h, hint, where, def);
-    wrap.append(side, view);
-    this.body.appendChild(wrap);
+    def.textContent = t('journal.defeated', { n: c.defeated }) + (c.kind === 'chimera' ? ' / ' + t('journal.randomEntity') : '');
+    const tip = document.createElement('div');
+    tip.className = 'line';
+    tip.style.opacity = '0.55';
+    tip.textContent = t('journal.dragHint');
+    info.append(h, hint, where, def, tip);
+    wrap.append(view, info);
+    this.body.append(back, wrap);
   }
 
   private renderMap(): void {

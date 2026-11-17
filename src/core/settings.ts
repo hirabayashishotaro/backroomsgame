@@ -216,7 +216,7 @@ export const SETTINGS_SCHEMA: Field[] = [
 
   { key: 'skin', type: 'select', options: SKINS, def: 'suit', tab: 'game', label: 'プレイヤーの見た目', note: 'V キーで三人称視点にすると確認できる' },
   { key: 'difficulty', type: 'select', options: [['easy', 'やさしい'], ['normal', 'ふつう'], ['hard', 'むずかしい']], def: 'normal', tab: 'game', label: '難易度' },
-  { key: 'jumpscare', type: 'select', options: [['off', 'なし'], ['mild', '控えめ'], ['full', '強い']], def: 'mild', tab: 'game', label: 'ジャンプスケア', note: '捕まったときの驚かせ演出の強さ' },
+  { key: 'jumpscare', type: 'select', options: [['off', 'なし'], ['mild', '控えめ'], ['full', '強い']], def: 'mild', tab: 'game', label: 'ジャンプスケア', note: '捕まったときの赤い閃光と効果音の強さ' },
   { key: 'subtitles', type: 'bool', def: false, tab: 'game', label: '字幕(環境音・声の文字化)' },
   { key: 'showHud', type: 'bool', def: true, tab: 'game', label: 'HUD を表示' },
   { key: 'hudScale', type: 'range', min: 0.7, max: 1.5, step: 0.05, def: 1, tab: 'game', label: 'HUD の大きさ', fmt: pct },

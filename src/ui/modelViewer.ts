@@ -87,21 +87,57 @@ export class ModelViewer {
     this.idle = 0;
   }
 
+  /**
+   * Render a model once from the front and return it as an image (for list
+   * thumbnails); the model is disposed afterwards. Null without WebGL.
+   */
+  snapshot(model: THREE.Object3D, dispose: (o: THREE.Object3D) => void): string | null {
+    if (!this.ensureRenderer()) {
+      dispose(model);
+      return null;
+    }
+    const prev = this.model;
+    const prevDispose = this.dispose;
+    if (prev) prev.visible = false;
+    this.model = null;
+    this.show(model, dispose);
+    this.placeCamera();
+    this.renderer!.render(this.scene, this.camera);
+    const url = this.canvas.toDataURL('image/png');
+    dispose(model);
+    model.removeFromParent();
+    this.model = prev;
+    this.dispose = prevDispose;
+    if (prev) prev.visible = true;
+    return url;
+  }
+
+  private ensureRenderer(): boolean {
+    if (this.renderer) return true;
+    try {
+      this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      this.renderer.setSize(this.canvas.width, this.canvas.height, false);
+      this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+      return true;
+    } catch {
+      return false; // no WebGL for another context: menus still work without previews
+    }
+  }
+
+  private placeCamera(): void {
+    const dist = this.fitH * 1.9 + 0.6;
+    const cp = Math.cos(this.pitch);
+    this.camera.position.set(Math.sin(this.yaw) * cp * dist, this.centerY + Math.sin(this.pitch) * dist, Math.cos(this.yaw) * cp * dist);
+    this.camera.lookAt(0, this.centerY, 0);
+  }
+
   private fitH = 1.8;
   private centerY = 0.9;
 
   start(): void {
     if (this.running) return;
-    if (!this.renderer) {
-      try {
-        this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        this.renderer.setSize(this.canvas.width, this.canvas.height, false);
-        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-      } catch {
-        return; // no WebGL for a second context: the menu still works without the preview
-      }
-    }
+    if (!this.ensureRenderer()) return;
     this.running = true;
     this.lastT = performance.now();
     const loop = () => {
@@ -113,10 +149,7 @@ export class ModelViewer {
       // Spin slowly unless the player is turning it.
       this.idle += dt;
       if (!this.dragging && this.idle > IDLE_SPIN_DELAY) this.yaw += dt * 0.5;
-      const dist = this.fitH * 1.9 + 0.6;
-      const cp = Math.cos(this.pitch);
-      this.camera.position.set(Math.sin(this.yaw) * cp * dist, this.centerY + Math.sin(this.pitch) * dist, Math.cos(this.yaw) * cp * dist);
-      this.camera.lookAt(0, this.centerY, 0);
+      this.placeCamera();
       this.renderer!.render(this.scene, this.camera);
     };
     loop();

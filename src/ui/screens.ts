@@ -18,6 +18,8 @@ export interface ScreenCallbacks {
   onCombatLab: () => void;
   onEndingTest: () => void;
   onJournal: () => void;
+  /** The bestiary shared by all runs. */
+  onBestiary: () => void;
   /** The player's outfit: read and change it (saved with the settings). */
   getSkin: () => Skin;
   setSkin: (s: Skin) => void;
@@ -183,6 +185,7 @@ export class Screens {
         this.btn(t('menu.load'), () => this.render('load'), { disabled: !latest });
         this.btn(t('menu.settings'), () => this.cb.onSettings());
         this.btn(t('menu.skin'), () => this.render('skin'), { sub: this.skinLabel() });
+        this.btn(t('menu.bestiary'), () => this.cb.onBestiary(), { sub: t('menu.bestiarySub') });
         if (isDevUnlocked()) {
           this.btn(t('dev.open'), () => this.cb.onLevelSelect());
           this.btn(t('lab.open'), () => this.cb.onCombatLab());

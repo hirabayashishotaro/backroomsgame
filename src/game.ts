@@ -40,6 +40,7 @@ import { ALL_ENTITIES, ENTITIES, type EntityKind } from './entities/entityDefs';
 import { augmentLoot } from './items/weaponLoot';
 import { isWeapon } from './items/itemDefs';
 import { buildAvatar, poseAvatar, type Skin } from './player/avatar';
+import { Bestiary } from './systems/bestiary';
 import { buildCorpse } from './world/objectMeshes';
 import { DIFFICULTY } from './player/stats';
 import { Hud } from './ui/hud';
@@ -306,15 +307,20 @@ export class Game {
       onSeen: (kind, name, genome) => {
         // The journal remembers it for this level, and the bestiary keeps its model.
         const key = genome ? 'chimera:' + genome.seed : kind;
-        if (this.journal.meet(this.level.id, { key, kind, name: name ?? ENTITIES[kind].name, genome })) this.hud.message(t('entity.seen', { name: name ?? ENTITIES[kind].name }), 2.5);
+        const c = { key, kind, name: name ?? ENTITIES[kind].name, genome };
+        this.bestiary.meet({ id: this.level.id, title: this.level.title }, c);
+        if (this.journal.meet(this.level.id, c)) this.hud.message(t('entity.seen', { name: c.name }), 2.5);
       },
       onKilled: (kind, at, name, genome) => {
         this.hud.message(t('entity.killed', { name: name ?? ENTITIES[kind].name }), 2);
         {
           // Defeated without having been looked at: it still goes into the bestiary.
           const key = genome ? 'chimera:' + genome.seed : kind;
-          this.journal.meet(this.level.id, { key, kind, name: name ?? ENTITIES[kind].name, genome });
+          const c = { key, kind, name: name ?? ENTITIES[kind].name, genome };
+          this.journal.meet(this.level.id, c);
           this.journal.defeat(key);
+          this.bestiary.meet({ id: this.level.id, title: this.level.title }, c);
+          this.bestiary.defeat(key);
         }
         // Often a witch leaves its staff behind (30%).
         if (kind === 'witch' && this.rng.float() < STAFF_DROP_P) this.spawnItemAt('staff', at.x, at.y, at.z);
@@ -364,7 +370,8 @@ export class Game {
         if (o.god && this.inArena) this.stats.health = 100;
       },
     });
-    this.journalScreen = new JournalScreen(container, this.journal);
+    this.bestiary.load();
+    this.journalScreen = new JournalScreen(container, this.journal, this.bestiary);
     this.settingsScreen = new SettingsScreen(container, this.settings, this.input, (st) => this.applySettings(st));
     this.screens = new Screens(container, {
       onNewGame: (slot, mode) => this.newGame(slot, mode),
@@ -376,6 +383,7 @@ export class Game {
       onCombatLab: () => this.lab.show(),
       onEndingTest: () => this.startEndingTest(),
       onJournal: () => this.journalScreen.show(() => {}),
+      onBestiary: () => this.journalScreen.show(() => {}, { bestiaryOnly: true }),
       getSkin: () => this.settings.skin,
       setSkin: (skin) => {
         this.settings.skin = skin;
@@ -456,6 +464,8 @@ export class Game {
     this.playTime = d.playTime;
     this.history.push(...d.history);
     this.journal.load(d.journal, (k) => ENTITIES[k as EntityKind]?.name ?? k);
+    // Runs from before the shared bestiary: bring what they met into it.
+    this.bestiary.merge(this.journal.data.creatures ?? [], (id) => this.journal.data.levels[id]?.title ?? 'Level ' + id);
     for (const [lid, list] of Object.entries(d.anchors)) this.anchors[lid] = list.map((a) => ({ ...a, back: { ...a.back } }));
     this.enterLevel(d.levelId, d.player);
     this.player.pitch = d.player.pitch;
@@ -1302,6 +1312,8 @@ export class Game {
   }
 
   /** Third-person view (V): the camera behind the shoulder, the player's body visible. */
+  /** The bestiary shared by every run. */
+  private readonly bestiary = new Bestiary();
   private thirdPerson = false;
   /** Orbit of the camera around the body while looking at yourself (radians). */
   private orbitYaw = 0;

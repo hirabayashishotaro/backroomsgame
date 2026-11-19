@@ -1,7 +1,7 @@
 /** Game: wires renderer, world streaming, player, items, level transitions, audio and UI. */
 import * as THREE from 'three';
 import { Input } from './core/input';
-import { loadSettings, saveSettings, type Action, type Settings } from './core/settings';
+import { legacySkin, loadSettings, saveSettings, type Action, type Settings } from './core/settings';
 import { getNative } from './core/storage';
 import { hash01, hashString, Rng } from './core/rng';
 import { entryHash, makeGenContext, parseWorldSeed, resolveExitTarget, resolveLevel } from './levels/registry';
@@ -42,6 +42,9 @@ import { isWeapon } from './items/itemDefs';
 import { buildAvatar, holdAngleFor, holdInHand, poseAvatar, type Skin } from './player/avatar';
 import { buildWeaponModel } from './weapons/weaponModels';
 import { Bestiary } from './systems/bestiary';
+import { Profile, grantClearRewards } from './systems/profile';
+import { GOLD, SILVER } from './player/skins';
+import { isDevUnlocked } from './core/devUnlock';
 import { baseSiteFor, bunkerBox, bunkerDoor } from './world/surveyBase';
 import { BASE_ARRIVAL, isBaseLevel } from './levels/hand/surveyBase';
 import { buildCorpse } from './world/objectMeshes';
@@ -304,6 +307,7 @@ export class Game {
         this.blastT = 0;
       },
       onRangedHit: (_kind, dmg) => {
+        if (dmg > 0) this.run.hurt++;
         const k = this.settings.difficulty === 'easy' ? 0.7 : this.settings.difficulty === 'hard' ? 1.3 : 1;
         this.stats.damage(dmg * k);
         this.audio.hurt();
@@ -376,6 +380,8 @@ export class Game {
       },
     });
     this.bestiary.load();
+    this.profile.load(legacySkin());
+    this.profile.save();
     this.journalScreen = new JournalScreen(container, this.journal, this.bestiary);
     this.settingsScreen = new SettingsScreen(container, this.settings, this.input, (st) => this.applySettings(st));
     this.screens = new Screens(container, {
@@ -389,11 +395,11 @@ export class Game {
       onEndingTest: () => this.startEndingTest(),
       onJournal: () => this.journalScreen.show(() => {}),
       onBestiary: () => this.journalScreen.show(() => {}, { bestiaryOnly: true }),
-      getSkin: () => this.settings.skin,
-      setSkin: (skin) => {
-        this.settings.skin = skin;
-        this.applySettings(this.settings);
-      },
+      getSkin: () => this.profile.data.skin,
+      setSkin: (skin) => this.profile.setSkin(skin),
+      ownsSkin: (skin) => this.profile.owns(skin, isDevUnlocked()),
+      wonSkins: () => this.profile.data.won,
+      giveSkin: (skin) => void this.profile.give(skin),
       onQuit: () => {
         this.saveNow();
         getNative()?.quit?.();
@@ -441,7 +447,29 @@ export class Game {
     this.hud.hideCredits();
     this.playTime = 0;
     this.autosaveTimer = 0;
+    this.run = { deaths: 0, hurt: 0 };
   }
+
+  /**
+   * Starting or resuming a run in a trophy outfit: its pistol goes into an
+   * empty slot (or where the almond water is), once.
+   */
+  private giveTrophyPistol(): void {
+    const skin = this.profile.data.skin;
+    const id = skin === GOLD ? 'gold_pistol' : skin === SILVER ? 'silver_pistol' : null;
+    if (!id || this.inventory.has(id)) return;
+    if (this.inventory.full) {
+      const aw = this.inventory.slots.indexOf('almond_water');
+      if (aw < 0) return;
+      this.inventory.take(aw);
+    }
+    this.inventory.add(id);
+    this.arsenal.gainWeapon(id, false);
+    setTimeout(() => this.hud.message(t('msg.trophyPistol', { name: ITEMS[id].name }), 4), 1500);
+  }
+
+  /** This run's deaths and times hurt by entities (for the clear rewards). */
+  private run = { deaths: 0, hurt: 0 };
 
   private newGame(slot: number, mode: 'endless' | 'escape' = 'endless'): void {
     const seedStr = this.settings.worldSeed.trim();
@@ -450,6 +478,7 @@ export class Game {
     this.mode = mode;
     this.escape.reset();
     this.enterLevel(this.launchLevel);
+    this.giveTrophyPistol();
     this.titleShown = false;
     this.start();
     this.saveNow();
@@ -462,8 +491,10 @@ export class Game {
     this.slot = slot;
     this.mode = d.mode ?? 'endless';
     this.escape.load(d.escape);
+    this.run = { deaths: d.run?.deaths ?? 0, hurt: d.run?.hurt ?? 0 };
     this.inventory.load(d.inventory);
     this.arsenal.load(d.arsenal);
+    this.giveTrophyPistol();
     this.stats.load(d.stats);
     this.deltas.load(d.deltas);
     this.playTime = d.playTime;
@@ -507,6 +538,7 @@ export class Game {
       mode: this.mode,
       arsenal: this.arsenal.toJSON(),
       escape: this.mode === 'escape' ? this.escape.toJSON() : undefined,
+      run: { ...this.run },
     };
   }
 
@@ -1333,6 +1365,8 @@ export class Game {
   }
 
   /** Third-person view (V): the camera behind the shoulder, the player's body visible. */
+  /** Outfits won and worn (shared by every run). */
+  private readonly profile = new Profile();
   /** The bestiary shared by every run. */
   private readonly bestiary = new Bestiary();
   private thirdPerson = false;
@@ -1360,9 +1394,9 @@ export class Game {
   private updateThirdPerson(sink: number): void {
     const p = this.player;
     const show = this.thirdPerson && this.started && this.level.id !== ENDING_LEVEL;
-    if (this.avatar && (!show || this.avatarSkin !== this.settings.skin)) this.avatar.visible = false;
+    if (this.avatar && (!show || this.avatarSkin !== this.profile.data.skin)) this.avatar.visible = false;
     if (!show) return;
-    if (!this.avatar || this.avatarSkin !== this.settings.skin) {
+    if (!this.avatar || this.avatarSkin !== this.profile.data.skin) {
       if (this.avatar) {
         this.avatar.traverse((o) => {
           const m = o as THREE.Mesh;
@@ -1374,8 +1408,8 @@ export class Game {
         });
         this.avatar.removeFromParent();
       }
-      this.avatar = buildAvatar(this.settings.skin);
-      this.avatarSkin = this.settings.skin;
+      this.avatar = buildAvatar(this.profile.data.skin);
+      this.avatarSkin = this.profile.data.skin;
       this.fxRoot.add(this.avatar);
     }
     const a = this.avatar;
@@ -1458,7 +1492,8 @@ export class Game {
       this.audio.gunshot('pistol');
     } else if (def.kind === 'hitscan') {
       this.ents.hitscan(def, o, d);
-      this.audio.gunshot('pistol');
+      if (def.trophy) this.audio.trophyShot(def.trophy === 'gold');
+      else this.audio.gunshot('pistol');
     } else if (def.kind === 'projectile') {
       this.ents.launch(def, o, d, this.viewmodel.muzzleWorld);
       if (def.explosive) this.audio.rocketLaunch();
@@ -1680,6 +1715,7 @@ export class Game {
       this.hud.setCrosshair(gap, def.kind !== 'melee', s.crosshairSize, s.crosshairColor, s.crosshairDot, this.adsT);
       const loaded = this.arsenal.loaded(id);
       if (def.kind === 'beam') this.hud.setAmmo(def.name, Math.round(this.laserFuel * 100) + '%', '', this.laserLock);
+      else if (def.infinite) this.hud.setAmmo(def.name, '∞', '', false);
       else if (def.kind === 'melee' || def.kind === 'spell') this.hud.setAmmo(def.name, '', '', false);
       else if (def.mag === 0) this.hud.setAmmo(def.name, String(loaded), '', false);
       else this.hud.setAmmo(def.name, String(loaded), String(this.arsenal.reserve[def.ammo!]), !!this.arsenal.reloading);
@@ -1702,6 +1738,7 @@ export class Game {
   }
 
   private onEntityHit(kind: EntityKind, dmg: number, name?: string): void {
+    if (dmg > 0) this.run.hurt++;
     const k = this.settings.difficulty === 'easy' ? 0.7 : this.settings.difficulty === 'hard' ? 1.3 : 1;
     this.stats.damage(dmg * k);
     this.hud.jumpscare(this.settings.jumpscare, kind === 'smiler' ? '#f0f0e8' : kind === 'faceling' ? '#d8cfc4' : '#c8b8a8');
@@ -1986,6 +2023,7 @@ export class Game {
   private die(cause: DeathCause): void {
     if (this.deadTimer > 0) return;
     this.deadTimer = 3.5;
+    this.run.deaths++;
     if (this.thirdPerson) this.setInspect(false);
     this.inventory.loseHalf((n) => this.rng.int(0, n - 1));
     this.hud.showDeath(t('death.title'), t('death.' + cause));
@@ -2078,7 +2116,10 @@ export class Game {
         this.endingTimer = -1;
         this.hud.hideCredits();
         this.hud.message(t('escape.end'), 4);
+        // Clear rewards: a new outfit, and the trophies for a clean run.
+        const won = this.mode === 'escape' ? grantClearRewards(this.profile, this.run, () => Math.random()) : [];
         this.toTitle();
+        if (won.length) this.screens.showRewards(won, { deaths: this.run.deaths, hurt: this.run.hurt });
       }
     }
     if (this.started && !overlay) {

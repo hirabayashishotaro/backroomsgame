@@ -51,14 +51,14 @@ export class Arsenal {
   /** Rounds available to fire right now. */
   loaded(id: WeaponId): number {
     const def = WEAPONS[id];
-    if (def.kind === 'melee' || def.kind === 'spell') return Infinity;
+    if (def.kind === 'melee' || def.kind === 'spell' || def.infinite) return Infinity;
     if (def.mag === 0) return this.reserve[def.ammo!];
     return this.mags[id] ?? 0;
   }
 
   canReload(id: WeaponId): boolean {
     const def = WEAPONS[id];
-    return def.mag > 0 && !this.reloading && (this.mags[id] ?? 0) < def.mag && this.reserve[def.ammo!] > 0;
+    return def.mag > 0 && !def.infinite && !this.reloading && (this.mags[id] ?? 0) < def.mag && this.reserve[def.ammo!] > 0;
   }
 
   startReload(id: WeaponId): boolean {
@@ -105,7 +105,9 @@ export class Arsenal {
     if (this.cooldown > 0 || (this.reloading && def.kind !== 'melee' && def.kind !== 'spell')) return null;
     if (def.kind !== 'melee' && def.kind !== 'spell') {
       if (this.loaded(id) <= 0) return 'empty';
-      if (def.mag > 0) this.mags[id] = (this.mags[id] ?? 0) - 1;
+      if (def.infinite) {
+        /* never runs out */
+      } else if (def.mag > 0) this.mags[id] = (this.mags[id] ?? 0) - 1;
       else this.reserve[def.ammo!] -= 1;
     }
     this.cooldown = def.interval;

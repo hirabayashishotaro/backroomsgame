@@ -54,6 +54,8 @@ export interface SaveData {
   arsenal?: ArsenalData;
   /** Escape-mode progress. */
   escape?: EscapeData;
+  /** Deaths and times hurt by an entity this run (clear rewards). */
+  run?: { deaths: number; hurt: number };
 }
 
 export interface SlotInfo {

@@ -1,7 +1,8 @@
 /**
  * Escape mode (the run with an ending; user design, replaces the fixed route):
- *  1. Collect: see 50 levels, see the Void, and defeat 30 entities including
- *     at least one of every kind.
+ *  1. Collect: see 50 levels and defeat 30 entities including at least one
+ *     of every kind and at least one random entity (user design; the Void
+ *     is no longer required).
  *  2. Bug: a glitched, harmless figure ("バグ") starts appearing. Defeat one.
  *  3. Return: whatever way you leave the level, you come back to Level 0.
  *  4. Home: Level 0's doors are glitched and the sounds of the real world leak
@@ -13,7 +14,7 @@ import { ALL_ENTITIES, type EntityKind } from '../entities/entityDefs';
 
 export type EscapeStage = 'collect' | 'bug' | 'return' | 'home' | 'ending';
 
-export const ESCAPE_GOALS = { levels: 50, kills: 30, voidId: 'void' };
+export const ESCAPE_GOALS = { levels: 50, kills: 30, randomKills: 1 };
 /** The ending level. */
 export const ENDING_LEVEL = 'shibuya';
 /** Levels that do not count as "seen" (test hall, the ending, the old break room). */
@@ -26,7 +27,8 @@ export interface EscapeData {
 
 export interface EscapeStatus {
   levels: number;
-  voidSeen: boolean;
+  /** Random entities defeated. */
+  randomKills: number;
   kills: number;
   kinds: number;
   kindsTotal: number;
@@ -55,17 +57,16 @@ export class EscapeProgress {
   /** Progress toward the conditions, given the ids of every level seen this run. */
   status(levelIds: Iterable<string>): EscapeStatus {
     let levels = 0;
-    let voidSeen = false;
     for (const id of levelIds) {
       if (NOT_COUNTED.has(id)) continue;
       levels++;
-      if (id === ESCAPE_GOALS.voidId) voidSeen = true;
     }
     // Random entities count toward the number of kills (not toward the kinds).
     const kills = ALL_ENTITIES.reduce((s, k) => s + (this.data.kills[k] ?? 0), 0) + (this.data.kills.chimera ?? 0);
     const kinds = ALL_ENTITIES.filter((k) => (this.data.kills[k] ?? 0) > 0).length;
-    const done = levels >= ESCAPE_GOALS.levels && voidSeen && kills >= ESCAPE_GOALS.kills && kinds === ALL_ENTITIES.length;
-    return { levels, voidSeen, kills, kinds, kindsTotal: ALL_ENTITIES.length, done };
+    const randomKills = this.data.kills.chimera ?? 0;
+    const done = levels >= ESCAPE_GOALS.levels && kills >= ESCAPE_GOALS.kills && kinds === ALL_ENTITIES.length && randomKills >= ESCAPE_GOALS.randomKills;
+    return { levels, randomKills, kills, kinds, kindsTotal: ALL_ENTITIES.length, done };
   }
 
   /** An entity died. Returns the new stage if this changed it. */

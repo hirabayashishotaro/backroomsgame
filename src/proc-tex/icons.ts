@@ -128,6 +128,24 @@ function shapeIcon(id: ItemId, size: number): HTMLCanvasElement {
     g.fill();
   };
   switch (id) {
+    case 'silver_pistol':
+    case 'gold_pistol': {
+      const gold = id === 'gold_pistol';
+      const sl = g.createLinearGradient(0, 18, 0, 32);
+      sl.addColorStop(0, gold ? '#fff2b0' : '#ffffff');
+      sl.addColorStop(0.5, gold ? '#e0a628' : '#b8c0c8');
+      sl.addColorStop(1, gold ? '#8a5a10' : '#6a7078');
+      fill(sl as unknown as string, () => g.rect(10, 20, 42, 10));
+      fill(gold ? '#c08a1a' : '#9aa2aa', () => {
+        g.moveTo(34, 30);
+        g.lineTo(46, 30);
+        g.lineTo(50, 50);
+        g.lineTo(38, 50);
+        g.closePath();
+      });
+      fill('#ffffff', () => g.rect(14, 21, 30, 2)); // shine
+      break;
+    }
     case 'pistol':
       fill('#2a2c30', () => g.rect(10, 20, 42, 10)); // slide
       fill('#1e1f22', () => {

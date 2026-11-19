@@ -11,7 +11,7 @@
  * - Rocket launcher (rare): slow rocket that explodes; the blast throws
  *   everything back - including you (rocket jumps), without hurting you.
  */
-export type WeaponId = 'pistol' | 'magnum' | 'kunai' | 'axe' | 'rocket' | 'shotgun' | 'staff' | 'laser' | 'fist';
+export type WeaponId = 'pistol' | 'magnum' | 'kunai' | 'axe' | 'rocket' | 'shotgun' | 'staff' | 'laser' | 'fist' | 'silver_pistol' | 'gold_pistol';
 export type AmmoType = 'pistol' | 'magnum' | 'kunai' | 'rocket' | 'shotgun';
 
 export interface WeaponDef {
@@ -56,6 +56,10 @@ export interface WeaponDef {
    * seconds once you have stopped for `delay` seconds.
    */
   beam?: { fuel: number; recharge: number; delay: number };
+  /** Never runs out (the trophy pistols). */
+  infinite?: boolean;
+  /** A trophy pistol: its own sound and look. */
+  trophy?: 'silver' | 'gold';
   /** Explodes on impact: blast radius (m), knockback on entities and on the player (m/s). */
   explosive?: { radius: number; knock: number; selfKnock: number };
 }
@@ -76,6 +80,42 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     adsZoom: 0.72,
     headMultiplier: 2,
     range: 250,
+  },
+  /** Silver trophy pistol (a clear without dying): a pistol that never runs out, with its own sound. */
+  silver_pistol: {
+    id: 'silver_pistol',
+    name: 'シルバーピストル',
+    kind: 'hitscan',
+    mag: 12,
+    interval: 0.14,
+    reloadTime: 0,
+    damage: 30,
+    falloff: { near: 12, far: 60, minFactor: 0.4 },
+    hipSpread: 0.012,
+    adsSpread: 0,
+    adsZoom: 0.72,
+    headMultiplier: 2,
+    range: 250,
+    infinite: true,
+    trophy: 'silver',
+  },
+  /** Gold trophy pistol (a clear without being hurt): never runs out, 1.5x damage, headshots twice as strong again. */
+  gold_pistol: {
+    id: 'gold_pistol',
+    name: 'ゴールドピストル',
+    kind: 'hitscan',
+    mag: 12,
+    interval: 0.14,
+    reloadTime: 0,
+    damage: 45,
+    falloff: { near: 12, far: 60, minFactor: 0.4 },
+    hipSpread: 0.012,
+    adsSpread: 0,
+    adsZoom: 0.72,
+    headMultiplier: 4,
+    range: 250,
+    infinite: true,
+    trophy: 'gold',
   },
   magnum: {
     id: 'magnum',

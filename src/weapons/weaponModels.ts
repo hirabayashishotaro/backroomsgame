@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import type { WeaponId } from './weaponDefs';
 import { swapInGLB } from '../world/glbModels';
+import { chromeMaterial } from '../proc-tex/chrome';
 
 const mat = (c: number) => new THREE.MeshBasicMaterial({ color: c });
 
@@ -30,6 +31,8 @@ export function buildWeaponModel(id: WeaponId, shade = 1): THREE.Group {
   muzzle.name = 'muzzle';
   switch (id) {
     case 'pistol':
+    case 'silver_pistol':
+    case 'gold_pistol':
       b(g, 0.032, 0.11, 0.05, 0, -0.04, 0.01, k(0x1e1f22)); // grip
       b(g, 0.036, 0.04, 0.2, 0, 0.035, -0.05, k(0x2a2c30)); // slide
       b(g, 0.03, 0.025, 0.17, 0, 0.005, -0.04, k(0x1a1b1d)); // frame
@@ -125,6 +128,16 @@ export function buildWeaponModel(id: WeaponId, shade = 1): THREE.Group {
   }
   g.add(muzzle);
   muzzle.userData.keep = true;
+  if (id === 'silver_pistol' || id === 'gold_pistol') {
+    // Polished all over: silver or gold.
+    const tint = id === 'gold_pistol' ? 0xffc84a : 0xe4e8ee;
+    g.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      (m.material as THREE.Material).dispose();
+      m.material = chromeMaterial(tint, shade);
+    });
+  }
   swapInGLB(g, 'weapon_' + id);
   return g;
 }

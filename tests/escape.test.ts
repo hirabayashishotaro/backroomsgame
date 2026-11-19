@@ -5,16 +5,18 @@ import { ALL_ENTITIES } from '../src/entities/entityDefs';
 const levels = (n: number, withVoid: boolean) => [...Array.from({ length: n }, (_, i) => String(i + 10)), ...(withVoid ? ['void'] : [])];
 
 describe('escape mode', () => {
-  it('needs 50 levels, the Void, and 30 kills including every kind before the Bug appears', () => {
+  it('needs 50 levels and 30 kills including every kind and one random entity before the Bug appears (no Void needed)', () => {
     const e = new EscapeProgress();
     for (let i = 0; i < 40; i++) e.recordKill('hound');
-    expect(e.check(levels(60, true))).toBeNull(); // not every kind yet
+    expect(e.check(levels(60, false))).toBeNull(); // not every kind yet
     for (const k of ALL_ENTITIES) e.recordKill(k);
-    expect(e.check(levels(48, true))).toBeNull(); // 49 levels with the void
-    expect(e.check(levels(60, false))).toBeNull(); // no void
-    expect(e.check(['arena', 'shibuya', 'frontrooms', ...levels(49, true)])).toBe('bug'); // 50 counted
+    expect(e.check(levels(60, false))).toBeNull(); // no random entity yet
+    e.recordKill('chimera');
+    expect(e.check(levels(49, false))).toBeNull(); // 49 levels
+    expect(e.check(['arena', 'shibuya', 'frontrooms', ...levels(50, false)])).toBe('bug'); // 50 counted, without the Void
     expect(e.stage).toBe('bug');
     expect(ESCAPE_GOALS.kills).toBe(30);
+    expect(ESCAPE_GOALS.randomKills).toBe(1);
   });
 
   it('the Bug is not counted toward kills, and defeating it opens the way home', () => {

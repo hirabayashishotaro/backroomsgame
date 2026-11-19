@@ -2,7 +2,7 @@
 import { formatPlayTime, latestSlot, listSlots } from '../core/save';
 import { getNative } from '../core/storage';
 import { feedDevKey, isDevUnlocked } from '../core/devUnlock';
-import { SKINS, type Skin } from '../player/skins';
+import { COSPLAYS, GOLD, randomSkinId, SILVER, SKINS, TROPHIES, skinLabel, type Skin } from '../player/skins';
 import { buildAvatar } from '../player/avatar';
 import { ModelViewer } from './modelViewer';
 import type * as THREE from 'three';
@@ -23,6 +23,12 @@ export interface ScreenCallbacks {
   /** The player's outfit: read and change it (saved with the settings). */
   getSkin: () => Skin;
   setSkin: (s: Skin) => void;
+  /** May this outfit be worn (won, everyday, or the developer passphrase)? */
+  ownsSkin: (s: Skin) => boolean;
+  /** Outfits won so far (cosplays, trophies, random ones). */
+  wonSkins: () => Skin[];
+  /** Developer: add a brand-new random outfit. */
+  giveSkin: (s: Skin) => void;
   onQuit: () => void;
 }
 
@@ -40,10 +46,18 @@ const CSS = `
 .sc-btn.primary { background: #c8b35c; color: #1a1606; border-color: #c8b35c; }
 .sc-btn.primary:hover { background: #e2cc6e; }
 .sc-note { font-size: 12px; opacity: 0.55; margin-top: 16px; line-height: 1.7; white-space: pre-line; }
+.sc-skins { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.sc-skin { background: rgba(30,27,12,0.85); border: 1px solid #4d4420; color: #e9dfae; padding: 4px; cursor: pointer; font: inherit; font-size: 11px; line-height: 1.3; }
+.sc-skin:hover:not(:disabled) { border-color: #c8b35c; }
+.sc-skin.on { border-color: #c8b35c; background: #3a3416; }
+.sc-skin:disabled { opacity: 0.45; cursor: default; }
+.sc-skin img, .sc-skin .ph { width: 100%; aspect-ratio: 1; display: block; background: radial-gradient(circle at 50% 40%, #3a3418, #0d0c06); }
+.sc-skin .ph { display: flex; align-items: center; justify-content: center; font-size: 26px; opacity: 0.5; }
+.sc-sect { font-size: 12px; opacity: 0.65; margin: 10px 0 4px; letter-spacing: 0.1em; }
 .sc-credit { font-size: 13px; line-height: 2; white-space: pre-line; }
 `;
 
-type View = 'title' | 'pause' | 'new' | 'load' | 'credits' | 'confirm' | 'mode' | 'skin';
+type View = 'title' | 'pause' | 'new' | 'load' | 'credits' | 'confirm' | 'mode' | 'skin' | 'reward';
 
 export class Screens {
   private root: HTMLDivElement;
@@ -98,39 +112,117 @@ export class Screens {
     });
   }
 
-  /** Skin selection: the outfit turning in 3D, a button per outfit. */
+  private thumbViewer: ModelViewer | null = null;
+  private thumbs = new Map<string, string | null>();
+
+  /** A small front picture of an outfit (cached). */
+  private skinThumb(id: Skin): string | null {
+    if (!this.thumbs.has(id)) {
+      if (!this.thumbViewer) this.thumbViewer = new ModelViewer(120, 120);
+      this.thumbs.set(id, this.thumbViewer.snapshot(buildAvatar(id), Screens.disposeModel));
+    }
+    return this.thumbs.get(id) ?? null;
+  }
+
+  private skinCard(grid: HTMLElement, id: Skin, current: Skin, owned: boolean, onPick: () => void): void {
+    const b = document.createElement('button');
+    b.className = 'sc-skin' + (id === current ? ' on' : '');
+    b.disabled = !owned;
+    const url = owned ? this.skinThumb(id) : null;
+    if (url) {
+      const img = document.createElement('img');
+      img.src = url;
+      b.appendChild(img);
+    } else {
+      const ph = document.createElement('div');
+      ph.className = 'ph';
+      ph.textContent = owned ? '' : '？';
+      b.appendChild(ph);
+    }
+    const nm = document.createElement('div');
+    nm.textContent = owned ? skinLabel(id) : '？？？';
+    b.appendChild(nm);
+    b.onclick = onPick;
+    grid.appendChild(b);
+  }
+
+  /**
+   * Skin selection: the outfit in use turning in 3D above, every outfit below
+   * as a picture. Ones not won yet show as ？？？ (random ones only once won).
+   */
   private renderSkins(): void {
+    this.panel.style.maxHeight = 'calc(100vh - 24px)';
+    this.panel.style.overflowY = 'auto';
     this.heading(t('menu.skin'), t('menu.skinSub'));
-    if (!this.viewer) this.viewer = new ModelViewer(300, 300);
+    if (!this.viewer) this.viewer = new ModelViewer(240, 240);
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'display:flex;justify-content:center;margin-bottom:10px;';
+    wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;margin-bottom:6px;';
     wrap.appendChild(this.viewer.canvas);
-    this.panel.appendChild(wrap);
     const current = this.cb.getSkin();
+    const cap = document.createElement('div');
+    cap.style.cssText = 'margin-top:4px;font-size:14px;';
+    cap.textContent = skinLabel(current);
+    wrap.appendChild(cap);
+    this.panel.appendChild(wrap);
     this.viewer.show(buildAvatar(current), Screens.disposeModel);
     this.viewer.start();
-    const grid = document.createElement('div');
-    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;';
-    for (const [id, label] of SKINS) {
-      const b = document.createElement('button');
-      b.className = 'sc-btn' + (id === current ? ' primary' : '');
-      b.style.margin = '0';
-      b.style.textAlign = 'center';
-      b.textContent = label;
-      b.onclick = () => {
+    const pick = (id: Skin) => () => {
+      this.cb.setSkin(id);
+      this.render('skin');
+    };
+    const section = (title: string, ids: Skin[]) => {
+      if (!ids.length) return;
+      const h = document.createElement('div');
+      h.className = 'sc-sect';
+      h.textContent = title;
+      const grid = document.createElement('div');
+      grid.className = 'sc-skins';
+      for (const id of ids) this.skinCard(grid, id, current, this.cb.ownsSkin(id), pick(id));
+      this.panel.append(h, grid);
+    };
+    section(t('skin.sect.base'), SKINS.map(([id]) => id));
+    section(t('skin.sect.cosplay'), COSPLAYS.map(([id]) => id));
+    section(t('skin.sect.trophy'), TROPHIES.map(([id]) => id));
+    section(t('skin.sect.random'), this.cb.wonSkins().filter((id) => id.startsWith('rand:')));
+    this.note(t('menu.skinNote') + (this.cb.getSkin() === SILVER || this.cb.getSkin() === GOLD ? '\n' + t('skin.trophyNote') : ''));
+    if (isDevUnlocked())
+      this.btn(t('skin.devRandom'), () => {
+        const id = randomSkinId(Math.floor(Math.random() * 0x7fffffff));
+        this.cb.giveSkin(id);
         this.cb.setSkin(id);
         this.render('skin');
-      };
-      grid.appendChild(b);
-    }
-    this.panel.appendChild(grid);
-    this.note(t('menu.skinNote'));
+      });
     this.btn(t('menu.back'), () => this.render(this.back));
   }
 
+  private rewards: { won: Skin[]; deaths: number; hurt: number } | null = null;
+
+  /** After the credits: what this clear won. */
+  showRewards(won: Skin[], run: { deaths: number; hurt: number }): void {
+    this.rewards = { won, ...run };
+    this.back = 'title';
+    this.render('reward');
+    this.root.style.display = 'flex';
+  }
+
+  private renderRewards(): void {
+    const r = this.rewards!;
+    this.heading(t('reward.title'), t('reward.sub', { d: r.deaths, h: r.hurt }));
+    const grid = document.createElement('div');
+    grid.className = 'sc-skins';
+    for (const id of r.won) this.skinCard(grid, id, '', true, () => {
+      this.cb.setSkin(id);
+      this.render('skin');
+    });
+    this.panel.appendChild(grid);
+    const lines = r.won.map((id) => (id === SILVER ? t('reward.silver') : id === GOLD ? t('reward.gold') : t('reward.new', { name: skinLabel(id) })));
+    this.note(lines.join('\n'));
+    this.btn(t('reward.wear'), () => this.render('skin'), { primary: true });
+    this.btn(t('menu.back'), () => this.render('title'));
+  }
+
   private skinLabel(): string {
-    const cur = this.cb.getSkin();
-    return SKINS.find(([id]) => id === cur)?.[1] ?? '';
+    return skinLabel(this.cb.getSkin());
   }
 
   private btn(label: string, onClick: () => void, opts: { sub?: string; disabled?: boolean; primary?: boolean } = {}): HTMLButtonElement {
@@ -170,7 +262,10 @@ export class Screens {
     this.view = view;
     this.panel.innerHTML = '';
     if (view !== 'skin') this.viewer?.stop();
+    this.panel.style.maxHeight = '';
+    this.panel.style.overflowY = '';
     if (view === 'skin') return this.renderSkins();
+    if (view === 'reward') return this.renderRewards();
     const isElectron = !!getNative()?.isElectron;
     switch (view) {
       case 'title': {

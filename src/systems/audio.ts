@@ -457,6 +457,20 @@ export class AudioSystem {
     this.noise(t, 0.08, 'highpass', 3500, 0.7, this.sfxBus, this.env(t, 0.18, 0.001, 0.07));
   }
 
+  /**
+   * The trophy pistols' shot: a softened crack and a short bell chord that
+   * rings out (silver bright, gold warmer). Nothing above ~1.6 kHz.
+   */
+  trophyShot(gold: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.noise(t, 0.12, 'lowpass', 1600, 0.7, this.sfxBus, this.env(t, 0.45, 0.002, 0.11));
+    this.tone(t, 'sine', 150, 60, 0.16, this.env(t, 0.4, 0.002, 0.15), this.sfxBus);
+    const chord = gold ? [523, 659, 784, 1046] : [587, 880, 1175, 1568];
+    chord.forEach((f, i) => this.tone(t + i * 0.025, 'sine', f, f, 0.6, this.env(t + i * 0.025, 0.07, 0.004, 0.55), this.sfxBus));
+  }
+
   private laserNodes: { osc: OscillatorNode[]; gain: GainNode } | null = null;
 
   /**

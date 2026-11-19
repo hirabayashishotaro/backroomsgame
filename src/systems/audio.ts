@@ -471,6 +471,32 @@ export class AudioSystem {
     chord.forEach((f, i) => this.tone(t + i * 0.025, 'sine', f, f, 0.6, this.env(t + i * 0.025, 0.07, 0.004, 0.55), this.sfxBus));
   }
 
+  /**
+   * A hall full of applause for `seconds`: many single claps scattered in
+   * time and across the stereo field, swelling and dying away, with a soft
+   * wash under them. Kept below ~3 kHz.
+   */
+  applause(seconds = 4.5): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t0 = ctx.currentTime;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 3000;
+    lp.connect(this.sfxBus);
+    const n = Math.round(seconds * 70);
+    for (let i = 0; i < n; i++) {
+      const u = i / n;
+      const t = t0 + u * seconds + Math.random() * 0.05;
+      const swell = Math.sin(Math.min(1, u * 1.4) * Math.PI * 0.5) * (u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1);
+      const pan = ctx.createStereoPanner();
+      pan.pan.value = Math.random() * 1.6 - 0.8;
+      pan.connect(lp);
+      this.noise(t, 0.035, 'bandpass', 900 + Math.random() * 1400, 1.2, pan, this.env(t, 0.22 * swell * (0.5 + Math.random() * 0.5), 0.002, 0.03));
+    }
+    this.noise(t0, seconds, 'bandpass', 1300, 0.5, lp, this.env(t0, 0.08, 0.6, seconds - 0.6));
+  }
+
   private laserNodes: { osc: OscillatorNode[]; gain: GainNode } | null = null;
 
   /**

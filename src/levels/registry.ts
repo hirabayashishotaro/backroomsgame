@@ -10,12 +10,14 @@ import { level13, level139, level14, level27, level37, level4_3, level7_5 } from
 import { levelFrontrooms } from './hand/frontrooms';
 import { levelArena } from './hand/arena';
 import { levelEnding } from './hand/ending';
+import { levelLecture } from './hand/lecture';
 import { levelMemphis, levelVaporwave } from './hand/aesthetic';
 import { levelSento } from './hand/sento';
 import { SHAPE_LEVELS } from './hand/shapeLevels';
 import { setLevelResolver } from './resolverHook';
 
 const HAND_LEVELS: Record<string, LevelDefinition> = {
+  [levelLecture.id]: levelLecture,
   [level0.id]: level0,
   [level1.id]: level1,
   [level2.id]: level2,

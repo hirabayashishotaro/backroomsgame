@@ -17,6 +17,8 @@ export interface ScreenCallbacks {
   onLevelSelect: () => void;
   onCombatLab: () => void;
   onEndingTest: () => void;
+  /** Developer: watch the lecture-hall ending straight away. */
+  onLectureTest: () => void;
   onJournal: () => void;
   /** The bestiary shared by all runs. */
   onBestiary: () => void;
@@ -285,6 +287,7 @@ export class Screens {
           this.btn(t('dev.open'), () => this.cb.onLevelSelect());
           this.btn(t('lab.open'), () => this.cb.onCombatLab());
           this.btn(t('ending.open'), () => this.cb.onEndingTest(), { sub: t('ending.openSub') });
+          this.btn(t('ending.lecture'), () => this.cb.onLectureTest(), { sub: t('ending.lectureSub') });
         }
         this.btn(t('menu.credits'), () => this.render('credits'));
         if (isElectron) this.btn(t('menu.quit'), () => this.cb.onQuit());
@@ -301,6 +304,7 @@ export class Screens {
           this.btn(t('dev.open'), () => this.cb.onLevelSelect());
           this.btn(t('lab.open'), () => this.cb.onCombatLab());
           this.btn(t('ending.open'), () => this.cb.onEndingTest(), { sub: t('ending.openSub') });
+          this.btn(t('ending.lecture'), () => this.cb.onLectureTest(), { sub: t('ending.lectureSub') });
         }
         this.btn(t('menu.toTitle'), () => this.cb.onToTitle(), { sub: t('menu.toTitleSub') });
         if (isElectron) this.btn(t('menu.quit'), () => this.cb.onQuit(), { sub: t('menu.toTitleSub') });

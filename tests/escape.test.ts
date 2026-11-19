@@ -52,4 +52,10 @@ describe('escape mode', () => {
     f.load(undefined);
     expect(f.stage).toBe('collect');
   });
+
+  it('the lecture hall is an ending too', () => {
+    const e = new EscapeProgress();
+    e.reset('home');
+    expect(e.arrive('lecture')).toBe('ending');
+  });
 });

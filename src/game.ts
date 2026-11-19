@@ -24,7 +24,10 @@ import { AudioSystem } from './systems/audio';
 import { Hallucinations } from './systems/hallucination';
 import { SkyDome } from './systems/sky';
 import { waterTime } from './systems/water';
-import { ENDING_LEVEL, EscapeProgress, type EscapeStage } from './systems/escape';
+import { ENDING_LEVEL, EscapeProgress, LECTURE_LEVEL, isEndingLevel, type EscapeStage } from './systems/escape';
+import { LECTURE_T, LectureEnding, type Slide } from './world/lectureEnding';
+import { ModelViewer } from './ui/modelViewer';
+import { buildChimeraMesh, buildEntityMesh, disposeEntityMesh } from './entities/models';
 import { Crowd } from './world/crowd';
 import { missingMat } from './entities/models';
 import { Journal } from './systems/journal';
@@ -393,6 +396,13 @@ export class Game {
       onLevelSelect: () => this.levelSelect.show(),
       onCombatLab: () => this.lab.show(),
       onEndingTest: () => this.startEndingTest(),
+      onLectureTest: () => {
+        // Developer: the lecture ending at once (no save, no rewards).
+        this.slot = null;
+        this.mode = 'endless';
+        this.devJump(LECTURE_LEVEL);
+        this.endingTimer = 0;
+      },
       onJournal: () => this.journalScreen.show(() => {}),
       onBestiary: () => this.journalScreen.show(() => {}, { bestiaryOnly: true }),
       getSkin: () => this.profile.data.skin,
@@ -466,6 +476,45 @@ export class Game {
     this.inventory.add(id);
     this.arsenal.gainWeapon(id, false);
     setTimeout(() => this.hud.message(t('msg.trophyPistol', { name: ITEMS[id].name }), 4), 1500);
+  }
+
+  /** The end of a cleared run: the rewards, back to the title. */
+  private finishRun(): void {
+    // Clear rewards: a new outfit, and the trophies for a clean run.
+    const won = this.mode === 'escape' ? grantClearRewards(this.profile, this.run, () => Math.random()) : [];
+    this.toTitle();
+    this.hud.fadeTo(0, 0.8, '#000');
+    if (won.length) this.screens.showRewards(won, { deaths: this.run.deaths, hurt: this.run.hurt });
+  }
+
+  private lecture: LectureEnding | null = null;
+
+  /**
+   * The talk's slides, from this run: a title with the numbers, the levels
+   * gone through, the entities met (with their pictures), thanks.
+   */
+  private lectureSlides(): Slide[] {
+    const j = this.journal.data;
+    const st = this.escape.status(j.order);
+    const slides: Slide[] = [{ title: 'バックルームズ 調査報告', lines: ['— 帰還した調査隊員による発表 —', '', `訪れたレベル: ${st.levels}`, `倒したエンティティ: ${st.kills}`, `死亡: ${this.run.deaths} 回`] }];
+    const levels = j.order.map((id) => j.levels[id]).filter((l) => l && l.title && !['arena', 'frontrooms'].includes(l.id));
+    const pickLevels = levels.length <= 3 ? levels : [levels[0], levels[Math.floor(levels.length / 2)], levels[levels.length - 1]];
+    for (const l of pickLevels) slides.push({ title: `${l.title} — ${l.name}`, lines: [l.kind, `訪問 ${l.visits} 回`, l.pieces.length ? `見つけた構造物 ${l.pieces.length} 種` : '', l.entities.length ? `出会ったエンティティ ${l.entities.length} 種` : ''].filter(Boolean) });
+    const creatures = (j.creatures ?? []).filter((c) => c.kind !== 'bug');
+    const pick = [...creatures].sort((a, b) => b.defeated - a.defeated).slice(0, 4);
+    const thumbs = new ModelViewer(320, 320);
+    for (const c of pick) {
+      let model: THREE.Group;
+      try {
+        model = c.genome ? buildChimeraMesh(c.genome as ChimeraGenome) : buildEntityMesh(c.kind as EntityKind);
+      } catch {
+        continue;
+      }
+      const image = thumbs.snapshot(model, (o) => disposeEntityMesh(o as THREE.Group));
+      slides.push({ title: c.name, lines: [`倒した数: ${c.defeated}`, `出会ったレベル: ${c.levels.length} か所`, c.kind === 'chimera' ? '記録にない、その場限りの存在' : ''].filter(Boolean), image });
+    }
+    slides.push({ title: 'ご清聴ありがとうございました', lines: ['', '私たちは、帰ってこられた。'] });
+    return slides;
   }
 
   /** This run's deaths and times hurt by entities (for the clear rewards). */
@@ -624,7 +673,7 @@ export class Game {
     }
     this.updateObjective();
     this.updateRealityAudio();
-    if (this.level.id === ENDING_LEVEL && this.endingTimer < 0) {
+    if (isEndingLevel(this.level.id) && this.endingTimer < 0) {
       this.endingTimer = 0;
       this.creditsShown = false;
     }
@@ -903,10 +952,12 @@ export class Game {
       this.crowd = new Crowd();
       this.scene.add(this.crowd.root);
     }
+    this.lecture?.dispose();
+    this.lecture = null;
     // The ending is a quiet walk: no weapon in hand, no gauges.
     this.thirdPerson = false; // a new level starts in first person
-    this.viewmodel.root.visible = id !== ENDING_LEVEL;
-    this.hud.setVisible(id !== ENDING_LEVEL && this.settings.showHud);
+    this.viewmodel.root.visible = !isEndingLevel(id);
+    this.hud.setVisible(!isEndingLevel(id) && this.settings.showHud);
     this.audio.setSoundscape(this.level.soundscape ?? null);
     this.mats = new LevelMaterials(this.ctx);
     this.origin.reset(this.level.chunkSize);
@@ -966,6 +1017,12 @@ export class Game {
     this.director?.reset(this.entityTable.length > 0);
     if (this.history[this.history.length - 1] !== this.level.id) this.history.push(this.level.id);
     if (this.started) this.audio.setAmbience(this.level.ambience);
+    // The second ending: the hall, its audience, you at the lectern (built once the origin is set).
+    if (id === LECTURE_LEVEL) {
+      this.lecture = new LectureEnding(this.profile.data.skin, this.lectureSlides(), (x, z) => [this.origin.toRenderX(x), this.origin.toRenderZ(z)]);
+      this.lecture.baseFov = this.settings.fov;
+      this.scene.add(this.lecture.root);
+    }
   }
 
   private buildChunk(data: ChunkData, arrays?: ChunkArrays): ChunkHandle {
@@ -1387,14 +1444,14 @@ export class Game {
       this.arsenal.cancelReload();
       this.adsT = 0;
     }
-    this.viewmodel.root.visible = !on && this.level.id !== ENDING_LEVEL;
+    this.viewmodel.root.visible = !on && !isEndingLevel(this.level.id);
   }
   private avatar: THREE.Group | null = null;
   private avatarSkin: Skin | null = null;
 
   private updateThirdPerson(sink: number): void {
     const p = this.player;
-    const show = this.thirdPerson && this.started && this.level.id !== ENDING_LEVEL;
+    const show = this.thirdPerson && this.started && !isEndingLevel(this.level.id);
     if (this.avatar && (!show || this.avatarSkin !== this.profile.data.skin)) this.avatar.visible = false;
     if (!show) return;
     if (!this.avatar || this.avatarSkin !== this.profile.data.skin) {
@@ -1562,7 +1619,7 @@ export class Game {
   /** Indoor levels get survey bases (not the special places). */
   private basesHere(): boolean {
     const id = this.level.id;
-    return this.level.environment === 'enclosed' && !isBaseLevel(id) && ![ENDING_LEVEL, ARENA_ID, 'frontrooms', 'void'].includes(id);
+    return this.level.environment === 'enclosed' && !isBaseLevel(id) && ![ENDING_LEVEL, LECTURE_LEVEL, ARENA_ID, 'frontrooms', 'void'].includes(id);
   }
 
   /** The bunker around a base door: steel walls, a flat roof, a few bolts. */
@@ -1812,6 +1869,8 @@ export class Game {
     if (this.transition) return;
     // Falls, return doorways and the like also lead home once the Bug is gone (not the way into or out of a base).
     if (this.mode === 'escape' && tr.levelId !== ENDING_LEVEL && !tr.quiet) tr.levelId = this.escape.overrideTarget(this.level.id, 'other') ?? tr.levelId;
+    // After the first clear, half the time the door opens onto the lecture hall instead.
+    if (tr.levelId === ENDING_LEVEL && this.mode === 'escape' && this.profile.data.clears >= 1 && Math.random() < 0.5) tr.levelId = LECTURE_LEVEL;
     if (tr.levelId === ENDING_LEVEL) tr.color = '#fff';
     this.transition = tr;
     this.hud.fadeTo(1, 1.6, tr.color);
@@ -1828,7 +1887,7 @@ export class Game {
     this.enterLevel(tr.levelId, at);
     if (!tr.at && next.topology !== 'closed') this.player.yaw = this.pickOpenYaw(at.yaw);
     this.entryPoint = { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw };
-    const ending = tr.levelId === ENDING_LEVEL;
+    const ending = isEndingLevel(tr.levelId);
     if (tr.back && !ending && !tr.quiet) this.placeAnchor(tr.back);
     this.transition = null;
     this.lastWarp = 0;
@@ -2110,9 +2169,25 @@ export class Game {
     this.input.pollGamepad();
     const overlay = this.paused || this.settingsScreen.visible || this.journalOpen;
     const active =
-      this.started && !overlay && (this.input.locked || this.input.padConnected) && this.deadTimer <= 0 && !this.transition;
+      this.started && !overlay && (this.input.locked || this.input.padConnected) && this.deadTimer <= 0 && !this.transition && !this.lecture;
 
-    if (this.endingTimer >= 0 && this.started && !overlay) {
+    if (this.endingTimer >= 0 && this.started && !overlay && this.lecture) {
+      // The lecture-hall ending: a fixed film, then the rewards.
+      this.endingTimer += realDt;
+      const T = LECTURE_T;
+      const tt = this.endingTimer;
+      if (tt > T.walk - 0.2 && tt < T.cut) this.hud.fadeTo(1, 0.35, '#000');
+      if (tt >= T.cut && tt - realDt < T.cut) this.hud.fadeTo(0, 0.6, '#000');
+      if (tt >= T.applause && !this.lecture.applauded) {
+        this.lecture.applauded = true;
+        this.audio.applause(4.5);
+      }
+      if (tt >= T.fadeOut && tt - realDt < T.fadeOut) this.hud.fadeTo(1, 1.4, '#000');
+      if (tt > T.end) {
+        this.endingTimer = -1;
+        this.finishRun();
+      }
+    } else if (this.endingTimer >= 0 && this.started && !overlay) {
       this.endingTimer += realDt;
       if (this.endingTimer > 12 && !this.creditsShown) {
         this.creditsShown = true;
@@ -2122,10 +2197,7 @@ export class Game {
         this.endingTimer = -1;
         this.hud.hideCredits();
         this.hud.message(t('escape.end'), 4);
-        // Clear rewards: a new outfit, and the trophies for a clean run.
-        const won = this.mode === 'escape' ? grantClearRewards(this.profile, this.run, () => Math.random()) : [];
-        this.toTitle();
-        if (won.length) this.screens.showRewards(won, { deaths: this.run.deaths, hurt: this.run.hurt });
+        this.finishRun();
       }
     }
     if (this.started && !overlay) {
@@ -2230,7 +2302,7 @@ export class Game {
     }
 
     // No fighting while looking at yourself.
-    this.updateWeapons(dt, active && this.level.id !== ENDING_LEVEL && !this.thirdPerson);
+    this.updateWeapons(dt, active && !isEndingLevel(this.level.id) && !this.thirdPerson);
 
     // Interaction prompt
     this.target = active ? this.findTarget() : null;
@@ -2312,6 +2384,8 @@ export class Game {
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
     }
+    // The lecture-hall ending moves (and zooms) the camera itself.
+    if (this.lecture && this.endingTimer >= 0) this.lecture.update(this.endingTimer, this.camera);
     if (!this.transition && (warp > 0.001 || this.lastWarp > 0.001)) this.hud.fadeTo(warp * 0.45, 4, '#fff');
     this.lastWarp = warp;
 

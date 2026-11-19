@@ -17,8 +17,11 @@ export type EscapeStage = 'collect' | 'bug' | 'return' | 'home' | 'ending';
 export const ESCAPE_GOALS = { levels: 50, kills: 30, randomKills: 1 };
 /** The ending level. */
 export const ENDING_LEVEL = 'shibuya';
+/** The second ending (after the first clear, half the time): the lecture hall. */
+export const LECTURE_LEVEL = 'lecture';
+export const isEndingLevel = (id: string) => id === ENDING_LEVEL || id === LECTURE_LEVEL;
 /** Levels that do not count as "seen" (test hall, the ending, the old break room). */
-const NOT_COUNTED = new Set(['arena', ENDING_LEVEL, 'frontrooms']);
+const NOT_COUNTED = new Set(['arena', ENDING_LEVEL, LECTURE_LEVEL, 'frontrooms']);
 
 export interface EscapeData {
   stage: EscapeStage;
@@ -101,7 +104,7 @@ export class EscapeProgress {
       this.data.stage = 'home';
       return 'home';
     }
-    if (this.data.stage === 'home' && levelId === ENDING_LEVEL) {
+    if (this.data.stage === 'home' && isEndingLevel(levelId)) {
       this.data.stage = 'ending';
       return 'ending';
     }

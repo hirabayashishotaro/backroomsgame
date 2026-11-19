@@ -163,6 +163,14 @@ export function materialTable(p: Palette): Record<string, MatDef> {
     'cold-water': water(0x2a8ad8, 0.55, 0.02),
     'sauna-glow': basic(0xffb45a),
     'locker-tag': lit('flat:c8c0a8'),
+    // The lecture hall (second ending)
+    'lecture-wall': lit('gen:concrete:e4dccc:973'),
+    'lecture-panel': lit('gen:wood:7a5232:974'),
+    'lecture-stage': lit('gen:wood:5a3a24:975'),
+    'lecture-wood': lit('gen:wood:8a6240:976'),
+    'lecture-step': lit('gen:carpet:6a3a34:977'),
+    'lecture-frame': lit('flat:2a2a2a'),
+    'lecture-screen': basic(0xf4f4f0),
     // Survey base
     hazard: lit('gen:stripes:d8b020:965'),
     cot: lit('flat:5a6a4a'),

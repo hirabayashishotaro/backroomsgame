@@ -482,7 +482,7 @@ export class AudioSystem {
     const t0 = ctx.currentTime;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = 3000;
+    lp.frequency.value = 2200; // mild applause
     lp.connect(this.sfxBus);
     const n = Math.round(seconds * 70);
     for (let i = 0; i < n; i++) {
@@ -492,7 +492,7 @@ export class AudioSystem {
       const pan = ctx.createStereoPanner();
       pan.pan.value = Math.random() * 1.6 - 0.8;
       pan.connect(lp);
-      this.noise(t, 0.035, 'bandpass', 900 + Math.random() * 1400, 1.2, pan, this.env(t, 0.22 * swell * (0.5 + Math.random() * 0.5), 0.002, 0.03));
+      this.noise(t, 0.035, 'bandpass', 900 + Math.random() * 1400, 1.2, pan, this.env(t, 0.16 * swell * (0.5 + Math.random() * 0.5), 0.003, 0.03));
     }
     this.noise(t0, seconds, 'bandpass', 1300, 0.5, lp, this.env(t0, 0.08, 0.6, seconds - 0.6));
   }
@@ -524,17 +524,17 @@ export class AudioSystem {
       out.gain.value = 0;
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass';
-      lp.frequency.value = 2800;
+      lp.frequency.value = 2000; // mild: no edge on the voices
       const hp = ctx.createBiquadFilter();
       hp.type = 'highpass';
-      hp.frequency.value = 480; // the reference has little below ~500 Hz (heard from across a room)
+      hp.frequency.value = 380; // the reference has little below ~500 Hz (heard from across a room)
       out.connect(hp).connect(lp).connect(this.sfxBus);
       const stop: Array<OscillatorNode | AudioBufferSourceNode> = [];
       const voices = [];
       for (let i = 0; i < 9; i++) {
         const female = i % 3 === 1;
         const osc = ctx.createOscillator();
-        osc.type = 'sawtooth';
+        osc.type = 'triangle'; // softer than a buzz
         const base = female ? 190 + Math.random() * 50 : 100 + Math.random() * 40;
         osc.frequency.value = base;
         const gate = ctx.createGain();
@@ -543,10 +543,10 @@ export class AudioSystem {
         const f2 = ctx.createBiquadFilter();
         for (const f of [f1, f2]) {
           f.type = 'bandpass';
-          f.Q.value = 5;
+          f.Q.value = 3;
         }
         const sum = ctx.createGain();
-        sum.gain.value = 2.2;
+        sum.gain.value = 2.6;
         const pan = ctx.createStereoPanner();
         pan.pan.value = Math.random() * 1.6 - 0.8;
         osc.connect(gate);
@@ -573,7 +573,7 @@ export class AudioSystem {
       this.crowdNodes = { out, stop, voices };
     }
     const c = this.crowdNodes;
-    c.out.gain.setTargetAtTime(Math.max(0, level) * 0.5, now, 0.35);
+    c.out.gain.setTargetAtTime(Math.max(0, level) * 0.45, now, 0.6);
     // Vowels: [F1, F2] (Hz)
     const vowels: Array<[number, number]> = [[750, 1200], [300, 2200], [350, 1300], [500, 1850], [500, 900]];
     for (const v of c.voices) {
@@ -593,10 +593,10 @@ export class AudioSystem {
         v.f2.frequency.setTargetAtTime(b * fs, ts, 0.025);
         const fall = Math.max(0.82, 1 - Math.max(0, ts - (v.phraseEnd - 2)) * 0.06);
         v.osc.frequency.setTargetAtTime(v.base * (0.9 + Math.random() * 0.25) * fall, ts, 0.05);
-        v.gate.gain.setTargetAtTime(v.loud * (0.5 + Math.random() * 0.5), ts, 0.015);
+        v.gate.gain.setTargetAtTime(v.loud * (0.5 + Math.random() * 0.5), ts, 0.03);
         v.gate.gain.setTargetAtTime(0.03, ts + dur * 0.75, 0.025);
         // Now and then a consonant: a soft breath of noise.
-        if (Math.random() < 0.3) this.noise(ts, 0.04, 'bandpass', 2600, 1.5, v.pan, this.env(ts, 0.04 * v.loud, 0.005, 0.035));
+        if (Math.random() < 0.2) this.noise(ts, 0.04, 'bandpass', 1500, 1.2, v.pan, this.env(ts, 0.025 * v.loud, 0.008, 0.035));
         v.next = ts + dur + 0.015;
       }
     }

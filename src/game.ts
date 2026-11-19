@@ -973,6 +973,8 @@ export class Game {
     this.thirdPerson = false; // a new level starts in first person
     this.viewmodel.root.visible = !isEndingLevel(id);
     this.hud.setVisible(!isEndingLevel(id) && this.settings.showHud);
+    // Nothing follows you into an ending (and nothing spawns there: the world is stopped).
+    if (isEndingLevel(id)) this.ents.clear();
     this.audio.setSoundscape(this.level.soundscape ?? null);
     this.mats = new LevelMaterials(this.ctx);
     this.origin.reset(this.level.chunkSize);
@@ -2185,6 +2187,10 @@ export class Game {
     const overlay = this.paused || this.settingsScreen.visible || this.journalOpen;
     const active =
       this.started && !overlay && (this.input.locked || this.input.padConnected) && this.deadTimer <= 0 && !this.transition && !this.lecture;
+    // The world stands still while paused (ESC, settings, journal) and during an ending:
+    // no entities, no health drain, no hazards (worldDt = 0 freezes timers and effects).
+    const ending = isEndingLevel(this.level.id) || !!this.lecture || this.endingTimer >= 0;
+    const worldDt = overlay ? 0 : dt;
 
     if (this.endingTimer >= 0 && this.started && !overlay && this.lecture) {
       // The lecture-hall ending: a fixed film, then the rewards.
@@ -2221,7 +2227,7 @@ export class Game {
       if (s.autosaveMinutes > 0 && this.autosaveTimer > s.autosaveMinutes * 60) this.saveNow(true);
     }
 
-    if (this.deadTimer > 0) {
+    if (this.deadTimer > 0 && !overlay) {
       this.deadTimer -= realDt;
       if (this.deadTimer <= 0) this.respawn();
     }
@@ -2289,15 +2295,15 @@ export class Game {
     }
 
     if (this.started && this.inArena && this.lab.options.god) this.stats.health = 100;
-    this.updateLab(dt);
-    if (this.started && this.deadTimer <= 0 && !this.transition) {
+    if (!overlay) this.updateLab(dt);
+    if (this.started && !overlay && this.deadTimer <= 0 && !this.transition) this.updateExits(realDt, moving, forward);
+    if (this.started && !overlay && !ending && this.deadTimer <= 0 && !this.transition) {
       const cause = this.stats.update(dt, {
         running: running && this.player.speed > 1,
         drainMul: this.level.drainMul,
         difficulty: s.difficulty,
       });
       if (cause) this.die(cause);
-      this.updateExits(realDt, moving, forward);
       this.updateDrifters(realDt);
       this.updateEntities(dt);
     }
@@ -2317,7 +2323,7 @@ export class Game {
     }
 
     // No fighting while looking at yourself.
-    this.updateWeapons(dt, active && !isEndingLevel(this.level.id) && !this.thirdPerson);
+    this.updateWeapons(worldDt, active && !isEndingLevel(this.level.id) && !this.thirdPerson);
 
     // Interaction prompt
     this.target = active ? this.findTarget() : null;
@@ -2405,7 +2411,7 @@ export class Game {
     this.lastWarp = warp;
 
     // Hallucinations grow as health drops (SPEC §17).
-    if (this.started && this.deadTimer <= 0 && !this.transition) {
+    if (this.started && !overlay && !ending && this.deadTimer <= 0 && !this.transition) {
       this.halluc.update(dt, {
         sanity: Math.min(100, this.stats.health + 15),
         rate: this.level.hallucination,
@@ -2419,7 +2425,7 @@ export class Game {
     }
 
     this.hud.update(realDt, this.stats);
-    this.crowd?.update(realDt, this.player, (x, z) => [this.origin.toRenderX(x), this.origin.toRenderZ(z)]);
+    this.crowd?.update(overlay ? 0 : realDt, this.player, (x, z) => [this.origin.toRenderX(x), this.origin.toRenderZ(z)]);
     this.audio.updateReality(realDt);
     if (this.level.sky) this.sky.update(this.camera, this.time);
     waterTime.value = this.time;

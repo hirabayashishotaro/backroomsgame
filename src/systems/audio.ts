@@ -694,22 +694,32 @@ export class AudioSystem {
         break;
       }
       case 'spaan': {
-        // "Spaaan!": a hard air-cut sweeping down, a clean ringing edge that dies away, a low thump.
+        // Modelled on a reference clip (user supplied, ~1 s): a bright air-cut first,
+        // a short low thump under it, then a blade's metallic ring that swells
+        // (the edge scraping out) and dies away - main partial ~3.6 kHz with weaker
+        // inharmonic ones, the upper ones fading sooner.
         const vv = Math.min(1, 30 / (dist + 5));
-        const f = this.ctx!.createBiquadFilter();
-        f.type = 'bandpass';
-        f.Q.value = 2.5;
-        f.frequency.setValueAtTime(2200, t);
-        f.frequency.exponentialRampToValueAtTime(500, t + 0.35);
-        f.connect(p);
-        const src = this.ctx!.createBufferSource();
-        src.buffer = this.noiseBuffer;
-        const gn = this.env(t, 0.9 * vv, 0.004, 0.33);
-        src.connect(gn).connect(f);
-        src.start(t, 0.2, 0.45);
-        this.tone(t + 0.02, 'sine', 940, 900, 1.1, this.env(t + 0.02, 0.12 * vv, 0.003, 1.0), p);
-        this.tone(t + 0.02, 'sine', 1410, 1380, 0.8, this.env(t + 0.02, 0.05 * vv, 0.003, 0.7), p);
-        this.tone(t, 'sine', 120, 50, 0.25, this.env(t, 0.4 * vv, 0.002, 0.22), p);
+        // 1. The cut: a hard, bright burst, then a fainter hiss that follows the ring.
+        this.noise(t, 0.14, 'bandpass', 7000, 0.45, p, this.env(t, 0.6 * vv, 0.003, 0.12));
+        this.noise(t + 0.04, 0.4, 'bandpass', 6500, 0.9, p, this.env(t + 0.04, 0.3 * vv, 0.08, 0.3));
+        // 2. The thump (the dash landing on the cut).
+        this.tone(t + 0.065, 'sine', 95, 45, 0.1, this.env(t + 0.065, 0.3 * vv, 0.004, 0.08), p);
+        // 3. The ring. Random entities (pitch-shifted) ring far lower, under the soft cap.
+        const base = this.vp ? 600 : 3613;
+        const partials: Array<[number, number, number, number]> = [
+          // [ratio, gain, swell (s), decay (s)]
+          [1, 0.2, 0.12, 1.1],
+          [4200 / 3613, 0.07, 0.1, 0.45],
+          [2818 / 3613, 0.04, 0.08, 0.4],
+          [4927 / 3613, 0.045, 0.08, 0.3],
+          [5618 / 3613, 0.03, 0.06, 0.25],
+          [6362 / 3613, 0.025, 0.06, 0.22],
+          [1847 / 3613, 0.025, 0.08, 0.45],
+        ];
+        for (const [r, g, sw, dc] of partials) {
+          const f = base * r;
+          this.tone(t + 0.1, 'sine', f, f * 0.998, sw + dc, this.env(t + 0.1, g * vv, sw, dc), p);
+        }
         break;
       }
       case 'roar': {

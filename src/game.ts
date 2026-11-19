@@ -39,7 +39,7 @@ import { chimeraGenome, chimeraSpecies, type ChimeraGenome } from './entities/ch
 import { ALL_ENTITIES, ENTITIES, type EntityKind } from './entities/entityDefs';
 import { augmentLoot } from './items/weaponLoot';
 import { isWeapon } from './items/itemDefs';
-import { buildAvatar, holdAngleFor, holdInHand, poseAvatar, type Skin } from './player/avatar';
+import { buildAvatar, handMaterials, holdAngleFor, holdInHand, poseAvatar, type Skin } from './player/avatar';
 import { buildWeaponModel } from './weapons/weaponModels';
 import { Bestiary } from './systems/bestiary';
 import { Profile, grantClearRewards } from './systems/profile';
@@ -1365,6 +1365,7 @@ export class Game {
   }
 
   /** Third-person view (V): the camera behind the shoulder, the player's body visible. */
+  private handsSkin: string | null = null;
   /** Outfits won and worn (shared by every run). */
   private readonly profile = new Profile();
   /** The bestiary shared by every run. */
@@ -1672,6 +1673,11 @@ export class Game {
     this.spellCd = Math.max(0, this.spellCd - dt);
     this.updateLaserFuel(dt, active && id === 'laser');
     this.hud.setCooldown(id === 'staff' ? 1 - this.spellCd / WEAPONS.staff.spell!.cooldown : id === 'laser' ? this.laserFuel : null, id === 'laser' ? '110,235,255' : undefined);
+    // The bare fist wears the outfit's hand and sleeve.
+    if (this.handsSkin !== this.profile.data.skin) {
+      this.handsSkin = this.profile.data.skin;
+      this.viewmodel.setHands(handMaterials(this.handsSkin));
+    }
     if (held !== this.heldPrev) {
       this.heldPrev = held;
       this.arsenal.cancelReload();

@@ -182,10 +182,12 @@ function buildBody(skin: string, o: Outfit): THREE.Group {
     const arm = limb(0.12, o.shortSleeves ? 0.26 : 0.6, 0.14, o.arms, sx < 0 ? 'armL' : 'armR', sx * 0.3, 1.48);
     if (o.shortSleeves) {
       const fore = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.36, 0.12), skinMat);
+      fore.name = 'fore';
       fore.position.set(0, -0.44, 0);
       arm.add(fore);
     }
     const hand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.11), o.hands);
+    hand.name = 'hand';
     hand.position.set(0, -0.66, 0);
     arm.add(hand);
     g.add(arm);
@@ -548,4 +550,27 @@ export function holdInHand(g: THREE.Group, item: THREE.Object3D | null, angle: n
   item.position.set(0, -0.66, -0.02);
   item.rotation.set(-angle, 0, 0);
   arm.add(item);
+}
+
+/**
+ * The look of the right hand and what covers the wrist (sleeve, or the bare
+ * forearm with short sleeves) for an outfit - for the first-person fist.
+ */
+export function handMaterials(skin: Skin): { hand: THREE.Material; sleeve: THREE.Material } {
+  const g = buildAvatar(skin);
+  const arm = g.getObjectByName('armR') as THREE.Mesh | undefined;
+  const hand = arm?.getObjectByName('hand') as THREE.Mesh | undefined;
+  const fore = arm?.getObjectByName('fore') as THREE.Mesh | undefined;
+  const out = {
+    hand: ((hand?.material as THREE.Material) ?? new THREE.MeshBasicMaterial({ color: SKIN })).clone(),
+    sleeve: (((fore ?? arm)?.material as THREE.Material) ?? new THREE.MeshBasicMaterial({ color: 0x4a4a52 })).clone(),
+  };
+  // Free the rest (textures stay: the clones still use them).
+  g.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    m.geometry.dispose();
+    (m.material as THREE.Material).dispose();
+  });
+  return out;
 }

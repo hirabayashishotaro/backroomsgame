@@ -54,6 +54,20 @@ export class ViewModel {
     this.flash.renderOrder = 10;
   }
 
+  /** The outfit's hand and sleeve, for the bare fist. */
+  private hands: { hand: THREE.Material; sleeve: THREE.Material } | null = null;
+
+  /** A new outfit: the fist takes its colours (rebuilt now if it is showing). */
+  setHands(h: { hand: THREE.Material; sleeve: THREE.Material }): void {
+    this.hands?.hand.dispose();
+    this.hands?.sleeve.dispose();
+    this.hands = h;
+    if (this.current === null) {
+      this.current = undefined;
+      this.set(null);
+    }
+  }
+
   set(id: ItemId | null): void {
     if (id === this.current) return;
     this.current = id;
@@ -68,7 +82,7 @@ export class ViewModel {
     this.reloadT = -1;
     if (!id) {
       // Empty hands: a fist ready to punch.
-      this.model = buildFist();
+      this.model = buildFist(this.hands);
       this.holder.add(this.model);
       this.raiseT = 0;
       return;
@@ -184,10 +198,12 @@ export class ViewModel {
 }
 
 /** A bare fist (and wrist), knuckles forward. */
-function buildFist(): THREE.Group {
+function buildFist(h: { hand: THREE.Material; sleeve: THREE.Material } | null): THREE.Group {
   const g = new THREE.Group();
-  const skin = new THREE.MeshBasicMaterial({ color: 0xd9a582 });
-  const dark = new THREE.MeshBasicMaterial({ color: 0xb98466 });
+  const skin = h?.hand ?? new THREE.MeshBasicMaterial({ color: 0xd9a582 });
+  // Knuckles a shade darker than the hand (or the same material when it is textured / metal).
+  const base = skin as THREE.MeshBasicMaterial;
+  const dark = base.map || base.envMap ? base : new THREE.MeshBasicMaterial({ color: base.color.clone().multiplyScalar(0.82) });
   const hand = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.075, 0.1), skin);
   g.add(hand);
   for (let k = 0; k < 4; k++) {
@@ -198,7 +214,7 @@ function buildFist(): THREE.Group {
   const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.03, 0.06), skin);
   thumb.position.set(-0.05, -0.015, -0.02);
   g.add(thumb);
-  const wrist = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.065, 0.16), new THREE.MeshBasicMaterial({ color: 0x4a4a52 }));
+  const wrist = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.065, 0.16), h?.sleeve ?? new THREE.MeshBasicMaterial({ color: 0x4a4a52 }));
   wrist.position.set(0, -0.005, 0.12);
   g.add(wrist);
   return g;

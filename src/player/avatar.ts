@@ -260,16 +260,45 @@ export function buildAvatar(skin: Skin): THREE.Group {
 
 /**
  * Pose the body: walking swings the limbs with the step phase, crouching
- * lowers it, a held weapon raises the right arm forward.
+ * lowers it, holding something raises the right arm forward by `holdAngle`.
  */
-export function poseAvatar(g: THREE.Group, phase: number, speed: number, crouch: number, holding: boolean, airborne: boolean): void {
+export function poseAvatar(g: THREE.Group, phase: number, speed: number, crouch: number, holdAngle: number | null, airborne: boolean): void {
   const sw = Math.sin(phase) * Math.min(1, speed / 3) * 0.7;
   for (const c of g.children) {
     if (c.name === 'legL') c.rotation.x = airborne ? -0.4 : sw;
     if (c.name === 'legR') c.rotation.x = airborne ? 0.2 : -sw;
     if (c.name === 'armL') c.rotation.x = -sw * 0.8;
-    if (c.name === 'armR') c.rotation.x = holding ? 1.35 : sw * 0.8; // + = forward
+    if (c.name === 'armR') c.rotation.x = holdAngle ?? sw * 0.8; // + = forward (holding something)
   }
   // Crouch: the whole body shorter (scaled from the feet).
   g.scale.y = 1 - 0.3 * crouch;
+}
+
+/** How far forward the right arm is raised for what it holds: guns aimed out, the rest held low. */
+export function holdAngleFor(kind: 'gun' | 'other'): number {
+  return kind === 'gun' ? 1.35 : 0.45;
+}
+
+/**
+ * Put an item model in the right hand (replacing what was there). The arm
+ * is raised by `angle`; the item is counter-rotated so it points straight
+ * ahead (models point -Z with their origin at the grip).
+ */
+export function holdInHand(g: THREE.Group, item: THREE.Object3D | null, angle: number): void {
+  const arm = g.getObjectByName('armR');
+  if (!arm) return;
+  const old = arm.getObjectByName('held');
+  if (old) {
+    old.removeFromParent();
+    // Same rule as the first-person hands: shared geometries and materials stay.
+    old.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && !m.userData.sharedGeo) m.geometry.dispose();
+    });
+  }
+  if (!item) return;
+  item.name = 'held';
+  item.position.set(0, -0.66, -0.02);
+  item.rotation.set(-angle, 0, 0);
+  arm.add(item);
 }

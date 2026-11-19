@@ -39,7 +39,8 @@ import { chimeraGenome, chimeraSpecies, type ChimeraGenome } from './entities/ch
 import { ALL_ENTITIES, ENTITIES, type EntityKind } from './entities/entityDefs';
 import { augmentLoot } from './items/weaponLoot';
 import { isWeapon } from './items/itemDefs';
-import { buildAvatar, poseAvatar, type Skin } from './player/avatar';
+import { buildAvatar, holdAngleFor, holdInHand, poseAvatar, type Skin } from './player/avatar';
+import { buildWeaponModel } from './weapons/weaponModels';
 import { Bestiary } from './systems/bestiary';
 import { buildCorpse } from './world/objectMeshes';
 import { DIFFICULTY } from './player/stats';
@@ -1362,7 +1363,16 @@ export class Game {
     a.position.set(this.origin.toRenderX(p.x), this.camY - sink, this.origin.toRenderZ(p.z));
     a.rotation.y = p.yaw;
     const crouch = Math.max(0, Math.min(1, (EYE_HEIGHT - p.eye) / (EYE_HEIGHT - CROUCH_EYE)));
-    poseAvatar(a, p.bobPhase, p.speed, crouch, false, !p.grounded); // standing at ease
+    // What is in your hand shows in your hand.
+    const held = this.inventory.held;
+    const def = held ? ITEMS[held] : null;
+    const wk = def?.kind === 'weapon' ? WEAPONS[def.weapon!].kind : null;
+    const angle = held ? holdAngleFor(wk === 'hitscan' || wk === 'projectile' ? 'gun' : 'other') : null;
+    if (a.userData.held !== held) {
+      a.userData.held = held;
+      holdInHand(a, held ? (def?.kind === 'weapon' ? buildWeaponModel(def.weapon!, 1) : buildItemMesh(held, 1)) : null, angle ?? 0);
+    }
+    poseAvatar(a, p.bobPhase, p.speed, crouch, angle, !p.grounded);
     // Camera: orbiting the body at about 2.8 m, pulled in front of walls, looking at its middle.
     const cx = p.x;
     const cy = this.camY - sink + 1.05 * (1 - 0.3 * crouch);

@@ -1,3 +1,4 @@
+import { isBaseLevel, makeBaseLevel } from './hand/surveyBase';
 import { hashString, hashInts } from '../core/rng';
 import type { ExitRule, GenContext, LevelDefinition } from './levelDefinition';
 import { level0 } from './hand/level0';
@@ -53,6 +54,8 @@ export function hasHandLevel(id: string): boolean {
 
 /** Resolve a level id: hand-made if available, otherwise generated from the id (SPEC §5.1). */
 export function resolveLevel(id: string): LevelDefinition {
+  // Behind a bunker door: a survey base (each one its own level).
+  if (isBaseLevel(id)) return makeBaseLevel(id);
   const hand = HAND_LEVELS[id];
   if (hand) return hand;
   if (id in SHAPE_LEVELS) {

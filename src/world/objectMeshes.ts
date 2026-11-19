@@ -9,6 +9,7 @@ import { buildWeaponModel } from '../weapons/weaponModels';
 import type { Prop } from './chunkData';
 import { getTexture } from '../proc-tex/textures';
 import { patchMaterial } from '../systems/lighting';
+import { buildAvatar } from '../player/avatar';
 
 const geoCache = new Map<string, THREE.BufferGeometry>();
 function geo(key: string, make: () => THREE.BufferGeometry): THREE.BufferGeometry {
@@ -118,6 +119,78 @@ function doorMesh(color: number, b: number, window: boolean): THREE.Group {
   return g;
 }
 
+const texCache = new Map<string, THREE.CanvasTexture>();
+function canvasTex(key: string, w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
+  let t = texCache.get(key);
+  if (!t) {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    draw(c.getContext('2d')!);
+    t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    texCache.set(key, t);
+  }
+  return t;
+}
+
+/**
+ * The survey base's reinforced door (outside and inside): a heavy steel
+ * slab with rivets and a wheel lock in a yellow-and-black frame, a green
+ * lamp and a stencilled plate. Unlike the doors that lead to other levels.
+ */
+function baseDoorMesh(b: number, inside: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const stripes = canvasTex('hazard', 64, 64, (x) => {
+    x.fillStyle = '#e0b818';
+    x.fillRect(0, 0, 64, 64);
+    x.fillStyle = '#1a1a1a';
+    for (let i = -64; i < 128; i += 22) {
+      x.beginPath();
+      x.moveTo(i, 0);
+      x.lineTo(i + 11, 0);
+      x.lineTo(i - 53, 64);
+      x.lineTo(i - 64, 64);
+      x.closePath();
+      x.fill();
+    }
+  });
+  const plate = canvasTex('base-plate', 256, 64, (x) => {
+    x.fillStyle = '#2c3a2c';
+    x.fillRect(0, 0, 256, 64);
+    x.fillStyle = '#e8e4c8';
+    x.font = 'bold 34px sans-serif';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText(inside ? '出口' : '調査基地', 128, 34);
+  });
+  const frame = mat(0xffffff, b, stripes);
+  g.add(part(geo('bd-top', () => new THREE.BoxGeometry(1.5, 0.16, 0.08)), frame, 0, 2.3, 0.03));
+  g.add(part(geo('bd-side', () => new THREE.BoxGeometry(0.16, 2.38, 0.08)), frame, -0.67, 1.15, 0.03));
+  g.add(part(geo('bd-side', () => new THREE.BoxGeometry(0.16, 2.38, 0.08)), mat(0xffffff, b, stripes), 0.67, 1.15, 0.03));
+  g.add(part(geo('bd-slab', () => new THREE.BoxGeometry(1.18, 2.2, 0.09)), mat(0x5a6260, b), 0, 1.1, 0.05));
+  for (const y of [0.25, 1.1, 1.95]) for (const x of [-0.5, 0.5]) g.add(part(geo('bd-rivet', () => new THREE.SphereGeometry(0.022, 6, 5)), mat(0x8a928e, b), x, y, 0.1));
+  const wheel = part(geo('bd-wheel', () => new THREE.TorusGeometry(0.15, 0.022, 6, 18)), mat(0xa8302a, b), 0, 1.15, 0.12);
+  g.add(wheel);
+  g.add(part(geo('bd-hub', () => new THREE.CylinderGeometry(0.035, 0.035, 0.05, 10).rotateX(Math.PI / 2)), mat(0x8a928e, b), 0, 1.15, 0.12));
+  g.add(part(geo('bd-plate', () => new THREE.BoxGeometry(0.62, 0.16, 0.02)), mat(0xffffff, Math.max(0.8, b), plate), 0, 1.78, 0.11));
+  g.add(part(geo('bd-lamp', () => new THREE.SphereGeometry(0.06, 10, 8)), mat(0x5cff7a, 1.2), 0, 2.48, 0.06));
+  return g;
+}
+
+/** A living survey member: an orange jumpsuit, a hard hat with a lamp. */
+function surveyorMesh(): THREE.Group {
+  const body = buildAvatar('researcher');
+  body.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) o.userData.ownMat = true;
+  });
+  // The body faces -Z; props face +Z.
+  body.rotation.y = Math.PI;
+  const g = new THREE.Group();
+  g.add(body);
+  return g;
+}
+
 /** Build a prop. The prop's front faces +Z before rotation. */
 export function buildPropMesh(p: Prop, light: number): THREE.Group {
   let g = new THREE.Group();
@@ -140,6 +213,10 @@ export function buildPropMesh(p: Prop, light: number): THREE.Group {
     const r = part(geo('gpane', () => new THREE.BoxGeometry(0.88, 2.16, 0.02)), pane(), 0.46, 1.1, 0.06);
     const handle = part(geo('ghandle', () => new THREE.BoxGeometry(0.03, 0.3, 0.03)), fm(), -0.1, 1.05, 0.06);
     g.add(frameTop, frameL, frameR, frameM, l, r, handle);
+  } else if (p.kind === 'base-door' || p.kind === 'base-exit') {
+    g = baseDoorMesh(b, p.kind === 'base-exit');
+  } else if (p.kind === 'surveyor') {
+    g = surveyorMesh();
   } else if (p.kind === 'metal-door') {
     g = doorMesh(p.color ?? 0x5d6b62, b, true);
   } else if (p.kind === 'white-door') {

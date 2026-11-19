@@ -42,6 +42,8 @@ import { isWeapon } from './items/itemDefs';
 import { buildAvatar, holdAngleFor, holdInHand, poseAvatar, type Skin } from './player/avatar';
 import { buildWeaponModel } from './weapons/weaponModels';
 import { Bestiary } from './systems/bestiary';
+import { baseSiteFor, bunkerBox, bunkerDoor } from './world/surveyBase';
+import { BASE_ARRIVAL, isBaseLevel } from './levels/hand/surveyBase';
 import { buildCorpse } from './world/objectMeshes';
 import { DIFFICULTY } from './player/stats';
 import { Hud } from './ui/hud';
@@ -147,6 +149,8 @@ interface Transition {
   /** Where the anchor in the new level leads back to. Undefined = one-way. */
   back?: { levelId: string } & SpawnPoint;
   color: string;
+  /** Into or out of a survey base: no title card, no journal entry, no anchor. */
+  quiet?: boolean;
 }
 
 export interface LaunchOptions {
@@ -480,16 +484,20 @@ export class Game {
     const anchors: SaveData['anchors'] = {};
     for (const [lid, list] of Object.entries(this.anchors))
       anchors[lid] = list.map((a) => ({ x: a.x, y: a.y, z: a.z, rotY: a.rotY, back: { ...a.back } }));
+    // Saved inside a survey base: the save keeps you standing outside its door.
+    const inBase = isBaseLevel(this.level.id);
+    const outside = inBase ? resolveLevel(this.baseReturn.levelId) : this.level;
+    const r = this.baseReturn;
     return {
       version: SAVE_VERSION,
       savedAt: Date.now(),
       playTime: Math.round(this.playTime),
       worldSeed: this.worldSeed,
-      levelId: this.level.id,
-      levelTitle: this.level.title,
-      levelName: this.level.subtitle ?? this.level.name,
-      player: { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw, pitch: this.player.pitch },
-      entry: { ...this.entryPoint },
+      levelId: outside.id,
+      levelTitle: outside.title,
+      levelName: outside.subtitle ?? outside.name,
+      player: inBase ? { x: r.x, y: r.y, z: r.z, yaw: r.yaw, pitch: 0 } : { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw, pitch: this.player.pitch },
+      entry: inBase ? { x: r.x, y: r.y, z: r.z, yaw: r.yaw } : { ...this.entryPoint },
       stats: this.stats.toJSON(),
       inventory: this.inventory.toJSON(),
       deltas: this.deltas.toJSON(),
@@ -952,6 +960,16 @@ export class Game {
       mesh.rotation.y = it.rot;
       group.add(mesh);
       items.set(it.uid, { uid: it.uid, id: it.id, mesh, x: it.x + ox, y: it.y, z: it.z + oz });
+    }
+    // A survey base's bunker in indoor levels.
+    if (this.basesHere()) {
+      const site = baseSiteFor(data, ctx.levelSeed);
+      if (site) {
+        const box = bunkerBox(site);
+        data.solids = [...data.solids, box];
+        data.props = [...data.props, bunkerDoor(site)];
+        group.add(this.buildBunker(box, sampler(site.x + ox, 1.2, site.z + oz, 0, 1, 0)));
+      }
     }
     const props: WorldProp[] = [];
     const glitchDoors = this.mode === 'escape' && this.escape.realityLeaking(this.level.id);
@@ -1497,6 +1515,67 @@ export class Game {
       }
     }
   }
+  // ---------------------------------------------------------------------------
+  // Survey bases
+  // ---------------------------------------------------------------------------
+
+  /** Where you were standing outside the base you are in (the way back, and what a save keeps). */
+  private baseReturn: { levelId: string } & SpawnPoint = { levelId: '0', x: 0, y: 0, z: 0, yaw: 0 };
+  private talkIdx = new Map<string, number>();
+
+  /** Indoor levels get survey bases (not the special places). */
+  private basesHere(): boolean {
+    const id = this.level.id;
+    return this.level.environment === 'enclosed' && !isBaseLevel(id) && ![ENDING_LEVEL, ARENA_ID, 'frontrooms', 'void'].includes(id);
+  }
+
+  /** The bunker around a base door: steel walls, a flat roof, a few bolts. */
+  private buildBunker(b: { minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number }, light: number): THREE.Group {
+    const g = new THREE.Group();
+    const k = Math.min(1.1, 0.35 + light);
+    const m = (c: number) => new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(k) });
+    const w = b.maxX - b.minX;
+    const h = b.maxY - b.minY;
+    const d = b.maxZ - b.minZ;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m(0x5f665e));
+    body.position.set((b.minX + b.maxX) / 2, b.minY + h / 2, (b.minZ + b.maxZ) / 2);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.2, 0.12, d + 0.2), m(0x454a44));
+    roof.position.set(body.position.x, b.maxY + 0.06, body.position.z);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.22, d + 0.02), m(0xc8a018));
+    band.position.set(body.position.x, b.minY + 0.11, body.position.z);
+    g.add(body, roof, band);
+    return g;
+  }
+
+  /** Through the bunker door: into the base. Whatever was chasing you stays outside. */
+  private enterBase(p: WorldProp): void {
+    if (this.transition) return;
+    const fx = Math.sin(p.rotY);
+    const fz = Math.cos(p.rotY);
+    this.baseReturn = { levelId: this.level.id, x: p.x + fx * 1.1, y: p.y, z: p.z + fz * 1.1, yaw: p.rotY + Math.PI };
+    this.audio.door();
+    this.startTransition({ levelId: `base:${this.level.id}:${p.key}`, at: { ...BASE_ARRIVAL }, color: '#000', quiet: true });
+  }
+
+  /** Back out through the base door, standing in front of the bunker. */
+  private leaveBase(): void {
+    if (this.transition) return;
+    this.audio.door();
+    const r = this.baseReturn;
+    this.startTransition({ levelId: r.levelId, at: { x: r.x, y: r.y, z: r.z, yaw: r.yaw }, color: '#000', quiet: true });
+  }
+
+  /** Talk to a survey member: their lines in turn. */
+  private talkTo(p: WorldProp): void {
+    const lines = t('base.talk').split('|');
+    const key = this.level.id + ':' + p.uid;
+    const start = Math.floor(hash01(hashString(key), 7) * lines.length);
+    const n = this.talkIdx.get(key) ?? 0;
+    this.talkIdx.set(key, n + 1);
+    this.hud.message(t('base.speaker') + '「' + lines[(start + n) % lines.length] + '」', 5);
+    this.audio.click();
+  }
+
   /** Seconds until the staff's lightning can be cast again. */
   private spellCd = 0;
 
@@ -1648,7 +1727,7 @@ export class Game {
       if (!this.ents.trySpawn(ev.kind, () => this.rng.float(), ev.kind === 'chimera' ? this.pickChimera() : undefined)) this.director.retrySoon();
     }
     // Escape mode: once the conditions are met, the Bug keeps turning up (one at a time).
-    if (this.mode === 'escape' && this.escape.stage === 'bug' && !this.transition && !this.inArena) {
+    if (this.mode === 'escape' && this.escape.stage === 'bug' && !this.transition && !this.inArena && !isBaseLevel(this.level.id)) {
       const alive = this.ents.entities.some((e) => e.kind === 'bug' && e.brain.hp > 0);
       if (!alive) {
         this.bugT -= dt;
@@ -1688,8 +1767,8 @@ export class Game {
 
   private startTransition(tr: Transition): void {
     if (this.transition) return;
-    // Falls, return doorways and the like also lead home once the Bug is gone.
-    if (this.mode === 'escape' && tr.levelId !== ENDING_LEVEL) tr.levelId = this.escape.overrideTarget(this.level.id, 'other') ?? tr.levelId;
+    // Falls, return doorways and the like also lead home once the Bug is gone (not the way into or out of a base).
+    if (this.mode === 'escape' && tr.levelId !== ENDING_LEVEL && !tr.quiet) tr.levelId = this.escape.overrideTarget(this.level.id, 'other') ?? tr.levelId;
     if (tr.levelId === ENDING_LEVEL) tr.color = '#fff';
     this.transition = tr;
     this.hud.fadeTo(1, 1.6, tr.color);
@@ -1701,16 +1780,24 @@ export class Game {
     const next = resolveLevel(tr.levelId);
     const ctx = makeGenContext(this.worldSeed, next);
     // Advance the escape stage before the level is built, so Level 0 is built "home" (glitched doors).
-    this.arrivedStage = this.mode === 'escape' ? this.escape.arrive(tr.levelId) : null;
+    this.arrivedStage = this.mode === 'escape' && !tr.quiet ? this.escape.arrive(tr.levelId) : null;
     const at = tr.at ?? next.arrival(ctx, tr.entry ?? 0);
     this.enterLevel(tr.levelId, at);
     if (!tr.at && next.topology !== 'closed') this.player.yaw = this.pickOpenYaw(at.yaw);
     this.entryPoint = { x: this.player.x, y: this.player.y, z: this.player.z, yaw: this.player.yaw };
     const ending = tr.levelId === ENDING_LEVEL;
-    if (tr.back && !ending) this.placeAnchor(tr.back);
+    if (tr.back && !ending && !tr.quiet) this.placeAnchor(tr.back);
     this.transition = null;
     this.lastWarp = 0;
-    this.hud.fadeTo(0, ending ? 2.5 : 0.7, tr.color);
+    this.hud.fadeTo(0, ending ? 2.5 : tr.quiet ? 0.4 : 0.7, tr.color);
+    if (tr.quiet) {
+      // A survey base (or back out of one): a quiet arrival.
+      if (isBaseLevel(tr.levelId)) this.hud.message(t('base.inside'), 3.5);
+      else this.hud.message(t('base.outside'), 3);
+      this.updateObjective();
+      this.saveNow();
+      return;
+    }
     if (!ending) this.showLevelTitle();
     this.recordVisit();
     this.onArrive();
@@ -1749,6 +1836,9 @@ export class Game {
   }
 
   private openProp(p: WorldProp): void {
+    if (p.kind === 'surveyor') return this.talkTo(p);
+    if (p.kind === 'base-door') return this.enterBase(p);
+    if (p.kind === 'base-exit') return this.leaveBase();
     // After the Bug every door opens: it leads home, and from home (Level 0) out into the real world.
     const forced = this.mode === 'escape' ? this.escape.doorTarget(this.level.id) : null;
     const rule: ExitRule | undefined = forced
@@ -2105,7 +2195,13 @@ export class Game {
           ? t('prompt.pickup', { name: ITEMS[tg.item.id].name })
           : tg.type === 'anchor'
             ? t('prompt.return')
-            : tg.prop.kind === 'glass-door'
+            : tg.prop.kind === 'surveyor'
+              ? t('prompt.talk')
+              : tg.prop.kind === 'base-door'
+                ? t('prompt.baseDoor')
+                : tg.prop.kind === 'base-exit'
+                  ? t('prompt.baseExit')
+                  : tg.prop.kind === 'glass-door'
               ? t('prompt.glass')
               : tg.prop.kind === 'locked-door'
                 ? t('prompt.locked')

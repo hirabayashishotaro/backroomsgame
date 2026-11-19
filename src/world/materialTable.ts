@@ -163,6 +163,11 @@ export function materialTable(p: Palette): Record<string, MatDef> {
     'cold-water': water(0x2a8ad8, 0.55, 0.02),
     'sauna-glow': basic(0xffb45a),
     'locker-tag': lit('flat:c8c0a8'),
+    // Survey base
+    hazard: lit('gen:stripes:d8b020:965'),
+    cot: lit('flat:5a6a4a'),
+    'radio-glow': basic(0x7fe07f),
+    'map-board': lit('flat:c8c0a0'),
     'chalk-graffiti': { kind: 'lit-transparent', tex: 'chalk-graffiti' },
     pipe: lit('gen:metal:6a6560:77'),
     crate: lit('gen:wood:8a6a3e:78'),

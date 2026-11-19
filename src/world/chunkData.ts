@@ -46,7 +46,7 @@ export interface ItemSpawn {
   rot: number;
 }
 
-export type PropKind = 'exit-door' | 'glass-door' | 'metal-door' | 'white-door' | 'plain-door' | 'locked-door' | 'hatch';
+export type PropKind = 'exit-door' | 'glass-door' | 'metal-door' | 'white-door' | 'plain-door' | 'locked-door' | 'hatch' | 'base-door' | 'base-exit' | 'surveyor';
 
 export interface Prop {
   uid: string;

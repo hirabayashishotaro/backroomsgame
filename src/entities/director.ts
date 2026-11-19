@@ -126,6 +126,8 @@ export function giantAllowed(levelId: string, open: boolean): boolean {
 }
 
 export function entityTableFor(levelId: string, opts: { dark: boolean; safe: boolean; open?: boolean }): EntityKind[] {
+  // Nothing follows you into a survey base.
+  if (levelId.startsWith('base:')) return [];
   const fixed = FIXED;
   // Hand-made levels: their own entities, plus random entities (picked as often as each of their own kinds, see CHIMERA_HAND_WEIGHT).
   // Levels with no entities at all (Level 0, the ending, the test hall, ...) stay empty.

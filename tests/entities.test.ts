@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BLOATER, BOMBER, BOULDER, FANMAN, GUST, GUNMAN, NAMAHAGE, PEEKER, WITCH, hurt, inSlash, newBrain, think, type Perception } from '../src/entities/brain';
+import { BLOATER, BOMBER, BOULDER, FANMAN, GUST, GUNMAN, NAMAHAGE, NAMAHAGE_DASH, PEEKER, WITCH, hurt, inSlash, newBrain, think, type Perception } from '../src/entities/brain';
 import { ENTITIES } from '../src/entities/entityDefs';
 import { Director, entityTableFor } from '../src/entities/director';
 
@@ -179,6 +179,26 @@ describe('entity behaviour', () => {
     // Turned to face +x.
     expect(inSlash(0, 0, 0, -Math.PI / 2, 3.5, 0, 0)).toBe(true);
     expect(NAMAHAGE.reach).toBeLessThan(NAMAHAGE.len); // it starts swinging from inside its reach
+  });
+
+  it('namahage dash-cuts from afar: holds the blade for the wind-up, dashes once, then a cooldown', () => {
+    const b = newBrain('namahage');
+    let dashes = 0;
+    let first = -1;
+    for (let t = 0; t < 14; t += 0.05) {
+      const d = think(b, P({ dist: 14 }), 0.05);
+      if (d.dash) {
+        dashes++;
+        if (first < 0) first = t;
+      }
+    }
+    expect(dashes).toBeGreaterThanOrEqual(2);
+    expect(dashes).toBeLessThanOrEqual(Math.ceil(14 / (NAMAHAGE_DASH.cooldown + NAMAHAGE_DASH.windup)) + 1);
+    // Up close it slashes instead; out of sight it does not dash.
+    const near = newBrain('namahage');
+    for (let t = 0; t < 6; t += 0.05) expect(think(near, P({ dist: 2 }), 0.05).dash).toBeFalsy();
+    const hidden = newBrain('namahage');
+    for (let t = 0; t < 8; t += 0.05) expect(think(hidden, P({ dist: 14, los: false }), 0.05).dash).toBeFalsy();
   });
 
   it('fanman keeps its distance and blows slow wind on a cooldown', () => {

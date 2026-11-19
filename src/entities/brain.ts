@@ -5,7 +5,7 @@
 import { ENTITIES, type EntityKind } from './entityDefs';
 import type { ChimeraGenome } from './chimera';
 
-export type Mode = 'idle' | 'stalk' | 'chase' | 'frozen' | 'fade' | 'flee' | 'stagger' | 'fuse' | 'attack';
+export type Mode = 'idle' | 'stalk' | 'chase' | 'frozen' | 'fade' | 'flee' | 'stagger' | 'fuse' | 'attack' | 'dash';
 
 export interface Perception {
   dist: number;
@@ -71,6 +71,8 @@ export interface Decision {
   snipe?: boolean;
   /** Namahage: the blade comes down now (an arc in front of it). */
   slash?: boolean;
+  /** Namahage: the dash cut starts now (it shoots along its locked line). */
+  dash?: boolean;
   /** Fanman: blow a slow ball of wind at the player now. */
   blow?: boolean;
   /** Giant: hurl a boulder at where the player stands now. */
@@ -83,6 +85,13 @@ export interface Decision {
 export const BOULDER = { cooldown: 5.5, min: 9, max: 45, speed: 15, radius: 3.4, damage: 35, knock: 11 };
 /** Witch's wind burst: triggers when you are this close; cooldown; the eight gusts' speed, range and knockback. */
 export const GUST = { trigger: 6, cooldown: 4.5, speed: 10, range: 11, knock: 15, lift: 4, damage: 8 };
+
+/**
+ * Namahage's dash cut (user request): from 6-24 m away it holds the blade
+ * level, then shoots up to `range` m along a straight line in `dur` s and
+ * cuts whatever is within `width` of it. Its own cooldown.
+ */
+export const NAMAHAGE_DASH = { min: 6, max: 24, windup: 0.75, dur: 0.28, range: 26, width: 1.3, damage: 45, cooldown: 5, recover: 1.1 };
 
 /** Namahage: reach, wind-up (blade raised), recovery after the swing, the arc it covers (rad from forward). */
 export const NAMAHAGE = { reach: 3.6, windup: 0.55, recover: 1.1, len: 4.4, halfW: 1.6, height: 2.6 };
@@ -308,6 +317,20 @@ export function think(b: BrainState, p: Perception, dt: number): Decision {
       return { speed: p.dist < 25 ? def.run : def.walk, gone: false };
     }
     case 'namahage': {
+      // Dash cut: blade held level for the wind-up, then the dash (the entity system moves it), then a pause.
+      if (b.mode === 'dash') {
+        const D = NAMAHAGE_DASH;
+        if (b.t < D.windup) return { speed: 0, gone: false };
+        if (b.n === 1) {
+          b.n = 0;
+          return { speed: 0, gone: false, dash: true };
+        }
+        if (b.t < D.windup + D.dur) return { speed: 0, gone: false };
+        set(b, 'chase');
+        b.watch = D.recover;
+        b.cd2 = D.cooldown;
+        return { speed: 0, gone: false };
+      }
       // Stamps toward you; in reach it raises the blade, then brings it down.
       if (b.mode === 'attack') {
         if (b.t >= NAMAHAGE.windup) {
@@ -321,6 +344,14 @@ export function think(b: BrainState, p: Perception, dt: number): Decision {
       if (b.watch > 0) return { speed: 0.8, gone: false };
       if (p.dist < NAMAHAGE.reach) {
         set(b, 'attack');
+        return { speed: 0, gone: false };
+      }
+      // Far off but in sight: the dash cut.
+      b.cd2 -= dt;
+      if (p.los && p.dist > NAMAHAGE_DASH.min && p.dist < NAMAHAGE_DASH.max && b.cd2 <= 0 && b.alpha > 0.6) {
+        set(b, 'dash');
+        b.t = 0;
+        b.n = 1;
         return { speed: 0, gone: false };
       }
       if (b.mode !== 'chase') set(b, 'chase');

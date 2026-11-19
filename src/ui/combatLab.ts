@@ -58,6 +58,7 @@ const CSS = `
 
 const MODE_LABEL: Record<string, string> = {
   idle: '待機',
+  dash: 'ダッシュ斬り',
   stalk: '忍び寄り',
   chase: '追跡',
   frozen: '静止',

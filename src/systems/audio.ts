@@ -5,7 +5,7 @@
 import type { AmbienceDef } from '../levels/levelDefinition';
 import type { Settings } from '../core/settings';
 
-export type EntityVoiceKind = 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan' | 'shot' | 'zap' | 'thunder' | 'glitch' | 'aim' | 'snipe' | 'skitter' | 'roar' | 'swish' | 'stamp' | 'whirr' | 'whoosh';
+export type EntityVoiceKind = 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan' | 'shot' | 'zap' | 'thunder' | 'glitch' | 'aim' | 'snipe' | 'skitter' | 'roar' | 'swish' | 'stamp' | 'whirr' | 'whoosh' | 'spaan';
 
 /** Random entities' sounds: highest tone, highest noise band and the low-pass on everything (Hz). */
 export const MOD_TONE_MAX = 1200;
@@ -665,6 +665,25 @@ export class AudioSystem {
         this.noise(t, 0.08, 'highpass', 2500, 0.7, p, this.env(t, 0.9 * vv, 0.001, 0.08));
         this.noise(t, 1.4, 'lowpass', 700, 0.7, p, this.env(t, 0.7 * vv, 0.004, 1.3));
         this.tone(t, 'sine', 110, 35, 0.6, this.env(t, 0.6 * vv, 0.002, 0.55), p);
+        break;
+      }
+      case 'spaan': {
+        // "Spaaan!": a hard air-cut sweeping down, a clean ringing edge that dies away, a low thump.
+        const vv = Math.min(1, 30 / (dist + 5));
+        const f = this.ctx!.createBiquadFilter();
+        f.type = 'bandpass';
+        f.Q.value = 2.5;
+        f.frequency.setValueAtTime(2200, t);
+        f.frequency.exponentialRampToValueAtTime(500, t + 0.35);
+        f.connect(p);
+        const src = this.ctx!.createBufferSource();
+        src.buffer = this.noiseBuffer;
+        const gn = this.env(t, 0.9 * vv, 0.004, 0.33);
+        src.connect(gn).connect(f);
+        src.start(t, 0.2, 0.45);
+        this.tone(t + 0.02, 'sine', 940, 900, 1.1, this.env(t + 0.02, 0.12 * vv, 0.003, 1.0), p);
+        this.tone(t + 0.02, 'sine', 1410, 1380, 0.8, this.env(t + 0.02, 0.05 * vv, 0.003, 0.7), p);
+        this.tone(t, 'sine', 120, 50, 0.25, this.env(t, 0.4 * vv, 0.002, 0.22), p);
         break;
       }
       case 'roar': {

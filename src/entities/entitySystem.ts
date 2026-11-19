@@ -8,7 +8,7 @@ import { PlayerController, type WorldQuery } from '../player/controller';
 import { groundHeight, rayBox, type WBox } from '../world/collision';
 import { ENTITIES, type EntityKind } from './entityDefs';
 import type { ChimeraGenome, ChimeraSound } from './chimera';
-import { BLAST_KNOCK, BLOATER, BOMBER, BOULDER, FANMAN, GIANT, GUST, NAMAHAGE, PEEKER, WITCH, inSlash, chimeraReach, hurt, newBrain, think, type BrainState } from './brain';
+import { BLAST_KNOCK, BLOATER, BOMBER, BOULDER, FANMAN, GIANT, GUST, NAMAHAGE, NAMAHAGE_DASH, PEEKER, WITCH, inSlash, chimeraReach, hurt, newBrain, think, type BrainState } from './brain';
 import { animateEntity, buildBombMesh, buildBoulderMesh, buildChimeraMesh, buildEntityMesh, buildFxProjectile, buildWindMesh, buildRocketMesh, disposeEntityMesh, setEntityAlpha } from './models';
 import { stepProjectile } from '../weapons/weaponLogic';
 import { falloffFactor, type WeaponDef } from '../weapons/weaponDefs';
@@ -61,6 +61,8 @@ interface Entity {
   weaveF: number;
   /** Namahage: the direction the blade will come down (locked when it is raised). */
   slashYaw?: number;
+  /** Namahage's dash cut: its locked line (start, end, height) and progress (-1 = still winding up). */
+  dash?: { x0: number; z0: number; x1: number; z1: number; y: number; t: number; hit: boolean; yaw: number };
   /** Animation timers: giant's throw, witch's raised staff. */
   actT?: number;
   /** Hound: time until it may leap aside again. */
@@ -454,6 +456,11 @@ export class EntitySystem {
       if (d.toss) this.toss(e, dist);
       if (e.kind === 'peeker' || e.genome?.attack === 'snipe') this.aimLaser(e, d.aim, d.snipe === true, dist);
       if (d.slash) this.slash(e, dist);
+      if (e.kind === 'namahage' && e.brain.mode === 'dash' && prevMode !== 'dash') this.dashWindup(e, dist);
+      if (d.dash && e.dash) {
+        e.dash.t = 0;
+        this.host.audio.entityVoice('spaan', this.panTo(b.x, b.z), dist);
+      }
       if (d.blow) this.blow(e, dist);
       if (d.hurl) this.hurl(e, dist);
       if (d.gust) this.gust(e, dist);
@@ -560,6 +567,8 @@ export class EntitySystem {
           this.say(e.genome?.sound, 'stomp', this.panTo(b.x, b.z), dist);
         }
       } else b.step(dt, { forward: 0, strafe: 0, sprint: false, crouch: false, jump: false }, this.host.world);
+      if (e.dash && e.dash.t >= 0) this.dashMove(e, dt);
+      else if (e.dash && e.brain.mode !== 'dash') e.dash = undefined;
       if (b.y < p.y - 30) {
         // fell out of the world
         disposeEntityMesh(e.mesh);
@@ -587,7 +596,7 @@ export class EntitySystem {
       const [rx, rz] = this.host.toRender(b.x, b.z);
       e.mesh.position.set(rx, b.y, rz);
       const facesYou = e.genome ? e.genome.move === 'range' || e.genome.attack === 'slash' : e.kind === 'gunman' || e.kind === 'witch' || e.kind === 'bomber' || e.kind === 'peeker' || e.kind === 'fanman' || e.kind === 'namahage';
-      e.mesh.rotation.y = facesYou ? (e.brain.mode === 'attack' && e.slashYaw !== undefined ? e.slashYaw : face) : yaw;
+      e.mesh.rotation.y = e.dash ? e.dash.yaw : facesYou ? (e.brain.mode === 'attack' && e.slashYaw !== undefined ? e.slashYaw : face) : yaw;
       e.flash = Math.max(0, e.flash - dt * 5);
       const base = e.genome?.scale ?? 1;
       if (e.kind === 'bloater' || e.genome?.attack === 'burst') {
@@ -611,6 +620,13 @@ export class EntitySystem {
           const up = e.brain.mode === 'attack' ? Math.min(1, e.brain.t / NAMAHAGE.windup) : 0;
           const after = e.brain.mode !== 'attack' && e.brain.watch > (e.genome?.cooldown ?? NAMAHAGE.recover) - 0.25 ? 1 : 0;
           arm.rotation.x = after ? 1.1 : 0.3 + 2.4 * up; // + = forward and up (overhead at ~2.7)
+          arm.rotation.z = 0;
+          if (e.dash) {
+            // Dash cut: the blade held level out to the side, then swept across in the dash.
+            const k = e.dash.t < 0 ? Math.min(1, e.brain.t / NAMAHAGE_DASH.windup) : 1;
+            arm.rotation.x = 1.5 * k;
+            arm.rotation.z = (e.dash.t < 0 ? -1.2 : 1.0) * k;
+          }
         }
       }
       if (e.kind === 'fanman' || e.genome?.head === 'fan') {
@@ -1155,8 +1171,103 @@ export class EntitySystem {
     this.host.audio.entityVoice(role, pan, dist, { pitch: snd.pitch });
   }
 
+  /**
+   * Namahage starts its dash cut: lock the line toward you, cut short by walls,
+   * drops and hazards, and show it on the floor while the blade is held level.
+   */
+  private dashWindup(e: Entity, dist: number): void {
+    const b = e.body;
+    const p = this.host.player;
+    const D = NAMAHAGE_DASH;
+    const yaw = Math.atan2(-(p.x - b.x), -(p.z - b.z));
+    const dx = -Math.sin(yaw);
+    const dz = -Math.cos(yaw);
+    // Straight on past you, as far as the floor and the walls allow.
+    let len = Math.min(D.range, dist + 6);
+    const wall = this.host.rayWorld(b.x, b.y + 1, b.z, dx, 0, dz, len);
+    if (wall !== null) len = Math.max(0, wall - 0.8);
+    for (let s = 0.8; s < len; s += 0.8) {
+      const g = this.groundAt(b.x + dx * s, b.z + dz * s, b.y + 1);
+      if (Math.abs(g - b.y) > 0.8 || this.host.isHazard(g)) {
+        len = Math.max(0, s - 0.8);
+        break;
+      }
+    }
+    e.dash = { x0: b.x, z0: b.z, x1: b.x + dx * len, z1: b.z + dz * len, y: b.y, t: -1, hit: false, yaw };
+    this.host.audio.entityVoice('roar', this.panTo(b.x, b.z), dist);
+    // The warning: a long red strip along the line.
+    const g = new THREE.Group();
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(D.width * 2, Math.max(0.5, len)), new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide }));
+    strip.rotation.x = -Math.PI / 2;
+    strip.position.set(0, 0.22, -len / 2);
+    strip.renderOrder = 5;
+    g.add(strip);
+    const [rx, rz] = this.host.toRender(b.x, b.z);
+    g.position.set(rx, b.y, rz);
+    g.rotation.y = yaw;
+    this.host.fx.add(g);
+    this.flashes.push({ obj: g, t: D.windup, max: D.windup, grow: 0, warn: true });
+  }
+
+  /** The dash itself: shoot along the line, cutting what is close to it. */
+  private dashMove(e: Entity, dt: number): void {
+    const dsh = e.dash!;
+    const b = e.body;
+    const p = this.host.player;
+    const D = NAMAHAGE_DASH;
+    const ox = b.x;
+    const oz = b.z;
+    dsh.t += dt;
+    const k = Math.min(1, dsh.t / D.dur);
+    b.x = dsh.x0 + (dsh.x1 - dsh.x0) * k;
+    b.z = dsh.z0 + (dsh.z1 - dsh.z0) * k;
+    b.y = dsh.y;
+    b.vy = 0;
+    // Afterimages along the way
+    if (Math.random() < 0.8) this.spark(b.x, b.y + 1.1, b.z, 0xe8e8f0, 6, 0.25);
+    // Cut: the player close to the segment travelled this frame.
+    if (!dsh.hit && Math.abs(p.y - b.y) < 1.8) {
+      const sx = b.x - ox;
+      const sz = b.z - oz;
+      const l2 = sx * sx + sz * sz || 1e-6;
+      const u = Math.max(0, Math.min(1, ((p.x - ox) * sx + (p.z - oz) * sz) / l2));
+      const cx = ox + sx * u - p.x;
+      const cz = oz + sz * u - p.z;
+      if (Math.hypot(cx, cz) < D.width) {
+        dsh.hit = true;
+        this.host.onRangedHit('namahage', D.damage);
+        // Thrown aside, away from the line.
+        const side = (p.x - ox) * -sz + (p.z - oz) * sx >= 0 ? 1 : -1;
+        p.knock(-sz * side || 0.01, sx * side, 9, 3);
+      }
+    }
+    if (k >= 1) {
+      this.dashTrail(dsh);
+      e.dash = undefined;
+    }
+  }
+
+  /** A bright streak left along the dash line, fading out. */
+  private dashTrail(d: NonNullable<Entity['dash']>): void {
+    const len = Math.hypot(d.x1 - d.x0, d.z1 - d.z0);
+    if (len < 0.5) return;
+    const g = new THREE.Group();
+    const [rx, rz] = this.host.toRender(d.x0, d.z0);
+    g.position.set(rx, d.y, rz);
+    g.rotation.y = d.yaw;
+    const mk = (y: number, h: number, w: number, color: number, op: number) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, len), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthWrite: false, blending: THREE.AdditiveBlending }));
+      m.position.set(0, y, -len / 2);
+      g.add(m);
+    };
+    mk(1.1, 0.06, 0.06, 0xffffff, 0.95); // the cut itself
+    mk(1.1, 0.5, 0.02, 0xc8e0ff, 0.45); // its glow
+    this.host.fx.add(g);
+    this.flashes.push({ obj: g, t: 0.45, max: 0.45, grow: 0 });
+  }
+
   /** Short-lived effect meshes (slash arcs, warnings) that fade out. */
-  private flashes: Array<{ obj: THREE.Object3D; t: number; max: number; grow: number; follow?: Entity; base?: number }> = [];
+  private flashes: Array<{ obj: THREE.Object3D; t: number; max: number; grow: number; follow?: Entity; base?: number; warn?: boolean }> = [];
 
   /** While the blade is raised: a faint red strip on the ground shows where it will land. */
   private slashWarning(e: Entity): void {
@@ -1224,7 +1335,7 @@ export class EntitySystem {
         if (!m) return;
         if (m.userData.base === undefined) m.userData.base = m.opacity;
         // Warnings brighten as the blade goes up; cuts fade out.
-        m.opacity = (m.userData.base as number) * (f.follow ? 1 + 1.6 * (1 - k) : k);
+        m.opacity = (m.userData.base as number) * (f.follow || f.warn ? 1 + 1.6 * (1 - k) : k);
       });
       if (f.grow) f.obj.scale.setScalar((f.base ?? 1) * (1 + f.grow * (1 - k)));
       if (f.t <= 0) {

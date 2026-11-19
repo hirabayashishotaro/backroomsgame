@@ -753,6 +753,9 @@ export class Game {
     this.lectureCaption = null;
     this.started = false;
     this.paused = true;
+    // Give the cursor back (after an ending the mouse is still captured).
+    if (document.pointerLockElement) document.exitPointerLock();
+    this.input.locked = false;
     this.screens.show('title');
   }
 

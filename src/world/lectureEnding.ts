@@ -168,6 +168,27 @@ export class LectureEnding {
     this.screenTex.needsUpdate = true;
   }
 
+  /**
+   * The line shown at time `t` (a ja.json key) or null: what is happening, then
+   * what you say over each slide, the closing thanks, and a last thought.
+   */
+  captionKey(t: number): string | null {
+    const T = LECTURE_T;
+    if (t > 0.4 && t < T.walk - 0.1) return 'lecture.intro';
+    if (t > T.cut + 0.4 && t < T.slidesEnd) {
+      const n = this.slides.length;
+      const span = (T.slidesEnd - T.cut) / n;
+      const k = Math.min(n - 1, Math.floor((t - T.cut) / span));
+      if (t - T.cut - k * span > span - 0.25) return null; // a breath between slides
+      const s = this.slides[k];
+      if (s.kind === 'image') return this.slides.findIndex((x) => x.kind === 'image') === k ? 'lecture.image' : 'lecture.image2';
+      return 'lecture.' + s.kind;
+    }
+    if (t > T.bow && t < T.bow + 2.4) return 'lecture.bow';
+    if (t > T.applause + 1.8 && t < T.end - 0.2) return 'lecture.outro';
+    return null;
+  }
+
   /** Advance the film to time `t` (s) and place the camera. */
   update(t: number, camera: THREE.PerspectiveCamera): void {
     const T = LECTURE_T;
@@ -188,7 +209,7 @@ export class LectureEnding {
     const arm = this.presenter.getObjectByName('armR');
     if (arm) arm.rotation.z = point ? -0.5 : 0;
     const bow = t > T.bow ? Math.min(1, (t - T.bow) / 0.6) * (t < T.bow + 2.0 ? 1 : Math.max(0, 1 - (t - T.bow - 2.0) / 0.6)) : 0;
-    this.presenter.rotation.x = -0.55 * bow;
+    this.presenter.rotation.x = 0.55 * bow; // forward, toward the audience (+Z)
     this.presenter.rotation.y = t < T.slidesEnd ? Math.PI - 0.35 + (point ? -0.25 : 0) : Math.PI;
     // The audience: still, a head turning now and then; clapping at the end.
     const clap = t > T.applause && t < T.fadeOut + 1;

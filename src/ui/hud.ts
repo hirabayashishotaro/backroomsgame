@@ -58,6 +58,9 @@ const CSS = `
 @keyframes credits-roll { to { transform: translateY(-260%); } }
 .hud-subs { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 21; pointer-events: none;
   font-size: 15px; background: rgba(0,0,0,0.55); padding: 3px 12px; border-radius: 3px; color: #f4ecd0; transition: opacity 0.4s; opacity: 0; }
+.hud-caption { position: fixed; left: 50%; bottom: 9%; transform: translateX(-50%); z-index: 36; pointer-events: none; width: max-content; max-width: 86vw;
+  text-align: center; font-size: 19px; line-height: 1.6; letter-spacing: 0.06em; color: #f4f0e4; text-shadow: 0 0 6px #000, 0 0 2px #000;
+  transition: opacity 0.6s; opacity: 0; white-space: pre-line; }
 .hud-vignette { position: fixed; inset: 0; pointer-events: none; z-index: 10;
   background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.75) 100%); opacity: 0.45; }
 .hud-hurt { position: fixed; inset: 0; pointer-events: none; z-index: 11;
@@ -101,6 +104,7 @@ export class Hud {
   private subs: HTMLDivElement;
   private objective: HTMLDivElement;
   private credits: HTMLDivElement;
+  private captionEl: HTMLDivElement;
   private subTimer = 0;
   private msgTimer = 0;
   private titleTime = -1;
@@ -170,8 +174,9 @@ export class Hud {
     this.objective = this.div('hud-objective');
     this.root.appendChild(this.objective);
     this.credits = this.div('hud-credits');
+    this.captionEl = this.div('hud-caption');
     this.scare = this.div('hud-scare');
-    parent.append(this.scare, vignette, this.hurt, this.root, this.title, this.fade, this.deadOverlay, this.subs, this.credits);
+    parent.append(this.scare, vignette, this.hurt, this.root, this.title, this.fade, this.deadOverlay, this.subs, this.credits, this.captionEl);
     setTimeout(() => (this.hint.style.opacity = '0'), 45000);
   }
 
@@ -308,6 +313,12 @@ export class Hud {
     this.root.style.display = this.rootDisplay;
   }
   private rootDisplay = '';
+
+  /** A film caption (the lecture ending's lines): above the fades; null hides it. */
+  caption(text: string | null): void {
+    if (text) this.captionEl.textContent = text;
+    this.captionEl.style.opacity = text ? '1' : '0';
+  }
 
   /** Subtitle for sounds (SPEC §11 字幕). */
   subtitle(text: string, seconds = 3): void {

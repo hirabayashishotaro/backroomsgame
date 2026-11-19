@@ -269,6 +269,8 @@ export class Game {
   private gateTime = 0;
   private lastWarp = 0;
   private deadTimer = 0;
+  /** The lecture ending's caption on screen (ja.json key). */
+  private lectureCaption: string | null = null;
   private lastStep = 0;
   private time = 0;
   private last = performance.now();
@@ -508,8 +510,15 @@ export class Game {
       const ny = (v: number) => (Math.max(...ys) - Math.min(...ys) > 1e-6 ? (v - Math.min(...ys)) / (Math.max(...ys) - Math.min(...ys)) : 0.5);
       slides.push({
         kind: 'map',
-        points: ids.map((_, i) => [0.05 + nx(xs[i]) * 0.9, 0.05 + ny(ys[i]) * 0.9] as [number, number]),
-        edges: j.edges.map((e) => [idx.get(e.from) ?? -1, idx.get(e.to) ?? -1] as [number, number]).filter(([a, b]) => a >= 0 && b >= 0),
+        // (All on one spot - a short journal - then laid out in a row.)
+        points: ids.map((_, i) => {
+          const flat = Math.max(...xs) - Math.min(...xs) < 1e-6 && Math.max(...ys) - Math.min(...ys) < 1e-6;
+          return (flat ? [0.1 + (ids.length > 1 ? i / (ids.length - 1) : 0.4) * 0.8, 0.5] : [0.05 + nx(xs[i]) * 0.9, 0.05 + ny(ys[i]) * 0.9]) as [number, number];
+        }),
+        edges: (() => {
+          const e = j.edges.map((e) => [idx.get(e.from) ?? -1, idx.get(e.to) ?? -1] as [number, number]).filter(([a, b]) => a >= 0 && b >= 0);
+          return e.length ? e : ids.slice(1).map((_, i) => [i, i + 1] as [number, number]); // the order visited
+        })(),
       });
     }
     // How many of each were defeated.
@@ -739,6 +748,9 @@ export class Game {
 
   private toTitle(): void {
     this.saveNow();
+    this.audio.crowdStop();
+    this.hud.caption(null);
+    this.lectureCaption = null;
     this.started = false;
     this.paused = true;
     this.screens.show('title');
@@ -969,6 +981,9 @@ export class Game {
     }
     this.lecture?.dispose();
     this.lecture = null;
+    this.audio.crowdStop();
+    this.lectureCaption = null;
+    this.hud.caption(null);
     // The ending is a quiet walk: no weapon in hand, no gauges.
     this.thirdPerson = false; // a new level starts in first person
     this.viewmodel.root.visible = !isEndingLevel(id);
@@ -2197,6 +2212,15 @@ export class Game {
       this.endingTimer += realDt;
       const T = LECTURE_T;
       const tt = this.endingTimer;
+      // The audience talking among themselves: while you come in, a hush during the talk,
+      // a stir as it ends, then the applause takes over.
+      const talk = tt < T.walk ? 1 : tt < T.cut + 1.2 ? 1 - ((tt - T.walk) / (T.cut + 1.2 - T.walk)) * 0.8 : tt < T.slidesEnd - 1 ? 0.2 : tt < T.applause ? 0.2 + ((tt - T.slidesEnd + 1) / (T.applause - T.slidesEnd + 1)) * 0.6 : Math.max(0, 0.8 - (tt - T.applause) * 0.4);
+      this.audio.crowdTalk(talk);
+      const cap = this.lecture.captionKey(tt);
+      if (cap !== this.lectureCaption) {
+        this.lectureCaption = cap;
+        this.hud.caption(cap ? t(cap) : null);
+      }
       if (tt > T.walk - 0.2 && tt < T.cut) this.hud.fadeTo(1, 0.35, '#000');
       if (tt >= T.cut && tt - realDt < T.cut) this.hud.fadeTo(0, 0.6, '#000');
       if (tt >= T.applause && !this.lecture.applauded) {
@@ -2206,9 +2230,13 @@ export class Game {
       if (tt >= T.fadeOut && tt - realDt < T.fadeOut) this.hud.fadeTo(1, 1.4, '#000');
       if (tt > T.end) {
         this.endingTimer = -1;
+        this.audio.crowdStop();
+        this.lectureCaption = null;
+        this.hud.caption(null);
         this.finishRun();
       }
-    } else if (this.endingTimer >= 0 && this.started && !overlay) {
+    } else if (this.lecture && overlay) this.audio.crowdTalk(0, 0); // paused: hush
+    if (this.endingTimer >= 0 && this.started && !overlay && !this.lecture) {
       this.endingTimer += realDt;
       if (this.endingTimer > 12 && !this.creditsShown) {
         this.creditsShown = true;

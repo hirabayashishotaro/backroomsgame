@@ -2235,7 +2235,7 @@ export class Game {
         this.hud.caption(null);
         this.finishRun();
       }
-    } else if (this.lecture && overlay) this.audio.crowdTalk(0, 0); // paused: hush
+    } else if (this.lecture && overlay) this.audio.crowdTalk(0); // paused: hush
     if (this.endingTimer >= 0 && this.started && !overlay && !this.lecture) {
       this.endingTimer += realDt;
       if (this.endingTimer > 12 && !this.creditsShown) {

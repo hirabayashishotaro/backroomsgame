@@ -1,9 +1,12 @@
 /**
- * Procedural audio via Web Audio (no audio files). Phase 3: electrical hum +
+ * Procedural audio via Web Audio. No audio files, except one recording the
+ * user supplied (the lecture hall audience, crowdTalk). Phase 3: electrical hum +
  * room noise + footsteps.
  */
 import type { AmbienceDef } from '../levels/levelDefinition';
 import type { Settings } from '../core/settings';
+
+import crowdUrl from '../assets/audio/crowd.mp3?inline';
 
 export type EntityVoiceKind = 'growl' | 'giggle' | 'help' | 'hum' | 'step' | 'hiss' | 'boom' | 'stomp' | 'groan' | 'shot' | 'zap' | 'thunder' | 'glitch' | 'aim' | 'snipe' | 'skitter' | 'roar' | 'swish' | 'stamp' | 'whirr' | 'whoosh' | 'spaan';
 
@@ -499,107 +502,47 @@ export class AudioSystem {
 
   // ---------------------------------------------------------- crowd talk --
 
-  private crowdNodes: {
-    out: GainNode;
-    stop: Array<OscillatorNode | AudioBufferSourceNode>;
-    voices: Array<{ osc: OscillatorNode; gate: GainNode; f1: BiquadFilterNode; f2: BiquadFilterNode; pan: StereoPannerNode; base: number; loud: number; next: number; phraseEnd: number }>;
-  } | null = null;
+  private crowdNodes: { out: GainNode; src: AudioBufferSourceNode } | null = null;
+  private crowdBuf: AudioBuffer | null = null;
+  private crowdLoading = false;
 
   /**
-   * People talking among themselves (the lecture hall's audience), modelled on
-   * a reference clip (user supplied): many voices, energy mostly 600-2500 Hz,
-   * rising and falling in phrases of a second or two. Each voice is a buzzing
-   * source through two vowel formants, gated syllable by syllable, phrase by
-   * phrase; under them a soft bed. Call every frame with the level (0..1):
-   * syllables are scheduled only a little ahead, so when the calls stop (pause)
-   * the talk stops too. crowdStop() ends it.
+   * People talking among themselves (the lecture hall's audience): a recording
+   * the user supplied, used almost as it is - 32 s of it, its end cross-faded
+   * into its start so it loops, normalised to a modest level (the one recorded
+   * sound in the game, at the user's request). Call every frame with the level
+   * (0..1); crowdStop() ends it. Loaded and decoded on first use.
    */
-  crowdTalk(level: number, ahead = 0.35): void {
+  crowdTalk(level: number): void {
     const ctx = this.ctx;
     if (!ctx) return;
+    if (!this.crowdBuf) {
+      if (!this.crowdLoading) {
+        this.crowdLoading = true;
+        fetch(crowdUrl)
+          .then((r) => r.arrayBuffer())
+          .then((a) => ctx.decodeAudioData(a))
+          .then((b) => (this.crowdBuf = b))
+          .catch(() => {
+            /* no crowd then */
+          });
+      }
+      return;
+    }
     const now = ctx.currentTime;
     if (!this.crowdNodes) {
       if (level <= 0) return;
       const out = ctx.createGain();
       out.gain.value = 0;
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 2000; // mild: no edge on the voices
-      const hp = ctx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = 380; // the reference has little below ~500 Hz (heard from across a room)
-      out.connect(hp).connect(lp).connect(this.sfxBus);
-      const stop: Array<OscillatorNode | AudioBufferSourceNode> = [];
-      const voices = [];
-      for (let i = 0; i < 9; i++) {
-        const female = i % 3 === 1;
-        const osc = ctx.createOscillator();
-        osc.type = 'triangle'; // softer than a buzz
-        const base = female ? 190 + Math.random() * 50 : 100 + Math.random() * 40;
-        osc.frequency.value = base;
-        const gate = ctx.createGain();
-        gate.gain.value = 0;
-        const f1 = ctx.createBiquadFilter();
-        const f2 = ctx.createBiquadFilter();
-        for (const f of [f1, f2]) {
-          f.type = 'bandpass';
-          f.Q.value = 3;
-        }
-        const sum = ctx.createGain();
-        sum.gain.value = 2.6;
-        const pan = ctx.createStereoPanner();
-        pan.pan.value = Math.random() * 1.6 - 0.8;
-        osc.connect(gate);
-        gate.connect(f1).connect(sum);
-        gate.connect(f2).connect(sum);
-        sum.connect(pan).connect(out);
-        osc.start(now);
-        stop.push(osc);
-        voices.push({ osc, gate, f1, f2, pan, base, loud: 0.2 + Math.pow(Math.random(), 1.6) * 0.8, next: now + Math.random() * 1.5, phraseEnd: now + 1 + Math.random() * 2 });
-      }
-      // The bed: the room full of low talk, far off.
-      const bed = ctx.createBufferSource();
-      bed.buffer = this.noiseBuffer;
-      bed.loop = true;
-      const bf = ctx.createBiquadFilter();
-      bf.type = 'bandpass';
-      bf.frequency.value = 1000;
-      bf.Q.value = 0.8;
-      const bg = ctx.createGain();
-      bg.gain.value = 0.05;
-      bed.connect(bf).connect(bg).connect(out);
-      bed.start(now);
-      stop.push(bed);
-      this.crowdNodes = { out, stop, voices };
+      out.connect(this.sfxBus);
+      const src = ctx.createBufferSource();
+      src.buffer = this.crowdBuf;
+      src.loop = true;
+      src.connect(out);
+      src.start(now, Math.random() * this.crowdBuf.duration);
+      this.crowdNodes = { out, src };
     }
-    const c = this.crowdNodes;
-    c.out.gain.setTargetAtTime(Math.max(0, level) * 0.45, now, 0.6);
-    // Vowels: [F1, F2] (Hz)
-    const vowels: Array<[number, number]> = [[750, 1200], [300, 2200], [350, 1300], [500, 1850], [500, 900]];
-    for (const v of c.voices) {
-      while (v.next < now + ahead) {
-        const ts = Math.max(v.next, now);
-        if (ts > v.phraseEnd) {
-          // A pause, then the next phrase (a little lower in pitch toward its end).
-          v.next = ts + 0.25 + Math.random() * 1.4;
-          v.phraseEnd = v.next + 0.7 + Math.random() * 2.6;
-          v.gate.gain.setTargetAtTime(0, ts, 0.04);
-          continue;
-        }
-        const dur = 0.09 + Math.random() * 0.15;
-        const [a, b] = vowels[Math.floor(Math.random() * vowels.length)];
-        const fs = v.base > 160 ? 1.4 : 1.22;
-        v.f1.frequency.setTargetAtTime(a * fs, ts, 0.025);
-        v.f2.frequency.setTargetAtTime(b * fs, ts, 0.025);
-        const fall = Math.max(0.82, 1 - Math.max(0, ts - (v.phraseEnd - 2)) * 0.06);
-        v.osc.frequency.setTargetAtTime(v.base * (0.9 + Math.random() * 0.25) * fall, ts, 0.05);
-        v.gate.gain.setTargetAtTime(v.loud * (0.5 + Math.random() * 0.5), ts, 0.03);
-        v.gate.gain.setTargetAtTime(0.03, ts + dur * 0.75, 0.025);
-        // Now and then a consonant: a soft breath of noise.
-        if (Math.random() < 0.2) this.noise(ts, 0.04, 'bandpass', 1500, 1.2, v.pan, this.env(ts, 0.025 * v.loud, 0.008, 0.035));
-        v.next = ts + dur + 0.015;
-      }
-    }
+    this.crowdNodes.out.gain.setTargetAtTime(Math.max(0, level) * 0.8, now, 0.5);
   }
 
   crowdStop(): void {
@@ -609,7 +552,7 @@ export class AudioSystem {
     this.crowdNodes = null;
     const now = ctx.currentTime;
     c.out.gain.setTargetAtTime(0, now, 0.15);
-    for (const n of c.stop) n.stop(now + 0.8);
+    c.src.stop(now + 0.8);
     setTimeout(() => c.out.disconnect(), 1000);
   }
 

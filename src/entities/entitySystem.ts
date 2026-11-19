@@ -165,7 +165,9 @@ const BOMB_GRAVITY = 14;
 
 /** Which sounds are a warning cue, an attack, an impact (random entities swap them for their own). */
 const SOUND_CUE = new Set<EntityVoiceKind>(['aim', 'roar', 'hiss', 'zap', 'groan']);
-const SOUND_FIRE = new Set<EntityVoiceKind>(['shot', 'snipe', 'swish', 'whoosh']);
+/** How close to the dash line cuts: namahage's, or wider for big random entities. */
+const dashWidth = (e: { genome?: ChimeraGenome }) => (e.genome ? NAMAHAGE_DASH.width * Math.max(0.8, e.genome.scale) : NAMAHAGE_DASH.width);
+const SOUND_FIRE = new Set<EntityVoiceKind>(['shot', 'snipe', 'swish', 'whoosh', 'spaan']);
 const SOUND_IMPACT = new Set<EntityVoiceKind>(['thunder', 'boom', 'stomp']);
 
 /** Max upward speed from your own rocket: v^2 / 2g = 15^2 / 32 = about 7 m of height. */
@@ -456,10 +458,10 @@ export class EntitySystem {
       if (d.toss) this.toss(e, dist);
       if (e.kind === 'peeker' || e.genome?.attack === 'snipe') this.aimLaser(e, d.aim, d.snipe === true, dist);
       if (d.slash) this.slash(e, dist);
-      if (e.kind === 'namahage' && e.brain.mode === 'dash' && prevMode !== 'dash') this.dashWindup(e, dist);
+      if ((e.kind === 'namahage' || e.genome?.attack === 'slash') && e.brain.mode === 'dash' && prevMode !== 'dash') this.dashWindup(e, dist);
       if (d.dash && e.dash) {
         e.dash.t = 0;
-        this.host.audio.entityVoice('spaan', this.panTo(b.x, b.z), dist);
+        this.say(e.genome?.sound, 'spaan', this.panTo(b.x, b.z), dist);
       }
       if (d.blow) this.blow(e, dist);
       if (d.hurl) this.hurl(e, dist);
@@ -1194,10 +1196,10 @@ export class EntitySystem {
       }
     }
     e.dash = { x0: b.x, z0: b.z, x1: b.x + dx * len, z1: b.z + dz * len, y: b.y, t: -1, hit: false, yaw };
-    this.host.audio.entityVoice('roar', this.panTo(b.x, b.z), dist);
-    // The warning: a long red strip along the line.
+    this.say(e.genome?.sound, 'roar', this.panTo(b.x, b.z), dist);
+    // The warning: a long strip along the line (red, or the random entity's warning colour).
     const g = new THREE.Group();
-    const strip = new THREE.Mesh(new THREE.PlaneGeometry(D.width * 2, Math.max(0.5, len)), new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide }));
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(dashWidth(e) * 2, Math.max(0.5, len)), new THREE.MeshBasicMaterial({ color: e.genome?.fx.warn ?? 0xff3020, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide }));
     strip.rotation.x = -Math.PI / 2;
     strip.position.set(0, 0.22, -len / 2);
     strip.renderOrder = 5;
@@ -1224,7 +1226,7 @@ export class EntitySystem {
     b.y = dsh.y;
     b.vy = 0;
     // Afterimages along the way
-    if (Math.random() < 0.8) this.spark(b.x, b.y + 1.1, b.z, 0xe8e8f0, 6, 0.25);
+    if (Math.random() < 0.8) this.spark(b.x, b.y + (e.genome ? e.genome.shoulderY : 1.1), b.z, e.genome?.fx.second ?? 0xe8e8f0, 6, 0.25);
     // Cut: the player close to the segment travelled this frame.
     if (!dsh.hit && Math.abs(p.y - b.y) < 1.8) {
       const sx = b.x - ox;
@@ -1233,22 +1235,22 @@ export class EntitySystem {
       const u = Math.max(0, Math.min(1, ((p.x - ox) * sx + (p.z - oz) * sz) / l2));
       const cx = ox + sx * u - p.x;
       const cz = oz + sz * u - p.z;
-      if (Math.hypot(cx, cz) < D.width) {
+      if (Math.hypot(cx, cz) < dashWidth(e)) {
         dsh.hit = true;
-        this.host.onRangedHit('namahage', D.damage);
+        this.host.onRangedHit(e.kind, e.genome ? Math.round(e.genome.damage * 1.5) : D.damage);
         // Thrown aside, away from the line.
         const side = (p.x - ox) * -sz + (p.z - oz) * sx >= 0 ? 1 : -1;
         p.knock(-sz * side || 0.01, sx * side, 9, 3);
       }
     }
     if (k >= 1) {
-      this.dashTrail(dsh);
+      this.dashTrail(dsh, e.genome ? [e.genome.fx.main, e.genome.fx.second, e.genome.shoulderY] : undefined);
       e.dash = undefined;
     }
   }
 
   /** A bright streak left along the dash line, fading out. */
-  private dashTrail(d: NonNullable<Entity['dash']>): void {
+  private dashTrail(d: NonNullable<Entity['dash']>, fx?: [number, number, number]): void {
     const len = Math.hypot(d.x1 - d.x0, d.z1 - d.z0);
     if (len < 0.5) return;
     const g = new THREE.Group();
@@ -1260,8 +1262,9 @@ export class EntitySystem {
       m.position.set(0, y, -len / 2);
       g.add(m);
     };
-    mk(1.1, 0.06, 0.06, 0xffffff, 0.95); // the cut itself
-    mk(1.1, 0.5, 0.02, 0xc8e0ff, 0.45); // its glow
+    const y = fx ? fx[2] : 1.1;
+    mk(y, 0.06, 0.06, fx ? fx[0] : 0xffffff, 0.95); // the cut itself
+    mk(y, 0.5, 0.02, fx ? fx[1] : 0xc8e0ff, 0.45); // its glow
     this.host.fx.add(g);
     this.flashes.push({ obj: g, t: 0.45, max: 0.45, grow: 0 });
   }

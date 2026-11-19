@@ -45,6 +45,7 @@ import { isWeapon } from './items/itemDefs';
 import { buildAvatar, handMaterials, holdAngleFor, holdInHand, poseAvatar, type Skin } from './player/avatar';
 import { buildWeaponModel } from './weapons/weaponModels';
 import { Bestiary } from './systems/bestiary';
+import { layoutGraph } from './systems/journal';
 import { Profile, grantClearRewards } from './systems/profile';
 import { GOLD, SILVER } from './player/skins';
 import { isDevUnlocked } from './core/devUnlock';
@@ -495,25 +496,39 @@ export class Game {
    */
   private lectureSlides(): Slide[] {
     const j = this.journal.data;
-    const st = this.escape.status(j.order);
-    const slides: Slide[] = [{ title: 'バックルームズ 調査報告', lines: ['— 帰還した調査隊員による発表 —', '', `訪れたレベル: ${st.levels}`, `倒したエンティティ: ${st.kills}`, `死亡: ${this.run.deaths} 回`] }];
-    const levels = j.order.map((id) => j.levels[id]).filter((l) => l && l.title && !['arena', 'frontrooms'].includes(l.id));
-    const pickLevels = levels.length <= 3 ? levels : [levels[0], levels[Math.floor(levels.length / 2)], levels[levels.length - 1]];
-    for (const l of pickLevels) slides.push({ title: `${l.title} — ${l.name}`, lines: [l.kind, `訪問 ${l.visits} 回`, l.pieces.length ? `見つけた構造物 ${l.pieces.length} 種` : '', l.entities.length ? `出会ったエンティティ ${l.entities.length} 種` : ''].filter(Boolean) });
+    const slides: Slide[] = [];
+    // The route through the levels (from the journal's map).
+    const ids = j.order.filter((id) => !['arena', 'frontrooms'].includes(id));
+    if (ids.length) {
+      const pos = layoutGraph(j, 1, 1);
+      const idx = new Map(ids.map((id, i) => [id, i]));
+      const xs = ids.map((id) => pos[id]?.x ?? 0.5);
+      const ys = ids.map((id) => pos[id]?.y ?? 0.5);
+      const nx = (v: number) => (Math.max(...xs) - Math.min(...xs) > 1e-6 ? (v - Math.min(...xs)) / (Math.max(...xs) - Math.min(...xs)) : 0.5);
+      const ny = (v: number) => (Math.max(...ys) - Math.min(...ys) > 1e-6 ? (v - Math.min(...ys)) / (Math.max(...ys) - Math.min(...ys)) : 0.5);
+      slides.push({
+        kind: 'map',
+        points: ids.map((_, i) => [0.05 + nx(xs[i]) * 0.9, 0.05 + ny(ys[i]) * 0.9] as [number, number]),
+        edges: j.edges.map((e) => [idx.get(e.from) ?? -1, idx.get(e.to) ?? -1] as [number, number]).filter(([a, b]) => a >= 0 && b >= 0),
+      });
+    }
+    // How many of each were defeated.
     const creatures = (j.creatures ?? []).filter((c) => c.kind !== 'bug');
-    const pick = [...creatures].sort((a, b) => b.defeated - a.defeated).slice(0, 4);
+    const top = Math.max(1, ...creatures.map((c) => c.defeated));
+    const colors = ['#a8302a', '#2e5a8a', '#c8a018', '#2e7a4a', '#7a3a8a', '#c86a2a', '#3a8a8a', '#8a8a3a'];
+    if (creatures.length) slides.push({ kind: 'chart', bars: creatures.slice(0, 10).map((c, i) => ({ v: c.defeated / top, color: colors[i % colors.length] })) });
+    // The entities met, most defeated first: their pictures.
     const thumbs = new ModelViewer(320, 320);
-    for (const c of pick) {
+    for (const c of [...creatures].sort((a, b) => b.defeated - a.defeated).slice(0, 3)) {
       let model: THREE.Group;
       try {
         model = c.genome ? buildChimeraMesh(c.genome as ChimeraGenome) : buildEntityMesh(c.kind as EntityKind);
       } catch {
         continue;
       }
-      const image = thumbs.snapshot(model, (o) => disposeEntityMesh(o as THREE.Group));
-      slides.push({ title: c.name, lines: [`倒した数: ${c.defeated}`, `出会ったレベル: ${c.levels.length} か所`, c.kind === 'chimera' ? '記録にない、その場限りの存在' : ''].filter(Boolean), image });
+      slides.push({ kind: 'image', image: thumbs.snapshot(model, (o) => disposeEntityMesh(o as THREE.Group)) });
     }
-    slides.push({ title: 'ご清聴ありがとうございました', lines: ['', '私たちは、帰ってこられた。'] });
+    slides.push({ kind: 'end' });
     return slides;
   }
 

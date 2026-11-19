@@ -155,14 +155,14 @@ function baseDoorMesh(b: number, inside: boolean): THREE.Group {
       x.fill();
     }
   });
-  const plate = canvasTex('base-plate', 256, 64, (x) => {
+  const plate = canvasTex(inside ? 'base-plate-exit' : 'base-plate', 256, 64, (x) => {
     x.fillStyle = '#2c3a2c';
     x.fillRect(0, 0, 256, 64);
     x.fillStyle = '#e8e4c8';
-    x.font = 'bold 34px sans-serif';
+    x.font = inside ? 'bold 36px sans-serif' : 'bold 30px sans-serif';
     x.textAlign = 'center';
     x.textBaseline = 'middle';
-    x.fillText(inside ? '出口' : '調査基地', 128, 34);
+    x.fillText(inside ? 'EXIT' : 'SURVEY BASE', 128, 34);
   });
   const frame = mat(0xffffff, b, stripes);
   g.add(part(geo('bd-top', () => new THREE.BoxGeometry(1.5, 0.16, 0.08)), frame, 0, 2.3, 0.03));

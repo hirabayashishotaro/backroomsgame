@@ -13,15 +13,23 @@ import { Rng } from '../core/rng';
 import { buildAvatar, poseAvatar } from '../player/avatar';
 import { LECTURE_SPOTS, lectureSeats } from '../levels/hand/lecture';
 
+/**
+ * A slide: no writing on it (user request) - pictures and simple graphics.
+ *  - map: the route through the levels (dots and lines, 0..1 coordinates);
+ *  - chart: bars (0..1), e.g. how many of each kind were defeated;
+ *  - image: an entity's picture (data URL);
+ *  - end: a closing emblem.
+ */
 export interface Slide {
-  title: string;
-  lines: string[];
-  /** A picture (data URL) - an entity's model, for instance. */
+  kind: 'map' | 'chart' | 'image' | 'end';
+  points?: Array<[number, number]>;
+  edges?: Array<[number, number]>;
+  bars?: Array<{ v: number; color: string }>;
   image?: string | null;
 }
 
 /** Timeline (s). */
-export const LECTURE_T = { walk: 5.4, cut: 6.0, slidesEnd: 33, bow: 33.2, applause: 33.8, fadeOut: 38, end: 39.5 };
+export const LECTURE_T = { walk: 4.6, cut: 5.2, slidesEnd: 22.5, bow: 22.7, applause: 23.3, fadeOut: 27.5, end: 29.5 };
 
 type ToRender = (x: number, z: number) => [number, number];
 
@@ -100,25 +108,63 @@ export class LectureEnding {
     const g = this.screenCanvas.getContext('2d')!;
     g.fillStyle = '#f6f4ee';
     g.fillRect(0, 0, 1024, 576);
+    // A plain header band and footer line (no words).
     g.fillStyle = '#1e3a5a';
-    g.fillRect(0, 0, 1024, 92);
-    g.fillStyle = '#ffffff';
-    g.font = 'bold 44px sans-serif';
-    g.textBaseline = 'middle';
-    g.fillText(s.title, 40, 48, 944);
-    const img = s.image ? this.images.get(s.image) : undefined;
-    const textW = img ? 560 : 944;
-    g.fillStyle = '#202020';
-    g.font = '30px sans-serif';
-    s.lines.forEach((l, i) => g.fillText(l, 50, 150 + i * 52, textW));
-    if (img && img.complete && img.naturalWidth) {
+    g.fillRect(0, 0, 1024, 60);
+    g.fillStyle = '#c8b35c';
+    g.fillRect(0, 60, 1024, 6);
+    g.fillStyle = '#d8d4c8';
+    g.fillRect(40, 540, 944, 3);
+    const box = { x: 70, y: 100, w: 884, h: 410 };
+    if (s.kind === 'map' && s.points) {
+      // The route: lines between the levels, a dot for each, the first and last bigger.
+      g.strokeStyle = '#8a7c44';
+      g.lineWidth = 4;
+      for (const [a, b] of s.edges ?? []) {
+        const p = s.points[a];
+        const q = s.points[b];
+        if (!p || !q) continue;
+        g.beginPath();
+        g.moveTo(box.x + p[0] * box.w, box.y + p[1] * box.h);
+        g.lineTo(box.x + q[0] * box.w, box.y + q[1] * box.h);
+        g.stroke();
+      }
+      s.points.forEach(([x, y], i) => {
+        g.fillStyle = i === 0 ? '#c8a018' : i === s.points!.length - 1 ? '#a8302a' : '#2e5a3a';
+        g.beginPath();
+        g.arc(box.x + x * box.w, box.y + y * box.h, i === 0 || i === s.points!.length - 1 ? 16 : 10, 0, Math.PI * 2);
+        g.fill();
+      });
+    } else if (s.kind === 'chart' && s.bars) {
+      const n = Math.max(1, s.bars.length);
+      const bw = Math.min(90, (box.w - 40) / n - 14);
+      g.fillStyle = '#4a4a44';
+      g.fillRect(box.x, box.y + box.h, box.w, 4);
+      s.bars.forEach((b, i) => {
+        const h = Math.max(8, b.v * (box.h - 20));
+        g.fillStyle = b.color;
+        g.fillRect(box.x + 30 + i * (bw + 14), box.y + box.h - h, bw, h);
+      });
+    } else if (s.kind === 'image') {
+      const img = s.image ? this.images.get(s.image) : undefined;
       g.fillStyle = '#1a1a14';
-      g.fillRect(640, 120, 340, 340);
-      g.drawImage(img, 650, 130, 320, 320);
+      g.fillRect(332, 90, 360, 430);
+      if (img && img.complete && img.naturalWidth) g.drawImage(img, 342, 130, 340, 340);
+    } else {
+      // A closing emblem: a yellow-papered door, ajar, light behind it.
+      g.fillStyle = '#e8d890';
+      g.fillRect(392, 110, 240, 380);
+      g.fillStyle = '#fff8d8';
+      g.fillRect(412, 130, 200, 360);
+      g.fillStyle = '#c8b35c';
+      g.beginPath();
+      g.moveTo(412, 130);
+      g.lineTo(540, 160);
+      g.lineTo(540, 470);
+      g.lineTo(412, 490);
+      g.closePath();
+      g.fill();
     }
-    g.fillStyle = '#8a8a80';
-    g.font = '20px sans-serif';
-    g.fillText('THE BACKROOMS — 調査報告', 40, 548);
     this.screenTex.needsUpdate = true;
   }
 

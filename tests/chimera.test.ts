@@ -91,6 +91,22 @@ describe('random entities', () => {
     }
   });
 
+  it('slashers also dash-cut from afar, like namahage (only in sight)', () => {
+    let checked = 0;
+    for (let s = 0; s < 2000 && checked < 10; s++) {
+      const g = chimeraGenome(s * 31 + 5);
+      if (g.attack !== 'slash') continue;
+      checked++;
+      const b = newBrain('chimera', g);
+      let dashes = 0;
+      for (let t = 0; t < 16; t += 0.05) if (think(b, P({ dist: 16 }), 0.05).dash) dashes++;
+      expect(dashes, g.name).toBeGreaterThanOrEqual(1);
+      const hidden = newBrain('chimera', g);
+      for (let t = 0; t < 10; t += 0.05) expect(think(hidden, P({ dist: 16, los: false }), 0.05).dash).toBeFalsy();
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
   it("never use the Bug's look: no missing-texture pattern, no glitching, no glitch noise", () => {
     for (let s = 0; s < 3000; s++) {
       const g = chimeraGenome(s * 97 + 1);

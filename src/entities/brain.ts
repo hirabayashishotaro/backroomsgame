@@ -446,6 +446,20 @@ function thinkChimera(b: BrainState, g: ChimeraGenome, p: Perception, dt: number
   }
   const reach = chimeraReach(g);
   // Techniques with a wind-up hold the entity in 'attack' / 'fuse'.
+  // Slashers also have namahage's dash cut (cd2 is free: the wind burst is only for ranged ones).
+  if (g.attack === 'slash' && b.mode === 'dash') {
+    const D = NAMAHAGE_DASH;
+    if (b.t < D.windup) return { speed: 0, gone: false };
+    if (b.n === 1) {
+      b.n = 0;
+      return { speed: 0, gone: false, dash: true };
+    }
+    if (b.t < D.windup + D.dur) return { speed: 0, gone: false };
+    set(b, 'chase');
+    b.watch = D.recover;
+    b.cd2 = D.cooldown + g.cooldown;
+    return { speed: 0, gone: false };
+  }
   if (g.attack === 'slash' || g.attack === 'stomp') {
     if (b.mode === 'attack') {
       if (b.t >= (g.attack === 'slash' ? 0.6 : 0.8)) {
@@ -458,6 +472,12 @@ function thinkChimera(b: BrainState, g: ChimeraGenome, p: Perception, dt: number
     b.watch = Math.max(0, b.watch - dt);
     if (b.watch <= 0 && p.dist < reach) {
       set(b, 'attack');
+      return { speed: 0, gone: false };
+    }
+    if (g.attack === 'slash' && b.watch <= 0 && p.los && p.dist > Math.max(NAMAHAGE_DASH.min, reach + 2) && p.dist < NAMAHAGE_DASH.max && b.cd2 <= 0 && b.alpha > 0.6) {
+      set(b, 'dash');
+      b.t = 0;
+      b.n = 1;
       return { speed: 0, gone: false };
     }
   }

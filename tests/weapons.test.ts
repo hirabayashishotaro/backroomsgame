@@ -169,4 +169,11 @@ describe('weapons', () => {
     expect(f.reach).toBeGreaterThan(1.2);
     expect(f.mag).toBe(0);
   });
+
+  it('laser gun: a continuous beam of 100/s with 3 s of fuel, refilling in 5 s after a 0.5 s pause', () => {
+    const l = WEAPONS.laser;
+    expect(l.kind).toBe('beam');
+    expect(l.damage).toBe(100);
+    expect(l.beam).toEqual({ fuel: 3, recharge: 5, delay: 0.5 });
+  });
 });

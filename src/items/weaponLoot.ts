@@ -27,6 +27,7 @@ const WEAPON_TABLE: Array<[ItemId, number]> = [
   ['magnum', 15],
   ['shotgun', 16],
   ['rocket', 4], // very rare
+  ['laser', 5], // rare
 ];
 
 function pick(u: number): ItemId {

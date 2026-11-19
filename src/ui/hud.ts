@@ -232,7 +232,7 @@ export class Hud {
    * Cooldown ring around the reticle (the staff): `ready` 0..1 fills clockwise;
    * at 1 it glows faintly to show it can be used. null hides it.
    */
-  setCooldown(ready: number | null): void {
+  setCooldown(ready: number | null, rgb = '216,168,255'): void {
     if (ready === null) {
       if (this.cool.style.display !== 'none') this.cool.style.display = 'none';
       return;
@@ -241,8 +241,8 @@ export class Hud {
     const deg = Math.round(Math.min(1, Math.max(0, ready)) * 360);
     const full = deg >= 360;
     this.cool.style.background = full
-      ? 'rgba(216,168,255,0.55)'
-      : `conic-gradient(rgba(216,168,255,0.75) ${deg}deg, rgba(255,255,255,0.16) ${deg}deg)`;
+      ? `rgba(${rgb},0.55)`
+      : `conic-gradient(rgba(${rgb},0.75) ${deg}deg, rgba(255,255,255,0.16) ${deg}deg)`;
   }
 
   /** Hit marker: white = body, red = head, larger = kill. */

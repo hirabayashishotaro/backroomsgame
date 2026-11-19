@@ -98,6 +98,23 @@ export function buildWeaponModel(id: WeaponId, shade = 1): THREE.Group {
       muzzle.position.set(0, 0, -0.62);
       break;
     }
+    case 'laser': {
+      // A white, rounded sci-fi gun: a ribbed emitter ending in a cyan lens, a glowing fuel cell on the side.
+      b(g, 0.045, 0.1, 0.05, 0, -0.04, 0.02, k(0x2a2e34)); // grip
+      b(g, 0.06, 0.07, 0.26, 0, 0.03, -0.06, k(0xe8ecf0)); // body
+      b(g, 0.062, 0.02, 0.2, 0, 0.075, -0.05, k(0xb8c4cc)); // top rail
+      cyl(g, 0.024, 0.18, 0, 0.03, -0.27, k(0xd0d8de), 12); // emitter barrel
+      for (const z of [-0.21, -0.25, -0.29]) cyl(g, 0.03, 0.012, 0, 0.03, z, k(0x7a8a94), 12); // fins
+      const lens = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), new THREE.MeshBasicMaterial({ color: 0x7ff0ff }));
+      lens.position.set(0, 0.03, -0.365);
+      g.add(lens);
+      const cell = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.035, 0.12), new THREE.MeshBasicMaterial({ color: 0x5ce8ff }));
+      cell.position.set(0.034, 0.03, -0.04);
+      cell.name = 'cell';
+      g.add(cell);
+      muzzle.position.set(0, 0.03, -0.38);
+      break;
+    }
     case 'axe':
       cyl(g, 0.016, 0.62, 0, 0, -0.2, k(0x6a4628)); // handle along -z
       b(g, 0.02, 0.17, 0.12, 0, 0.06, -0.47, k(0x9aa0a6)); // head

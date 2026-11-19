@@ -457,6 +457,44 @@ export class AudioSystem {
     this.noise(t, 0.08, 'highpass', 3500, 0.7, this.sfxBus, this.env(t, 0.18, 0.001, 0.07));
   }
 
+  private laserNodes: { osc: OscillatorNode[]; gain: GainNode } | null = null;
+
+  /**
+   * The laser gun's steady hum while it fires: two low triangle tones through
+   * a low-pass (no shrill whine), fading in and out.
+   */
+  laser(on: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    if (on && !this.laserNodes) {
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.09, t + 0.06);
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 900;
+      gain.connect(lp).connect(this.sfxBus);
+      const osc = [150, 226, 301].map((f, i) => {
+        const o = ctx.createOscillator();
+        o.type = 'triangle';
+        o.frequency.value = f;
+        o.detune.value = i * 7;
+        o.connect(gain);
+        o.start(t);
+        return o;
+      });
+      this.laserNodes = { osc, gain };
+    } else if (!on && this.laserNodes) {
+      const { osc, gain } = this.laserNodes;
+      gain.gain.cancelScheduledValues(t);
+      gain.gain.setValueAtTime(gain.gain.value, t);
+      gain.gain.linearRampToValueAtTime(0, t + 0.08);
+      for (const o of osc) o.stop(t + 0.1);
+      this.laserNodes = null;
+    }
+  }
+
   dryFire(): void {
     const ctx = this.ctx;
     if (!ctx) return;

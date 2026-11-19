@@ -1571,6 +1571,58 @@ export class EntitySystem {
     this.spark(to[0], to[1], to[2], color === 0xe0b8ff ? 0xd8a8ff : color, 3, 0.2);
   }
 
+  private laserMesh: THREE.Group | null = null;
+  private laserHitT = 0;
+
+  /**
+   * The laser gun, one frame of it: a beam from the muzzle (`from`, render
+   * space) along the aim; whatever it touches takes damage-per-second x dt
+   * (more on the head). Returns the world point it reaches.
+   */
+  laserBeam(def: WeaponDef, o: [number, number, number], d: [number, number, number], dt: number, from: THREE.Vector3): [number, number, number] {
+    const h = this.castRay(o[0], o[1], o[2], d[0], d[1], d[2], def.range);
+    const t = h ? h.t : def.range;
+    const end: [number, number, number] = [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t];
+    if (h?.entity) {
+      const e = h.entity;
+      const dead = hurt(e.brain, def.damage * dt * (h.head ? def.headMultiplier : 1));
+      e.flash = Math.max(e.flash, 0.6);
+      this.laserHitT -= dt;
+      if (dead) {
+        this.host.onHit(h.head, true);
+        this.host.onKilled(e.kind, { x: e.body.x, y: e.body.y, z: e.body.z }, e.name, e.genome);
+      } else if (this.laserHitT <= 0) {
+        // A hit marker now and then while it burns (not every frame).
+        this.laserHitT = 0.15;
+        this.host.onHit(h.head, false);
+      }
+    }
+    if (h && Math.random() < dt * 40) this.spark(end[0] - d[0] * 0.05, end[1] - d[1] * 0.05, end[2] - d[2] * 0.05, 0x9ff6ff, 2, 0.15);
+    // The beam itself: a bright core inside a soft glow, flickering a little.
+    if (!this.laserMesh) {
+      const g = new THREE.Group();
+      const core = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1, 6, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5), new THREE.MeshBasicMaterial({ color: 0xe8ffff, transparent: true, opacity: 0.95, depthWrite: false }));
+      const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1, 8, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5), new THREE.MeshBasicMaterial({ color: 0x4fe6ff, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }));
+      g.add(core, glow);
+      this.laserMesh = g;
+      this.host.fx.add(g);
+    }
+    const [tx, tz] = this.host.toRender(end[0], end[2]);
+    const tgt = new THREE.Vector3(tx, end[1], tz);
+    const len = from.distanceTo(tgt);
+    const g = this.laserMesh;
+    g.visible = true;
+    g.position.copy(from);
+    g.lookAt(tgt);
+    g.scale.set(0.85 + Math.random() * 0.3, 0.85 + Math.random() * 0.3, Math.max(0.01, len));
+    return end;
+  }
+
+  /** The laser stops: hide the beam. */
+  laserOff(): void {
+    if (this.laserMesh) this.laserMesh.visible = false;
+  }
+
   private beams: Array<{ mesh: THREE.Mesh; t: number }> = [];
   private beamGeo = new THREE.BoxGeometry(0.035, 0.035, 1);
 

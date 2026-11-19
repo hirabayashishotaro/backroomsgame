@@ -227,6 +227,15 @@ function shapeIcon(id: ItemId, size: number): HTMLCanvasElement {
       });
       fill('#9ad8ff', () => g.arc(48, 12, 6, 0, Math.PI * 2));
       break;
+    case 'laser':
+      fill('#e8ecf0', () => g.rect(24, 22, 26, 12)); // body
+      fill('#b8c4cc', () => g.rect(26, 19, 22, 4)); // top rail
+      fill('#d0d8de', () => g.rect(8, 25, 18, 6)); // emitter
+      for (const x of [12, 17, 22]) fill('#7a8a94', () => g.rect(x, 23, 2, 10)); // fins
+      fill('#7ff0ff', () => g.arc(7, 28, 4, 0, Math.PI * 2)); // lens
+      fill('#5ce8ff', () => g.rect(30, 26, 14, 3)); // fuel cell
+      fill('#2a2e34', () => g.rect(40, 34, 7, 14)); // grip
+      break;
     case 'ammo_shotgun':
       for (const dx of [0, 10, 20, 30]) {
         fill('#b8302a', () => g.rect(12 + dx, 20, 8, 22));

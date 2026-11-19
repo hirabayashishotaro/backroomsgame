@@ -11,13 +11,13 @@
  * - Rocket launcher (rare): slow rocket that explodes; the blast throws
  *   everything back - including you (rocket jumps), without hurting you.
  */
-export type WeaponId = 'pistol' | 'magnum' | 'kunai' | 'axe' | 'rocket' | 'shotgun' | 'staff' | 'fist';
+export type WeaponId = 'pistol' | 'magnum' | 'kunai' | 'axe' | 'rocket' | 'shotgun' | 'staff' | 'laser' | 'fist';
 export type AmmoType = 'pistol' | 'magnum' | 'kunai' | 'rocket' | 'shotgun';
 
 export interface WeaponDef {
   id: WeaponId;
   name: string;
-  kind: 'hitscan' | 'projectile' | 'thrown' | 'melee' | 'spell';
+  kind: 'hitscan' | 'projectile' | 'thrown' | 'melee' | 'spell' | 'beam';
   /** Rounds per magazine (0 = no magazine: kunai uses the reserve directly, axe none). */
   mag: number;
   ammo?: AmmoType;
@@ -50,6 +50,12 @@ export interface WeaponDef {
   pellets?: number;
   /** Spell (staff): aim a circle on the ground, lightning falls `delay` s after release. */
   spell?: { radius: number; delay: number; stun: number; damage: number; cooldown: number };
+  /**
+   * Continuous beam (laser gun): `damage` is per second while it touches;
+   * `fuel` seconds of firing when full, refilling from empty in `recharge`
+   * seconds once you have stopped for `delay` seconds.
+   */
+  beam?: { fuel: number; recharge: number; delay: number };
   /** Explodes on impact: blast radius (m), knockback on entities and on the player (m/s). */
   explosive?: { radius: number; knock: number; selfKnock: number };
 }
@@ -161,6 +167,21 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     range: 80,
     // Right click: the lightning circle (its own cooldown).
     spell: { radius: 3.5, delay: 0.3, stun: 1, damage: 100, cooldown: 3 },
+  },
+  laser: {
+    id: 'laser',
+    name: 'レーザーガン',
+    kind: 'beam',
+    mag: 0,
+    interval: 0,
+    reloadTime: 0,
+    damage: 100, // per second
+    hipSpread: 0,
+    adsSpread: 0,
+    adsZoom: 1.2,
+    headMultiplier: 1.5,
+    range: 60,
+    beam: { fuel: 3, recharge: 5, delay: 0.5 },
   },
   axe: {
     id: 'axe',

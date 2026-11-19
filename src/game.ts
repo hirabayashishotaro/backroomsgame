@@ -722,8 +722,10 @@ export class Game {
 
   /** Every weapon with a full magazine and full reserves; hold the pistol. */
   private labRefill(): void {
-    for (const id of ['pistol', 'magnum', 'shotgun', 'kunai', 'rocket', 'staff', 'axe'] as const) {
+    for (const id of ['pistol', 'magnum', 'shotgun', 'kunai', 'rocket', 'staff', 'laser', 'axe'] as const) {
       if (!this.inventory.has(id)) {
+        // Eight weapons fill the bar: make room by putting the almond water away.
+        if (this.inventory.full && this.inventory.has('almond_water')) this.inventory.take(this.inventory.slots.indexOf('almond_water'));
         if (!this.inventory.add(id)) continue;
         this.arsenal.gainWeapon(id, false);
       }
@@ -1498,6 +1500,39 @@ export class Game {
   /** Seconds until the staff's lightning can be cast again. */
   private spellCd = 0;
 
+  /** Laser gun: fuel 0..1, seconds since it last fired, and the lock after running dry (until released). */
+  private laserFuel = 1;
+  private laserIdle = 99;
+  private laserLock = false;
+
+  /**
+   * Laser gun (user design): hold to fire a continuous beam (100/s) while
+   * there is fuel - 3 s from full. Stop (or run dry) and, after 0.5 s, it
+   * refills from empty to full in 5 s. Running dry needs a release first.
+   */
+  private updateLaserFuel(dt: number, canFire: boolean): void {
+    const b = WEAPONS.laser.beam!;
+    const down = this.input.isDown('attack');
+    if (!down) this.laserLock = false;
+    const firing = canFire && down && !this.laserLock && this.laserFuel > 0;
+    if (firing) {
+      this.laserFuel = Math.max(0, this.laserFuel - dt / b.fuel);
+      this.laserIdle = 0;
+      const o: [number, number, number] = [this.player.x, this.player.y + this.player.eye, this.player.z];
+      this.ents.laserBeam(WEAPONS.laser, o, this.aimDir(0), dt, this.viewmodel.muzzleWorld);
+      this.viewmodel.fire('beam', 0.08);
+      if (this.laserFuel <= 0) {
+        this.laserLock = true;
+        this.audio.dryFire();
+      }
+    } else {
+      this.laserIdle += dt;
+      if (this.laserIdle > b.delay) this.laserFuel = Math.min(1, this.laserFuel + dt / b.recharge);
+    }
+    if (!firing) this.ents.laserOff();
+    this.audio.laser(firing);
+  }
+
   /** Where the aim meets the ground (up to `range` m), dropped to the floor below. */
   private spellTarget(range: number): [number, number, number] {
     const p = this.player;
@@ -1521,7 +1556,8 @@ export class Game {
       this.ents.showSpellCircle(null);
     }
     this.spellCd = Math.max(0, this.spellCd - dt);
-    this.hud.setCooldown(id === 'staff' ? 1 - this.spellCd / WEAPONS.staff.spell!.cooldown : null);
+    this.updateLaserFuel(dt, active && id === 'laser');
+    this.hud.setCooldown(id === 'staff' ? 1 - this.spellCd / WEAPONS.staff.spell!.cooldown : id === 'laser' ? this.laserFuel : null, id === 'laser' ? '110,235,255' : undefined);
     if (held !== this.heldPrev) {
       this.heldPrev = held;
       this.arsenal.cancelReload();
@@ -1535,6 +1571,9 @@ export class Game {
     if (active) {
       if (id) {
         if (WEAPONS[id].kind === 'spell') this.updateStaff(WEAPONS[id]);
+        else if (WEAPONS[id].kind === 'beam') {
+          /* the laser fires in updateLaserFuel */
+        }
         // Kunai keep flying while the button is held (when there are any left).
         else if (this.input.wasPressed('attack') || (WEAPONS[id].auto && this.input.isDown('attack') && this.arsenal.loaded(id) > 0)) this.fireWeapon(id);
         if (this.input.wasPressed('reload') && this.arsenal.startReload(id)) this.beginReloadFx(id);
@@ -1561,7 +1600,8 @@ export class Game {
       const gap = (Math.tan(spread) / Math.tan(((this.camera.fov * Math.PI) / 180) / 2)) * (window.innerHeight / 2);
       this.hud.setCrosshair(gap, def.kind !== 'melee', s.crosshairSize, s.crosshairColor, s.crosshairDot, this.adsT);
       const loaded = this.arsenal.loaded(id);
-      if (def.kind === 'melee' || def.kind === 'spell') this.hud.setAmmo(def.name, '', '', false);
+      if (def.kind === 'beam') this.hud.setAmmo(def.name, Math.round(this.laserFuel * 100) + '%', '', this.laserLock);
+      else if (def.kind === 'melee' || def.kind === 'spell') this.hud.setAmmo(def.name, '', '', false);
       else if (def.mag === 0) this.hud.setAmmo(def.name, String(loaded), '', false);
       else this.hud.setAmmo(def.name, String(loaded), String(this.arsenal.reserve[def.ammo!]), !!this.arsenal.reloading);
     } else {

@@ -58,7 +58,7 @@
   "lab.distance": "手動で出す距離",
   "lab.tools": "道具・設定",
   "lab.refill": "武器と弾を補充",
-  "lab.refillSub": "ピストル・マグナム・クナイ・斧と弾を満タンに",
+  "lab.refillSub": "全部の武器(レーザーガンを含む)と弾を満タンに",
   "lab.clear": "敵を全部消す",
   "lab.god": "無敵",
   "lab.godSub": "体力が減らない",
